@@ -25,3 +25,4 @@ bin/
 
 # OS
 .DS_Store
+kube_workspaces
