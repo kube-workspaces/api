@@ -37,7 +37,7 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
 
 ## Docker Image
 
-Published to: `kubeworkspaces/api`
+Published to: `ghcr.io/kube-workspaces/api`
 
 ## CI
 
