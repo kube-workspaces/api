@@ -27,7 +27,7 @@ Additional endpoints (logs, events, pod, proxy, admin) are implemented directly 
 
 ```bash
 # Regenerate code from design
-go run goa.design/goa/v3/cmd/goa gen github.com/flaccid/kube-workspaces/api/design
+go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design
 
 # Build
 go build -o bin/kube-workspaces-api ./cmd/kube_workspaces/
