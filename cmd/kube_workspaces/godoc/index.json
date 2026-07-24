@@ -1,0 +1,30 @@
+{
+  "generated": "2026-07-20T23:29:49Z",
+  "modules": [
+    {
+      "name": "Controller",
+      "path": "controller",
+      "goVersion": "1.24",
+      "module": "github.com/flaccid/kube-workspaces/controller",
+      "description": "Kubernetes controllers for Workspace, User, and AuthConfig CRDs",
+      "packages": [
+        "api/v1alpha1",
+        "internal/controller"
+      ]
+    },
+    {
+      "name": "API",
+      "path": "api",
+      "goVersion": "1.26",
+      "module": "github.com/flaccid/kube-workspaces/api",
+      "description": "REST API server built with Goa framework",
+      "packages": [
+        ".",
+        "internal/auth",
+        "internal/k8s",
+        "internal/proxy",
+        "internal/exec"
+      ]
+    }
+  ]
+}
