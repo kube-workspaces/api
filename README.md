@@ -82,6 +82,15 @@ The API uses the current kubeconfig or in-cluster service account for Kubernetes
 | `KUBECONFIG` | Path to kubeconfig file | `~/.kube/config` |
 | `HTTP_HOST` | Listen address | `localhost:8080` |
 
+## Related Repositories
+
+| Repository | Description |
+|------------|-------------|
+| [kube-workspaces/controller](https://github.com/kube-workspaces/controller) | Kubernetes controller (CRD reconciliation) |
+| [kube-workspaces/proxy](https://github.com/kube-workspaces/proxy) | Workspace reverse proxy |
+| [kube-workspaces/frontend](https://github.com/kube-workspaces/frontend) | Next.js web UI |
+| [kube-workspaces/deploy](https://github.com/kube-workspaces/deploy) | Deployment manifests and documentation |
+
 ## License
 
 Apache License 2.0
