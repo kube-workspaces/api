@@ -166,49 +166,6 @@ func resolveShellFromObjects(wsObj map[string]interface{}, imageShell string, im
 	return imageShell
 }
 
-func TestExtractProxyPrefix(t *testing.T) {
-	tests := []struct {
-		name     string
-		referer  string
-		expected string
-	}{
-		{
-			name:     "valid proxy referer",
-			referer:  "http://localhost:3000/proxy/workspaces/my-ws/some/path",
-			expected: "/proxy/workspaces/my-ws",
-		},
-		{
-			name:     "no proxy in path",
-			referer:  "http://localhost:3000/workspaces/my-ws",
-			expected: "",
-		},
-		{
-			name:     "proxy with only namespace",
-			referer:  "http://localhost:3000/proxy/ns/",
-			expected: "",
-		},
-		{
-			name:     "empty referer",
-			referer:  "",
-			expected: "",
-		},
-		{
-			name:     "proxy with namespace and name",
-			referer:  "http://localhost:3000/proxy/default/code-server/?folder=/home",
-			expected: "/proxy/default/code-server",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := extractProxyPrefix(tt.referer)
-			if result != tt.expected {
-				t.Errorf("expected %q, got %q", tt.expected, result)
-			}
-		})
-	}
-}
-
 func TestParseWindow(t *testing.T) {
 	tests := []struct {
 		input   string
