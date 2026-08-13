@@ -1,5 +1,11 @@
 # Kube Workspaces API
 
+![License](https://img.shields.io/github/license/kube-workspaces/api)
+![Go Version](https://img.shields.io/github/go-mod/go-version/kube-workspaces/api)
+![Release](https://img.shields.io/github/v/release/kube-workspaces/api)
+![CI](https://img.shields.io/github/actions/workflow/status/kube-workspaces/api/ci.yml?label=ci)
+![Docker Image](https://img.shields.io/github/actions/workflow/status/kube-workspaces/api/docker.yml?label=docker)
+
 REST API service for managing Kubernetes workspaces, built with the [Goa](https://goa.design) framework.
 
 ## Overview
