@@ -1,4 +1,4 @@
-# kube-workspaces API
+# Kube Workspaces API
 
 REST API service for managing Kubernetes workspaces, built with the [Goa](https://goa.design) framework.
 
