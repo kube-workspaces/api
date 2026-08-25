@@ -36,6 +36,15 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 				return
 			}
 
+			// Always allow the build/version endpoint. Identifying which version
+			// is deployed is diagnostic information, not privileged, and needing
+			// a session to read it defeats the purpose during an incident. It
+			// exposes no cluster state beyond the component image tags.
+			if r.URL.Path == "/platform/version" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Get auth config
 			cfg, err := provider.GetConfig(ctx)
 			if err != nil {

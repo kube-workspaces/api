@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -24,6 +25,28 @@ import (
 	"goa.design/clue/log"
 )
 
+// Build information, injected at link time:
+//
+//	go build -ldflags "-X main.version=v1.2.3 -X main.commit=abc1234 -X main.buildDate=..."
+//
+// runtime/debug.ReadBuildInfo cannot substitute for this: it reports "(devel)"
+// for a build that is not driven by `go install module@version`, which is the
+// case for the container build.
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
+
+// Version returns the build version. Exported so the HTTP layer can serve it.
+func Version() (v, c, d string) { return version, commit, buildDate }
+
+// versionString renders the build information for logs and the -version flag.
+func versionString() string {
+	return fmt.Sprintf("%s (commit %s, built %s, %s/%s, %s)",
+		version, commit, buildDate, runtime.GOOS, runtime.GOARCH, runtime.Version())
+}
+
 func main() {
 	// Define command line flags, add any other flag required to configure the
 	// service.
@@ -33,8 +56,14 @@ func main() {
 		httpPortF = flag.String("http-port", "", "HTTP port (overrides host HTTP port specified in service design)")
 		secureF   = flag.Bool("secure", false, "Use secure scheme (https or grpcs)")
 		dbgF      = flag.Bool("debug", false, "Log request and response bodies")
+		versionF  = flag.Bool("version", false, "Print version information and exit")
 	)
 	flag.Parse()
+
+	if *versionF {
+		fmt.Println(versionString())
+		return
+	}
 
 	// Setup logger. Replace logger with your own log package of choice.
 	format := log.FormatJSON
@@ -46,6 +75,15 @@ func main() {
 		ctx = log.Context(ctx, log.WithDebug())
 		log.Debugf(ctx, "debug logs enabled")
 	}
+	// Log the build up front, so a pod can be identified from its logs alone
+	// without inspecting the image digest.
+	log.Print(ctx,
+		log.KV{K: "msg", V: "starting kube-workspaces-api"},
+		log.KV{K: "version", V: version},
+		log.KV{K: "commit", V: commit},
+		log.KV{K: "buildDate", V: buildDate},
+		log.KV{K: "go", V: runtime.Version()},
+		log.KV{K: "platform", V: fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)})
 	log.Print(ctx, log.KV{K: "http-port", V: *httpPortF})
 
 	// Initialize the services.

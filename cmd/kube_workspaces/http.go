@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"runtime"
 	"os"
 	"strconv"
 	"strings"
@@ -161,6 +162,48 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	mux.Handle("GET", "/auth/callback", oidcHandler.HandleCallback)
 	mux.Handle("POST", "/auth/logout", oidcHandler.HandleLogout)
 	mux.Handle("GET", "/auth/me", oidcHandler.HandleMe)
+
+	// Platform version endpoint (public). Reports this build plus the image each
+	// component is actually running, so "what is deployed here?" can be answered
+	// without cluster access. The API's own version is compiled in; the others are
+	// read from their pod specs, since a component cannot be asked over the
+	// network without assuming it is healthy.
+	mux.Handle("GET", "/platform/version", func(w http.ResponseWriter, r *http.Request) {
+		v, c, d := Version()
+		resp := map[string]interface{}{
+			"api": map[string]string{
+				"version":   v,
+				"commit":    c,
+				"buildDate": d,
+				"go":        runtime.Version(),
+				"platform":  fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
+			},
+		}
+
+		ns := os.Getenv("POD_NAMESPACE")
+		if ns == "" {
+			ns = "kube-workspaces-system"
+		}
+		components := map[string]string{}
+		for _, comp := range []string{"controller", "api", "proxy", "frontend"} {
+			pods, err := coreClient.ListPods(r.Context(), ns,
+				"app.kubernetes.io/component="+comp)
+			if err != nil || pods == nil || len(pods.Items) == 0 {
+				continue
+			}
+			pod := pods.Items[0]
+			if len(pod.Spec.Containers) > 0 {
+				components[comp] = pod.Spec.Containers[0].Image
+			}
+		}
+		if len(components) > 0 {
+			resp["images"] = components
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(resp)
+	})
 
 	// Platform config endpoint (public, returns form locks + maintenance status)
 	mux.Handle("GET", "/platform/config", func(w http.ResponseWriter, r *http.Request) {
@@ -1609,7 +1652,9 @@ func maintenanceMiddleware(pp *platform.ConfigProvider, next http.Handler) http.
 	exemptPrefixes := []string{
 		"/health",
 		"/auth/",
-		"/platform/config",
+		// Covers both /platform/config and /platform/version: neither should be
+		// blocked by maintenance mode, since both are used to diagnose it.
+		"/platform/",
 		"/admin/",
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
