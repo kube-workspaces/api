@@ -152,6 +152,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	// --- Authentication & Authorization ---
 	authProvider := auth.NewConfigProvider(dynClient)
 	oidcHandler := auth.NewOIDCHandler(authProvider)
+	localAuthHandler := auth.NewLocalAuthHandler(authProvider)
 
 	// --- Platform Configuration ---
 	platformProvider := platform.NewConfigProvider(dynClient)
@@ -162,6 +163,8 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	mux.Handle("GET", "/auth/callback", oidcHandler.HandleCallback)
 	mux.Handle("POST", "/auth/logout", oidcHandler.HandleLogout)
 	mux.Handle("GET", "/auth/me", oidcHandler.HandleMe)
+	mux.Handle("POST", "/auth/login/local", localAuthHandler.HandleLocalLogin)
+	mux.Handle("POST", "/auth/change-password", localAuthHandler.HandleChangePassword)
 
 	// Platform version endpoint (public). Reports this build plus the image each
 	// component is actually running, so "what is deployed here?" can be answered
@@ -284,6 +287,8 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			DisplayName string   `json:"displayName"`
 			Role        string   `json:"role"`
 			Groups      []string `json:"groups"`
+			AuthMethod  string   `json:"authMethod"` // "local" or "oidc" (default)
+			Password    string   `json:"password"`   // optional; only used when authMethod=local
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -300,6 +305,25 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		if body.Role == "" {
 			body.Role = "editor"
 		}
+
+		if body.AuthMethod == "local" {
+			password, name, err := auth.ProvisionLocalUser(r.Context(), authProvider, body.Email, body.DisplayName, body.Role, body.Password, body.Groups)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":   "created",
+				"name":     name,
+				"password": password, // returned once; never persisted anywhere but the Secret
+			})
+			return
+		}
+
 		if err := auth.ProvisionUser(r.Context(), authProvider, body.Email, body.DisplayName, body.Role, body.Groups); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -309,6 +333,34 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]string{"status": "created"})
+	})
+
+	mux.Handle("POST", "/admin/users/{name}/reset-password", func(w http.ResponseWriter, r *http.Request) {
+		if !auth.IsAdmin(r.Context()) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{"error": "admin role required"})
+			return
+		}
+		name := r.PathValue("name")
+		if name == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "user name is required"})
+			return
+		}
+		password, err := auth.ResetLocalUserPassword(r.Context(), authProvider, name)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":   "password reset",
+			"password": password, // returned once; never persisted anywhere but the Secret
+		})
 	})
 
 	mux.Handle("PUT", "/admin/users/{name}", func(w http.ResponseWriter, r *http.Request) {
@@ -362,6 +414,59 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		if nsAccess, ok := body["namespaceAccess"].([]interface{}); ok {
 			spec["namespaceAccess"] = nsAccess
 		}
+
+		// Allow enabling local auth for an existing (e.g. OIDC-provisioned) user,
+		// adding password login as a secondary method for the same identity.
+		if enableLocal, ok := body["enableLocalAuth"].(bool); ok && enableLocal {
+			localAuth, _, _ := unstructured.NestedMap(user.Object, "spec", "localAuth")
+			alreadyEnabled := localAuth != nil && localAuth["enabled"] == true
+			if !alreadyEnabled {
+				password, genErr := auth.GeneratePassword()
+				if genErr != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusInternalServerError)
+					json.NewEncoder(w).Encode(map[string]string{"error": genErr.Error()})
+					return
+				}
+				hash, hashErr := auth.HashPassword(password)
+				if hashErr != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusInternalServerError)
+					json.NewEncoder(w).Encode(map[string]string{"error": hashErr.Error()})
+					return
+				}
+				secretName := fmt.Sprintf("kw-user-%s-local-auth", name)
+				if createErr := authProvider.CreatePasswordSecret(r.Context(), secretName, hash, password); createErr != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusInternalServerError)
+					json.NewEncoder(w).Encode(map[string]string{"error": createErr.Error()})
+					return
+				}
+				spec["localAuth"] = map[string]interface{}{
+					"enabled": true,
+					"passwordSecretRef": map[string]interface{}{
+						"name": secretName,
+						"key":  "passwordHash",
+					},
+					"mustChangePassword": true,
+				}
+				unstructured.SetNestedMap(user.Object, spec, "spec")
+				updated, updateErr := authProvider.UpdateUser(r.Context(), user)
+				if updateErr != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusInternalServerError)
+					json.NewEncoder(w).Encode(map[string]string{"error": updateErr.Error()})
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"user":     updated,
+					"password": password,
+				})
+				return
+			}
+		}
+
 		unstructured.SetNestedMap(user.Object, spec, "spec")
 
 		// Update labels
@@ -398,6 +503,12 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "user name is required"})
 			return
+		}
+		// Best-effort cleanup of the local-auth password secret, if any.
+		if userCR, getErr := authProvider.GetUser(r.Context(), name); getErr == nil {
+			if secretName, _, _ := unstructured.NestedString(userCR.Object, "spec", "localAuth", "passwordSecretRef", "name"); secretName != "" {
+				_ = authProvider.DeletePasswordSecret(r.Context(), secretName)
+			}
 		}
 		if err := authProvider.DeleteUser(r.Context(), name); err != nil {
 			w.Header().Set("Content-Type", "application/json")

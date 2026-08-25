@@ -96,6 +96,9 @@ func (h *OIDCHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 		response["registration"] = map[string]interface{}{
 			"autoProvision": cfg.Registration.AutoProvision,
 		}
+		response["localAuth"] = map[string]interface{}{
+			"enabled": cfg.LocalAuthEnabled,
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -380,15 +383,16 @@ func (h *OIDCHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"authenticated":     true,
-		"authEnabled":       true,
-		"email":             user.Email,
-		"displayName":       user.DisplayName,
-		"role":              user.Role,
-		"groups":            user.Groups,
-		"namespaces":        user.Namespaces,
-		"personalNamespace": user.PersonalNamespace,
-		"avatarURL":         user.AvatarURL,
+		"authenticated":      true,
+		"authEnabled":        true,
+		"email":              user.Email,
+		"displayName":        user.DisplayName,
+		"role":               user.Role,
+		"groups":             user.Groups,
+		"namespaces":         user.Namespaces,
+		"personalNamespace":  user.PersonalNamespace,
+		"avatarURL":          user.AvatarURL,
+		"mustChangePassword": user.MustChangePassword,
 	})
 }
 

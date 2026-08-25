@@ -35,6 +35,9 @@ type UserInfo struct {
 	PersonalNamespace string `json:"personalNamespace,omitempty"`
 	// AvatarURL is the URL to the user's avatar image
 	AvatarURL string `json:"avatarURL,omitempty"`
+	// MustChangePassword indicates a local-auth user must set a new password
+	// before continuing (set on creation/reset by an admin).
+	MustChangePassword bool `json:"mustChangePassword,omitempty"`
 }
 
 // SessionToken represents a JWT-like session token.

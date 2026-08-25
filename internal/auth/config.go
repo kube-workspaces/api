@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -25,6 +26,17 @@ var userGVR = schema.GroupVersionResource{
 	Resource: "users",
 }
 
+var secretGVR = schema.GroupVersionResource{
+	Group:    "",
+	Version:  "v1",
+	Resource: "secrets",
+}
+
+// LocalAuthSystemNamespace is where local-auth password Secrets live,
+// regardless of a user's personal namespace. Matches the controller's
+// bootstrap-admin convention.
+const LocalAuthSystemNamespace = "kube-workspaces-system"
+
 // Config holds the resolved authentication configuration.
 type Config struct {
 	Enabled                 bool
@@ -41,6 +53,7 @@ type Config struct {
 	Registration            RegistrationConfig
 	AdminEmails             []string
 	RestrictNamespaceAccess bool
+	LocalAuthEnabled        bool
 }
 
 // PersonalNamespacesConfig holds personal namespace settings.
@@ -196,6 +209,10 @@ func (p *ConfigProvider) loadFromCluster(ctx context.Context) (*Config, error) {
 	restrictNS, _, _ := unstructured.NestedBool(obj.Object, "spec", "authorization", "restrictNamespaceAccess")
 	cfg.RestrictNamespaceAccess = restrictNS
 
+	// Parse local auth config
+	localAuthEnabled, _, _ := unstructured.NestedBool(obj.Object, "spec", "localAuth", "enabled")
+	cfg.LocalAuthEnabled = localAuthEnabled
+
 	// Load secrets (client secret and signing key)
 	clientSecretRef, _, _ := unstructured.NestedString(obj.Object, "spec", "oidc", "clientSecret", "name")
 	clientSecretKey, _, _ := unstructured.NestedString(obj.Object, "spec", "oidc", "clientSecret", "key")
@@ -219,12 +236,6 @@ func (p *ConfigProvider) loadFromCluster(ctx context.Context) (*Config, error) {
 }
 
 func (p *ConfigProvider) getSecret(ctx context.Context, name, key string) (string, error) {
-	secretGVR := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "secrets",
-	}
-
 	// Try kube-workspaces-system namespace first, then default
 	for _, ns := range []string{"kube-workspaces-system", "default"} {
 		obj, err := p.dynamicClient.Resource(secretGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
@@ -314,4 +325,91 @@ func (p *ConfigProvider) InvalidateCache() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.lastFetch = time.Time{}
+}
+
+// GetPasswordSecret fetches the raw Secret backing a local user's password,
+// from LocalAuthSystemNamespace.
+func (p *ConfigProvider) GetPasswordSecret(ctx context.Context, name string) (*unstructured.Unstructured, error) {
+	return p.dynamicClient.Resource(secretGVR).Namespace(LocalAuthSystemNamespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+// CreatePasswordSecret creates a new Secret holding a local user's bcrypt
+// password hash (and, transiently, plaintext password) in LocalAuthSystemNamespace.
+func (p *ConfigProvider) CreatePasswordSecret(ctx context.Context, name, passwordHash, plaintextPassword string) error {
+	stringData := map[string]interface{}{
+		"passwordHash": passwordHash,
+	}
+	if plaintextPassword != "" {
+		stringData["password"] = plaintextPassword
+	}
+	secret := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Secret",
+			"metadata": map[string]interface{}{
+				"name":      name,
+				"namespace": LocalAuthSystemNamespace,
+				"labels": map[string]interface{}{
+					"kubeworkspaces.io/managed-by": "kube-workspaces-api",
+				},
+			},
+			"type":       "Opaque",
+			"stringData": stringData,
+		},
+	}
+	_, err := p.dynamicClient.Resource(secretGVR).Namespace(LocalAuthSystemNamespace).Create(ctx, secret, metav1.CreateOptions{})
+	return err
+}
+
+// UpdatePasswordHash replaces the password hash in an existing Secret and
+// removes any plaintext password key (used once a user sets their own password).
+func (p *ConfigProvider) UpdatePasswordHash(ctx context.Context, name, newHash string) error {
+	secret, err := p.GetPasswordSecret(ctx, name)
+	if err != nil {
+		return err
+	}
+	// stringData is write-only from the API's perspective once persisted (it
+	// gets merged into .data by the API server), so we must operate on .data
+	// directly using base64-encoded values.
+	data, _, _ := unstructured.NestedMap(secret.Object, "data")
+	if data == nil {
+		data = make(map[string]interface{})
+	}
+	data["passwordHash"] = base64.StdEncoding.EncodeToString([]byte(newHash))
+	delete(data, "password")
+	if err := unstructured.SetNestedMap(secret.Object, data, "data"); err != nil {
+		return err
+	}
+	_, err = p.dynamicClient.Resource(secretGVR).Namespace(LocalAuthSystemNamespace).Update(ctx, secret, metav1.UpdateOptions{})
+	return err
+}
+
+// DeletePasswordSecret deletes a local user's password Secret.
+func (p *ConfigProvider) DeletePasswordSecret(ctx context.Context, name string) error {
+	err := p.dynamicClient.Resource(secretGVR).Namespace(LocalAuthSystemNamespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
+// GetPasswordHash extracts the bcrypt hash from a password Secret's .data.
+func GetPasswordHash(secret *unstructured.Unstructured) (string, error) {
+	return getSecretDataValue(secret, "passwordHash")
+}
+
+func getSecretDataValue(secret *unstructured.Unstructured, key string) (string, error) {
+	data, found, _ := unstructured.NestedMap(secret.Object, "data")
+	if !found {
+		return "", fmt.Errorf("secret has no data")
+	}
+	val, ok := data[key].(string)
+	if !ok {
+		return "", fmt.Errorf("secret has no key %q", key)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(val)
+	if err != nil {
+		return val, nil
+	}
+	return string(decoded), nil
 }

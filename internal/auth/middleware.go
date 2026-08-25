@@ -129,6 +129,9 @@ func validateAndGetUser(ctx context.Context, tokenStr string, cfg *Config, provi
 		// Get namespace access
 		user.Namespaces = getUserNamespaces(userCR, personalNS)
 
+		mustChangePassword, _, _ := unstructuredNestedBool(userCR.Object, "spec", "localAuth", "mustChangePassword")
+		user.MustChangePassword = mustChangePassword
+
 		// Check if disabled
 		disabled, _, _ := unstructuredNestedBool(userCR.Object, "spec", "disabled")
 		if disabled {
