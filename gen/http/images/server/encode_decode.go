@@ -165,6 +165,12 @@ func marshalImagesImageToImageResponse(v *images.Image) *ImageResponse {
 	if v.DefaultCredentials != nil {
 		res.DefaultCredentials = marshalImagesImageCredentialsToImageCredentialsResponse(v.DefaultCredentials)
 	}
+	if v.WorkspaceTypes != nil {
+		res.WorkspaceTypes = make([]string, len(v.WorkspaceTypes))
+		for i, val := range v.WorkspaceTypes {
+			res.WorkspaceTypes[i] = val
+		}
+	}
 
 	return res
 }

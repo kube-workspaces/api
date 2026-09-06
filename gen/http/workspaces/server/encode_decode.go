@@ -368,6 +368,7 @@ func marshalWorkspacesWorkspaceToWorkspaceResponse(v *workspaces.Workspace) *Wor
 	res := &WorkspaceResponse{
 		Name:          v.Name,
 		Namespace:     v.Namespace,
+		Type:          v.Type,
 		Image:         v.Image,
 		Port:          v.Port,
 		CPURequest:    v.CPURequest,

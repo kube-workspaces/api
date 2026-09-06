@@ -238,6 +238,12 @@ func unmarshalImageResponseToImagesImage(v *ImageResponse) *images.Image {
 	if v.DefaultCredentials != nil {
 		res.DefaultCredentials = unmarshalImageCredentialsResponseToImagesImageCredentials(v.DefaultCredentials)
 	}
+	if v.WorkspaceTypes != nil {
+		res.WorkspaceTypes = make([]string, len(v.WorkspaceTypes))
+		for i, val := range v.WorkspaceTypes {
+			res.WorkspaceTypes[i] = val
+		}
+	}
 
 	return res
 }

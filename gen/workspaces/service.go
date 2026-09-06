@@ -64,6 +64,10 @@ type CreateWorkspacePayload struct {
 	Name string
 	// Target namespace
 	Namespace string
+	// Workspace type: 'container' (default, runs as a StatefulSet), 'vm' (KubeVirt
+	// VirtualMachine booting a containerDisk image), or 'scratch' (plain
+	// Deployment)
+	Type string
 	// Main container spec
 	Container *WorkspaceContainer
 	// Volumes to mount
@@ -153,6 +157,8 @@ type Workspace struct {
 	Name string
 	// Kubernetes namespace
 	Namespace string
+	// Workspace type: container, vm, or scratch
+	Type string
 	// Container image
 	Image string
 	// Container port
@@ -304,6 +310,9 @@ func newWorkspace(vres *workspacesviews.WorkspaceView) *Workspace {
 	if vres.Namespace != nil {
 		res.Namespace = *vres.Namespace
 	}
+	if vres.Type != nil {
+		res.Type = *vres.Type
+	}
 	if vres.Image != nil {
 		res.Image = *vres.Image
 	}
@@ -312,6 +321,9 @@ func newWorkspace(vres *workspacesviews.WorkspaceView) *Workspace {
 	}
 	if vres.Stopped != nil {
 		res.Stopped = *vres.Stopped
+	}
+	if vres.Type == nil {
+		res.Type = "container"
 	}
 	if vres.ContainerState != nil {
 		res.ContainerState = transformWorkspacesviewsContainerStateViewToContainerState(vres.ContainerState)
@@ -345,6 +357,7 @@ func newWorkspaceView(res *Workspace) *workspacesviews.WorkspaceView {
 	vres := &workspacesviews.WorkspaceView{
 		Name:          &res.Name,
 		Namespace:     &res.Namespace,
+		Type:          &res.Type,
 		Image:         &res.Image,
 		Port:          res.Port,
 		CPURequest:    res.CPURequest,

@@ -61,6 +61,9 @@ type CreateRequestBody struct {
 	// Automatically mount /dev/shm as emptyDir with medium=Memory (required for
 	// Selkies streaming, Chrome, ML frameworks)
 	DefaultSharedMemory *bool `form:"default_shared_memory,omitempty" json:"default_shared_memory,omitempty" xml:"default_shared_memory,omitempty"`
+	// Workspace types this image supports (container, vm, scratch). Empty means
+	// container-only
+	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
 }
 
 // ListResponseBody is the type of the "images" service "list" endpoint HTTP
@@ -117,6 +120,9 @@ type CreateResponseBody struct {
 	Links []*ImageLinkResponseBody `form:"links,omitempty" json:"links,omitempty" xml:"links,omitempty"`
 	// Default login credentials for this image
 	DefaultCredentials *ImageCredentialsResponseBody `form:"default_credentials,omitempty" json:"default_credentials,omitempty" xml:"default_credentials,omitempty"`
+	// Workspace types this image supports (container, vm, scratch). Empty means
+	// container-only
+	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
 }
 
 // ImageResponse is used to define fields on response body types.
@@ -168,6 +174,9 @@ type ImageResponse struct {
 	Links []*ImageLinkResponse `form:"links,omitempty" json:"links,omitempty" xml:"links,omitempty"`
 	// Default login credentials for this image
 	DefaultCredentials *ImageCredentialsResponse `form:"default_credentials,omitempty" json:"default_credentials,omitempty" xml:"default_credentials,omitempty"`
+	// Workspace types this image supports (container, vm, scratch). Empty means
+	// container-only
+	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
 }
 
 // ImageProxyConfigResponse is used to define fields on response body types.
@@ -379,6 +388,12 @@ func NewCreateResponseBody(res *imagesviews.ImageView) *CreateResponseBody {
 	if res.DefaultCredentials != nil {
 		body.DefaultCredentials = marshalImagesviewsImageCredentialsViewToImageCredentialsResponseBody(res.DefaultCredentials)
 	}
+	if res.WorkspaceTypes != nil {
+		body.WorkspaceTypes = make([]string, len(res.WorkspaceTypes))
+		for i, val := range res.WorkspaceTypes {
+			body.WorkspaceTypes[i] = val
+		}
+	}
 	return body
 }
 
@@ -444,6 +459,12 @@ func NewCreateImagePayload(body *CreateRequestBody) *images.CreateImagePayload {
 	}
 	if body.ProxyConfig != nil {
 		v.ProxyConfig = unmarshalImageProxyConfigRequestBodyToImagesImageProxyConfig(body.ProxyConfig)
+	}
+	if body.WorkspaceTypes != nil {
+		v.WorkspaceTypes = make([]string, len(body.WorkspaceTypes))
+		for i, val := range body.WorkspaceTypes {
+			v.WorkspaceTypes[i] = val
+		}
 	}
 
 	return v

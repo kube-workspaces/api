@@ -105,6 +105,11 @@ var CreateWorkspacePayload = Type("CreateWorkspacePayload", func() {
 		Default("workspaces")
 		Example("workspaces")
 	})
+	Attribute("type", String, "Workspace type: 'container' (default, runs as a StatefulSet), 'vm' (KubeVirt VirtualMachine booting a containerDisk image), or 'scratch' (plain Deployment)", func() {
+		Enum("container", "vm", "scratch")
+		Default("container")
+		Example("container")
+	})
 	Attribute("container", WorkspaceContainer, "Main container spec")
 	Attribute("volume_mounts", ArrayOf(VolumeMount), "Volumes to mount")
 	Attribute("env", ArrayOf(EnvVar), "Custom environment variables to inject into the workspace container")
@@ -144,6 +149,10 @@ var WorkspaceResult = ResultType("application/vnd.workspace+json", func() {
 	Attributes(func() {
 		Attribute("name", String, "Workspace name")
 		Attribute("namespace", String, "Kubernetes namespace")
+		Attribute("type", String, "Workspace type: container, vm, or scratch", func() {
+			Enum("container", "vm", "scratch")
+			Default("container")
+		})
 		Attribute("image", String, "Container image")
 		Attribute("port", Int, "Container port")
 		Attribute("cpu_request", String, "CPU request")
@@ -157,7 +166,7 @@ var WorkspaceResult = ResultType("application/vnd.workspace+json", func() {
 		Attribute("created_at", String, "Creation timestamp")
 		Attribute("volume_mounts", ArrayOf(VolumeMount), "Attached volumes")
 	})
-	Required("name", "namespace", "image", "ready_replicas", "stopped")
+	Required("name", "namespace", "image", "type", "ready_replicas", "stopped")
 })
 
 // Volume types
@@ -241,6 +250,9 @@ var CreateImagePayload = Type("CreateImagePayload", func() {
 	Attribute("proxy_config", ImageProxyConfig, "Proxy behavior configuration")
 	Attribute("default_uid", Int64, "UID that the main container runs as (sets runAsUser and fsGroup)")
 	Attribute("default_shared_memory", Boolean, "Automatically mount /dev/shm as emptyDir with medium=Memory (required for Selkies streaming, Chrome, ML frameworks)")
+	Attribute("workspace_types", ArrayOf(String), "Workspace types this image supports (container, vm, scratch). Empty means container-only", func() {
+		Example([]string{"container"})
+	})
 	Required("name", "image", "default_port")
 })
 
@@ -313,6 +325,7 @@ var ImageResult = ResultType("application/vnd.image+json", func() {
 		Attribute("default_shell", String, "Default shell for exec/console sessions (e.g. /bin/bash)")
 		Attribute("links", ArrayOf(ImageLink), "Additional relevant URLs for this image")
 		Attribute("default_credentials", ImageCredentials, "Default login credentials for this image")
+		Attribute("workspace_types", ArrayOf(String), "Workspace types this image supports (container, vm, scratch). Empty means container-only")
 	})
 	Required("cr_name", "name", "image", "default_port")
 })

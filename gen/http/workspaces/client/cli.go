@@ -59,7 +59,7 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 	{
 		err = json.Unmarshal([]byte(workspacesCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 7844736207276744169\n      },\n      \"env\": [\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         }\n      ],\n      \"image_pull_policy\": \"Never\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"Et minus sunt qui est et.\": \"Voluptatem quia in accusantium illo sint porro.\"\n      },\n      \"shared_memory\": false,\n      \"tolerations\": [\n         {\n            \"effect\": \"PreferNoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"PreferNoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         }\n      ],\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 7902498288598481105\n      },\n      \"env\": [\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"Atque in voluptas voluptatem dolorum magni.\": \"Distinctio doloremque.\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoExecute\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"NoExecute\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"NoExecute\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
 		}
 		if body.Container == nil {
 			err = goa.MergeErrors(err, goa.MissingFieldError("container", "body"))
@@ -67,6 +67,9 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.name", body.Name, "^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?$"))
 		if utf8.RuneCountInString(body.Name) > 63 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 63, false))
+		}
+		if !(body.Type == "container" || body.Type == "vm" || body.Type == "scratch") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.type", body.Type, []any{"container", "vm", "scratch"}))
 		}
 		for _, e := range body.Tolerations {
 			if e != nil {
@@ -85,6 +88,7 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 	v := &workspaces.CreateWorkspacePayload{
 		Name:            body.Name,
 		Namespace:       body.Namespace,
+		Type:            body.Type,
 		SharedMemory:    body.SharedMemory,
 		ImagePullPolicy: body.ImagePullPolicy,
 	}
@@ -92,6 +96,12 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 		var zero string
 		if v.Namespace == zero {
 			v.Namespace = "workspaces"
+		}
+	}
+	{
+		var zero string
+		if v.Type == zero {
+			v.Type = "container"
 		}
 	}
 	if body.Container != nil {

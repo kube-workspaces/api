@@ -37,8 +37,8 @@ func UsageCommands() []string {
 
 // UsageExamples produces an example of a valid invocation of the CLI tool.
 func UsageExamples() string {
-	return os.Args[0] + " " + "workspaces list --namespace \"Sit sunt accusamus totam excepturi odit.\"" + "\n" +
-		os.Args[0] + " " + "volumes list --namespace \"Adipisci minus est itaque ut doloremque.\"" + "\n" +
+	return os.Args[0] + " " + "workspaces list --namespace \"Architecto minima inventore libero iusto quos est.\"" + "\n" +
+		os.Args[0] + " " + "volumes list --namespace \"Consequatur eius praesentium.\"" + "\n" +
 		os.Args[0] + " " + "images list" + "\n" +
 		os.Args[0] + " " + "namespaces list" + "\n" +
 		os.Args[0] + " " + "health check" + "\n" +
@@ -355,7 +355,7 @@ func workspacesListUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces list --namespace \"Sit sunt accusamus totam excepturi odit.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces list --namespace \"Architecto minima inventore libero iusto quos est.\"")
 }
 
 func workspacesGetUsage() {
@@ -375,7 +375,7 @@ func workspacesGetUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces get --name \"Est repellendus.\" --namespace \"Dolore sed suscipit in voluptate aut aut.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces get --name \"Autem amet.\" --namespace \"Laudantium pariatur ipsa.\"")
 }
 
 func workspacesCreateUsage() {
@@ -393,7 +393,7 @@ func workspacesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces create --body '{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 7844736207276744169\n      },\n      \"env\": [\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         }\n      ],\n      \"image_pull_policy\": \"Never\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"Et minus sunt qui est et.\": \"Voluptatem quia in accusantium illo sint porro.\"\n      },\n      \"shared_memory\": false,\n      \"tolerations\": [\n         {\n            \"effect\": \"PreferNoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"PreferNoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         }\n      ],\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces create --body '{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 7902498288598481105\n      },\n      \"env\": [\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"Atque in voluptas voluptatem dolorum magni.\": \"Distinctio doloremque.\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoExecute\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"NoExecute\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"NoExecute\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
 }
 
 func workspacesDeleteUsage() {
@@ -413,7 +413,7 @@ func workspacesDeleteUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces delete --name \"Reprehenderit consequatur ut voluptatem recusandae non.\" --namespace \"Aut voluptatibus adipisci dolorum.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces delete --name \"Est repudiandae ducimus.\" --namespace \"Tempora occaecati ut sunt voluptas praesentium.\"")
 }
 
 func workspacesStartUsage() {
@@ -433,7 +433,7 @@ func workspacesStartUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces start --name \"Occaecati ut sunt voluptas.\" --namespace \"Officiis dolores et modi et.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces start --name \"Eum sapiente.\" --namespace \"Et odio occaecati deleniti ut.\"")
 }
 
 func workspacesStopUsage() {
@@ -453,7 +453,7 @@ func workspacesStopUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces stop --name \"Odio occaecati deleniti ut qui quidem.\" --namespace \"Itaque qui repudiandae sunt voluptatem ullam praesentium.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces stop --name \"Autem dolores.\" --namespace \"Modi adipisci minus.\"")
 }
 
 // volumesUsage displays the usage of the volumes command and its subcommands.
@@ -484,7 +484,7 @@ func volumesListUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes list --namespace \"Adipisci minus est itaque ut doloremque.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes list --namespace \"Consequatur eius praesentium.\"")
 }
 
 func volumesGetUsage() {
@@ -504,7 +504,7 @@ func volumesGetUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes get --name \"Rerum consequatur eius.\" --namespace \"Enim consequatur.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes get --name \"Dicta neque quia in.\" --namespace \"Laboriosam quod eum minima quo ratione.\"")
 }
 
 func volumesCreateUsage() {
@@ -522,7 +522,7 @@ func volumesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes create --body '{\n      \"access_mode\": \"ReadWriteOnce\",\n      \"name\": \"my-data\",\n      \"namespace\": \"Porro cupiditate.\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes create --body '{\n      \"access_mode\": \"ReadWriteMany\",\n      \"name\": \"my-data\",\n      \"namespace\": \"Qui eius.\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\"\n   }'")
 }
 
 func volumesDeleteUsage() {
@@ -542,7 +542,7 @@ func volumesDeleteUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes delete --name \"Nihil vel unde recusandae.\" --namespace \"Assumenda inventore dolores ad.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes delete --name \"Vel unde recusandae dignissimos assumenda inventore.\" --namespace \"Ad et.\"")
 }
 
 // imagesUsage displays the usage of the images command and its subcommands.
@@ -587,7 +587,7 @@ func imagesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "images create --body '{\n      \"category\": \"IDE\",\n      \"default_args\": [\n         \"Ullam aliquam quas voluptatum voluptatibus quaerat.\",\n         \"Voluptatum natus excepturi ut eveniet velit.\"\n      ],\n      \"default_credentials\": {\n         \"password\": \"Voluptates soluta vel incidunt placeat.\",\n         \"username\": \"Eius eum id.\"\n      },\n      \"default_env\": [\n         {\n            \"name\": \"Et enim debitis harum nulla quam.\",\n            \"value\": \"Aut aut distinctio est.\"\n         },\n         {\n            \"name\": \"Et enim debitis harum nulla quam.\",\n            \"value\": \"Aut aut distinctio est.\"\n         }\n      ],\n      \"default_homedir\": \"Optio et.\",\n      \"default_path\": \"/\",\n      \"default_port\": 8080,\n      \"default_shared_memory\": false,\n      \"default_shell\": \"Est tempore.\",\n      \"default_uid\": 4850686094989409729,\n      \"default_user\": \"Assumenda harum aut iusto facilis id.\",\n      \"description\": \"Voluptas quia.\",\n      \"homepage_url\": \"Dolores autem ipsum et.\",\n      \"icon\": \"Adipisci fuga atque.\",\n      \"image\": \"codercom/code-server:latest\",\n      \"image_homepage_url\": \"Aut ab et velit consequuntur cupiditate explicabo.\",\n      \"links\": [\n         {\n            \"title\": \"Eius voluptatem sit sit cumque occaecati.\",\n            \"url\": \"Facere illum consequatur iste.\"\n         },\n         {\n            \"title\": \"Eius voluptatem sit sit cumque occaecati.\",\n            \"url\": \"Facere illum consequatur iste.\"\n         },\n         {\n            \"title\": \"Eius voluptatem sit sit cumque occaecati.\",\n            \"url\": \"Facere illum consequatur iste.\"\n         },\n         {\n            \"title\": \"Eius voluptatem sit sit cumque occaecati.\",\n            \"url\": \"Facere illum consequatur iste.\"\n         }\n      ],\n      \"name\": \"Code Server (VS Code)\",\n      \"privileged\": true,\n      \"proxy_config\": {\n         \"custom_request_headers\": {\n            \"Dolor quod culpa autem.\": \"Quia et voluptas.\",\n            \"Esse amet omnis ex aut rerum perferendis.\": \"Fuga accusantium.\"\n         },\n         \"inject_base_tag\": false,\n         \"needs_noop_sw\": true,\n         \"preserve_path_prefix\": true,\n         \"rewrite_host_absolute_paths\": true,\n         \"tls_insecure\": true,\n         \"websocket_paths\": [\n            \"/websockify\"\n         ]\n      },\n      \"source_url\": \"Qui consequatur ea quasi asperiores.\",\n      \"tags\": [\n         \"development\",\n         \"vscode\"\n      ]\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "images create --body '{\n      \"category\": \"IDE\",\n      \"default_args\": [\n         \"Ullam aliquam quas voluptatum voluptatibus quaerat.\",\n         \"Voluptatum natus excepturi ut eveniet velit.\"\n      ],\n      \"default_credentials\": {\n         \"password\": \"Voluptates soluta vel incidunt placeat.\",\n         \"username\": \"Eius eum id.\"\n      },\n      \"default_env\": [\n         {\n            \"name\": \"Et enim debitis harum nulla quam.\",\n            \"value\": \"Aut aut distinctio est.\"\n         },\n         {\n            \"name\": \"Et enim debitis harum nulla quam.\",\n            \"value\": \"Aut aut distinctio est.\"\n         }\n      ],\n      \"default_homedir\": \"Optio et.\",\n      \"default_path\": \"/\",\n      \"default_port\": 8080,\n      \"default_shared_memory\": false,\n      \"default_shell\": \"Est tempore.\",\n      \"default_uid\": 4850686094989409729,\n      \"default_user\": \"Assumenda harum aut iusto facilis id.\",\n      \"description\": \"Voluptas quia.\",\n      \"homepage_url\": \"Dolores autem ipsum et.\",\n      \"icon\": \"Adipisci fuga atque.\",\n      \"image\": \"codercom/code-server:latest\",\n      \"image_homepage_url\": \"Aut ab et velit consequuntur cupiditate explicabo.\",\n      \"links\": [\n         {\n            \"title\": \"Eius voluptatem sit sit cumque occaecati.\",\n            \"url\": \"Facere illum consequatur iste.\"\n         },\n         {\n            \"title\": \"Eius voluptatem sit sit cumque occaecati.\",\n            \"url\": \"Facere illum consequatur iste.\"\n         },\n         {\n            \"title\": \"Eius voluptatem sit sit cumque occaecati.\",\n            \"url\": \"Facere illum consequatur iste.\"\n         },\n         {\n            \"title\": \"Eius voluptatem sit sit cumque occaecati.\",\n            \"url\": \"Facere illum consequatur iste.\"\n         }\n      ],\n      \"name\": \"Code Server (VS Code)\",\n      \"privileged\": true,\n      \"proxy_config\": {\n         \"custom_request_headers\": {\n            \"Dolor quod culpa autem.\": \"Quia et voluptas.\",\n            \"Esse amet omnis ex aut rerum perferendis.\": \"Fuga accusantium.\"\n         },\n         \"inject_base_tag\": false,\n         \"needs_noop_sw\": true,\n         \"preserve_path_prefix\": true,\n         \"rewrite_host_absolute_paths\": true,\n         \"tls_insecure\": true,\n         \"websocket_paths\": [\n            \"/websockify\"\n         ]\n      },\n      \"source_url\": \"Qui consequatur ea quasi asperiores.\",\n      \"tags\": [\n         \"development\",\n         \"vscode\"\n      ],\n      \"workspace_types\": [\n         \"container\"\n      ]\n   }'")
 }
 
 // namespacesUsage displays the usage of the namespaces command and its

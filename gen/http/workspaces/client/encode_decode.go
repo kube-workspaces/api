@@ -564,6 +564,7 @@ func unmarshalWorkspaceResponseToWorkspacesWorkspace(v *WorkspaceResponse) *work
 	res := &workspaces.Workspace{
 		Name:          *v.Name,
 		Namespace:     *v.Namespace,
+		Type:          *v.Type,
 		Image:         *v.Image,
 		Port:          v.Port,
 		CPURequest:    v.CPURequest,

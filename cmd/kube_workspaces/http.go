@@ -33,6 +33,7 @@ import (
 	"goa.design/clue/log"
 	goahttp "goa.design/goa/v3/http"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/dynamic"
 )
 
@@ -1073,8 +1074,20 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			}
 		}
 
-		// The pod name for a workspace is {name}-0 (StatefulSet)
-		podName := name + "-0"
+		wsType := workspaceType(r.Context(), wsClient, ns, name)
+		if wsType == "vm" && container == "" {
+			// The guest itself is not reachable via pod logs; the launcher pod's
+			// compute container carries guest console output when configured.
+			container = "compute"
+		}
+		podName, err := resolveWorkspacePod(r.Context(), coreClient, ns, name, wsType)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
 		logs, err := coreClient.GetPodLogs(r.Context(), ns, podName, container, tailLines)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -1093,11 +1106,13 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			ns = "workspaces"
 		}
 		name := extractPathParam(r, "name", 4)
+		wsType := workspaceType(r.Context(), wsClient, ns, name)
 
-		// Get events related to the workspace pod and statefulset
-		podName := name + "-0"
+		// Get events related to the workload pod(s) and the owning objects
 		podEvents, _ := coreClient.ListEvents(r.Context(), ns,
-			fmt.Sprintf("involvedObject.name=%s", podName))
+			fmt.Sprintf("involvedObject.name=%s", name+"-0"))
+		vmPodEvents, _ := coreClient.ListEvents(r.Context(), ns,
+			fmt.Sprintf("involvedObject.name=virt-launcher-%s", name))
 		stsEvents, _ := coreClient.ListEvents(r.Context(), ns,
 			fmt.Sprintf("involvedObject.name=%s", name))
 
@@ -1113,7 +1128,10 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		}
 
 		var events []eventEntry
-		if podEvents != nil {
+		appendPodEvents := func(podEvents *corev1.EventList) {
+			if podEvents == nil {
+				return
+			}
 			for _, e := range podEvents.Items {
 				events = append(events, eventEntry{
 					Type:      e.Type,
@@ -1127,9 +1145,15 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				})
 			}
 		}
+		appendPodEvents(podEvents)
+		if wsType == "vm" {
+			appendPodEvents(vmPodEvents)
+		}
 		if stsEvents != nil {
 			for _, e := range stsEvents.Items {
-				if e.InvolvedObject.Kind == "StatefulSet" || e.InvolvedObject.Kind == "Workspace" {
+				if e.InvolvedObject.Kind == "StatefulSet" || e.InvolvedObject.Kind == "Workspace" ||
+					e.InvolvedObject.Kind == "Deployment" || e.InvolvedObject.Kind == "VirtualMachine" ||
+					e.InvolvedObject.Kind == "VirtualMachineInstance" {
 					events = append(events, eventEntry{
 						Type:      e.Type,
 						Reason:    e.Reason,
@@ -1190,6 +1214,14 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
 			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("workspace %s/%s not found", ns, name)})
+			return
+		}
+
+		// In-place edits are container-shaped; VM workspaces must be recreated.
+		if wsType, _, _ := unstructured.NestedString(obj.Object, "spec", "type"); wsType == "vm" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "editing vm workspaces is not supported; delete and recreate instead"})
 			return
 		}
 
@@ -1323,7 +1355,13 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		}
 		name := extractPathParam(r, "name", 4)
 
-		podName := name + "-0"
+		podName, err := resolveWorkspacePod(r.Context(), coreClient, ns, name, workspaceType(r.Context(), wsClient, ns, name))
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
 		pod, err := coreClient.GetPod(r.Context(), ns, podName)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -1367,8 +1405,28 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			return
 		}
 
-		podName := name + "-0"
-		metricsBuffer.EnsurePod(r.Context(), ns, podName, "workspace")
+		wsType := workspaceType(r.Context(), wsClient, ns, name)
+		if wsType == "vm" {
+			// metrics-server reports the virt-launcher pod's overhead, not the
+			// guest; nothing useful to show until guest agent metrics exist.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "metrics are not available for vm workspaces"})
+			return
+		}
+
+		podName, err := resolveWorkspacePod(r.Context(), coreClient, ns, name, wsType)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		metricsContainer := "workspace"
+		if wsType == "scratch" {
+			metricsContainer = name // scratch containers are named after the workspace
+		}
+		metricsBuffer.EnsurePod(r.Context(), ns, podName, metricsContainer)
 
 		points, container := metricsBuffer.GetMetrics(ns, podName, window)
 
@@ -1404,10 +1462,12 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		log.Printf(ctx, "WARNING: exec endpoint unavailable: %v", err)
 	}
 	if restConfig != nil && execClientset != nil {
-		execHandler := exec.Handler(&exec.Options{
+		execOpts := &exec.Options{
 			RESTConfig: restConfig,
 			Clientset:  execClientset,
-		})
+		}
+		execHandler := exec.Handler(execOpts)
+		vmConsoleHandler := exec.VMConsoleHandler(execOpts)
 		mux.Handle("GET", "/v1/workspaces/{name}/exec", func(w http.ResponseWriter, r *http.Request) {
 			// Auth check: require editor or admin role
 			if auth.AuthEnabled(r.Context()) {
@@ -1437,13 +1497,35 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				}
 			}
 
+			name := extractPathParam(r, "name", 4)
+			ns := r.URL.Query().Get("namespace")
+			if ns == "" {
+				ns = "workspaces"
+			}
+
+			// VM workspaces expose the guest serial console instead of a pod exec.
+			if workspaceType(r.Context(), wsClient, ns, name) == "vm" {
+				vmConsoleHandler(w, r)
+				return
+			}
+
+			// Scratch workspaces run a plain Deployment; resolve the pod by label.
+			// Container workspaces keep the {name}-0 StatefulSet pod convention.
+			if wsType := workspaceType(r.Context(), wsClient, ns, name); wsType == "scratch" {
+				podName, err := resolveWorkspacePod(r.Context(), coreClient, ns, name, wsType)
+				if err != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusNotFound)
+					json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+					return
+				}
+				q := r.URL.Query()
+				q.Set("pod", podName)
+				r.URL.RawQuery = q.Encode()
+			}
+
 			// Determine shell from Image CR if not specified in query
 			if r.URL.Query().Get("shell") == "" {
-				name := extractPathParam(r, "name", 4)
-				ns := r.URL.Query().Get("namespace")
-				if ns == "" {
-					ns = "workspaces"
-				}
 				shell := resolveShell(r.Context(), wsClient, imageClient, ns, name)
 				q := r.URL.Query()
 				q.Set("shell", shell)
@@ -1626,6 +1708,12 @@ func unstructuredToWorkspaceResult(obj *unstructured.Unstructured) map[string]in
 		"stopped":           false,
 	}
 
+	wsType, _, _ := unstructured.NestedString(obj.Object, "spec", "type")
+	if wsType == "" {
+		wsType = "container"
+	}
+	result["type"] = wsType
+
 	annotations := obj.GetAnnotations()
 	if _, ok := annotations["kubeworkspaces.io/stopped"]; ok {
 		result["stopped"] = true
@@ -1721,6 +1809,42 @@ func unstructuredToWorkspaceResult(obj *unstructured.Unstructured) map[string]in
 	}
 
 	return result
+}
+
+// workspaceType returns the workspace's spec.type ("container" when unset).
+func workspaceType(ctx context.Context, wsClient *k8s.WorkspaceClient, namespace, name string) string {
+	obj, err := wsClient.GetWorkspace(ctx, namespace, name)
+	if err != nil {
+		return "container"
+	}
+	wsType, _, _ := unstructured.NestedString(obj.Object, "spec", "type")
+	if wsType == "" {
+		return "container"
+	}
+	return wsType
+}
+
+// resolveWorkspacePod maps a workspace to the pod that serves it.
+// Container workspaces use the StatefulSet convention ({name}-0); scratch and
+// vm workspaces resolve their pod by label (Deployment pods have generated
+// names; KubeVirt launcher pods are labelled vm.kubevirt.io/name).
+func resolveWorkspacePod(ctx context.Context, coreClient *k8s.CoreClient, namespace, name, wsType string) (string, error) {
+	switch wsType {
+	case "vm":
+		pods, err := coreClient.ListPods(ctx, namespace, "vm.kubevirt.io/name="+name)
+		if err == nil && len(pods.Items) > 0 {
+			return pods.Items[0].Name, nil
+		}
+		return "", fmt.Errorf("no running VM pod found for workspace %s/%s (is the VM started?)", namespace, name)
+	case "scratch":
+		pods, err := coreClient.ListPods(ctx, namespace, "workspace-name="+name)
+		if err == nil && len(pods.Items) > 0 {
+			return pods.Items[0].Name, nil
+		}
+		return "", fmt.Errorf("no running pod found for workspace %s/%s", namespace, name)
+	default:
+		return name + "-0", nil
+	}
 }
 
 // resolveShell determines the shell to use for exec, based on Image CR defaultShell field.

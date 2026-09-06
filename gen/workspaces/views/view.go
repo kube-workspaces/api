@@ -25,6 +25,8 @@ type WorkspaceView struct {
 	Name *string
 	// Kubernetes namespace
 	Namespace *string
+	// Workspace type: container, vm, or scratch
+	Type *string
 	// Container image
 	Image *string
 	// Container port
@@ -91,6 +93,7 @@ var (
 		"default": {
 			"name",
 			"namespace",
+			"type",
 			"image",
 			"port",
 			"cpu_request",
@@ -131,11 +134,19 @@ func ValidateWorkspaceView(result *WorkspaceView) (err error) {
 	if result.Image == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("image", "result"))
 	}
+	if result.Type == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("type", "result"))
+	}
 	if result.ReadyReplicas == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("ready_replicas", "result"))
 	}
 	if result.Stopped == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("stopped", "result"))
+	}
+	if result.Type != nil {
+		if !(*result.Type == "container" || *result.Type == "vm" || *result.Type == "scratch") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.type", *result.Type, []any{"container", "vm", "scratch"}))
+		}
 	}
 	if result.ContainerState != nil {
 		if err2 := ValidateContainerStateView(result.ContainerState); err2 != nil {

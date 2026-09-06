@@ -132,7 +132,12 @@ func Handler(opts *Options) http.HandlerFunc {
 		}
 
 		shell := r.URL.Query().Get("shell")
-		podName := name + "-0"
+		// The pod may be pre-resolved by the caller (e.g. scratch workspaces whose
+		// Deployment pods have generated names); otherwise StatefulSet naming applies.
+		podName := r.URL.Query().Get("pod")
+		if podName == "" {
+			podName = name + "-0"
+		}
 
 		// Only run shell detection if no shell was explicitly configured
 		// (empty means the Image CR had no defaultShell set)

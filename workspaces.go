@@ -127,7 +127,22 @@ func (s *workspacessrvc) Get(ctx context.Context, p *workspaces.GetPayload) (res
 
 // Create a new workspace
 func (s *workspacessrvc) Create(ctx context.Context, p *workspaces.CreateWorkspacePayload) (res *workspaces.Workspace, err error) {
-	log.Printf(ctx, "workspaces.create name=%s namespace=%s", p.Name, p.Namespace)
+	log.Printf(ctx, "workspaces.create name=%s namespace=%s type=%s", p.Name, p.Namespace, p.Type)
+
+	// Validate per-type constraints. VM workspaces boot a containerDisk image
+	// via KubeVirt, so container-only options (GPU, shared memory, volume
+	// mounts) are rejected until DataVolume support lands.
+	if p.Type == "vm" {
+		if p.Container.GpuRequest != nil && *p.Container.GpuRequest != "" && *p.Container.GpuRequest != "0" {
+			return nil, workspaces.Invalid("gpu_request is not supported for vm workspaces")
+		}
+		if p.SharedMemory {
+			return nil, workspaces.Invalid("shared_memory is not supported for vm workspaces")
+		}
+		if len(p.VolumeMounts) > 0 {
+			return nil, workspaces.Invalid("volume_mounts are not supported for vm workspaces yet")
+		}
+	}
 
 	// Determine actor
 	actor := "unknown"
@@ -599,6 +614,7 @@ func buildWorkspaceCR(p *workspaces.CreateWorkspacePayload, imageClient *k8s.Ima
 			"kind":       "Workspace",
 			"metadata":   metadata,
 			"spec": map[string]interface{}{
+				"type": p.Type,
 				"template": map[string]interface{}{
 					"spec": spec,
 				},
@@ -744,6 +760,13 @@ func unstructuredToWorkspace(obj *unstructured.Unstructured) *workspaces.Workspa
 		Namespace: obj.GetNamespace(),
 	}
 
+	// Workspace type (defaults to container for CRs created before the field existed)
+	wsType, _, _ := unstructured.NestedString(obj.Object, "spec", "type")
+	if wsType == "" {
+		wsType = "container"
+	}
+	ws.Type = wsType
+
 	// Check if stopped
 	annotations := obj.GetAnnotations()
 	if _, ok := annotations["kubeworkspaces.io/stopped"]; ok {
@@ -848,6 +871,38 @@ func unstructuredToWorkspace(obj *unstructured.Unstructured) *workspaces.Workspa
 			}
 		}
 		ws.ContainerState = cs
+	}
+
+	// Workspace conditions (mirrored pod conditions written by the controller)
+	if conditions, found, _ := unstructured.NestedSlice(obj.Object, "status", "conditions"); found {
+		for _, c := range conditions {
+			cond, ok := c.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			wc := &workspaces.WorkspaceCondition{}
+			if v, ok := cond["type"].(string); ok {
+				vv := v
+				wc.Type = &vv
+			}
+			if v, ok := cond["status"].(string); ok {
+				vv := v
+				wc.Status = &vv
+			}
+			if v, ok := cond["reason"].(string); ok {
+				vv := v
+				wc.Reason = &vv
+			}
+			if v, ok := cond["message"].(string); ok {
+				vv := v
+				wc.Message = &vv
+			}
+			if v, ok := cond["lastTransitionTime"].(string); ok {
+				vv := v
+				wc.LastTransitionTime = &vv
+			}
+			ws.Conditions = append(ws.Conditions, wc)
+		}
 	}
 
 	return ws

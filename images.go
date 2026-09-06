@@ -166,6 +166,13 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 	if p.DefaultSharedMemory != nil && *p.DefaultSharedMemory {
 		spec["defaultSharedMemory"] = true
 	}
+	if len(p.WorkspaceTypes) > 0 {
+		types := make([]interface{}, len(p.WorkspaceTypes))
+		for i, t := range p.WorkspaceTypes {
+			types[i] = t
+		}
+		spec["workspaceTypes"] = types
+	}
 
 	_, err = s.imageClient.CreateImage(ctx, crName, spec)
 	if err != nil {
@@ -206,6 +213,9 @@ func imageToResult(img *k8s.Image) *images.Image {
 	}
 	if len(img.Tags) > 0 {
 		result.Tags = img.Tags
+	}
+	if len(img.WorkspaceTypes) > 0 {
+		result.WorkspaceTypes = img.WorkspaceTypes
 	}
 	if len(img.DefaultArgs) > 0 {
 		result.DefaultArgs = img.DefaultArgs

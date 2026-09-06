@@ -44,6 +44,9 @@ type Image struct {
 	DefaultSharedMemory   bool
 	DefaultInitContainers []ImageInitContainer
 	AdditionalPorts       []ImagePort
+	// WorkspaceTypes lists the workspace types this image supports
+	// (container, vm, scratch). Empty means container-only.
+	WorkspaceTypes []string
 }
 
 // ImageCredentials represents default login credentials for a workspace image.
@@ -374,6 +377,15 @@ func parseImage(obj *unstructured.Unstructured) (*Image, error) {
 					Port:     int32Field(m, "port"),
 					Protocol: strField(m, "protocol"),
 				})
+			}
+		}
+	}
+
+	// Parse workspaceTypes
+	if types, ok := spec["workspaceTypes"].([]interface{}); ok {
+		for _, t := range types {
+			if s, ok := t.(string); ok {
+				img.WorkspaceTypes = append(img.WorkspaceTypes, s)
 			}
 		}
 	}

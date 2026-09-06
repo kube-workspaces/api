@@ -84,6 +84,9 @@ type CreateImagePayload struct {
 	// Automatically mount /dev/shm as emptyDir with medium=Memory (required for
 	// Selkies streaming, Chrome, ML frameworks)
 	DefaultSharedMemory *bool
+	// Workspace types this image supports (container, vm, scratch). Empty means
+	// container-only
+	WorkspaceTypes []string
 }
 
 // Image is the result type of the images service create method.
@@ -135,6 +138,9 @@ type Image struct {
 	Links []*ImageLink
 	// Default login credentials for this image
 	DefaultCredentials *ImageCredentials
+	// Workspace types this image supports (container, vm, scratch). Empty means
+	// container-only
+	WorkspaceTypes []string
 }
 
 // Default login credentials for a workspace image
@@ -301,6 +307,12 @@ func newImage(vres *imagesviews.ImageView) *Image {
 	if vres.DefaultCredentials != nil {
 		res.DefaultCredentials = transformImagesviewsImageCredentialsViewToImageCredentials(vres.DefaultCredentials)
 	}
+	if vres.WorkspaceTypes != nil {
+		res.WorkspaceTypes = make([]string, len(vres.WorkspaceTypes))
+		for i, val := range vres.WorkspaceTypes {
+			res.WorkspaceTypes[i] = val
+		}
+	}
 	return res
 }
 
@@ -363,6 +375,12 @@ func newImageView(res *Image) *imagesviews.ImageView {
 	}
 	if res.DefaultCredentials != nil {
 		vres.DefaultCredentials = transformImageCredentialsToImagesviewsImageCredentialsView(res.DefaultCredentials)
+	}
+	if res.WorkspaceTypes != nil {
+		vres.WorkspaceTypes = make([]string, len(res.WorkspaceTypes))
+		for i, val := range res.WorkspaceTypes {
+			vres.WorkspaceTypes[i] = val
+		}
 	}
 	return vres
 }

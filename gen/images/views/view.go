@@ -68,6 +68,9 @@ type ImageView struct {
 	Links []*ImageLinkView
 	// Default login credentials for this image
 	DefaultCredentials *ImageCredentialsView
+	// Workspace types this image supports (container, vm, scratch). Empty means
+	// container-only
+	WorkspaceTypes []string
 }
 
 // ImageProxyConfigView is a type that runs validations on a projected type.
@@ -142,6 +145,7 @@ var (
 			"default_shell",
 			"links",
 			"default_credentials",
+			"workspace_types",
 		},
 	}
 )

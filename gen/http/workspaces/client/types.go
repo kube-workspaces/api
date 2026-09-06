@@ -20,6 +20,10 @@ type CreateRequestBody struct {
 	Name string `form:"name" json:"name" xml:"name"`
 	// Target namespace
 	Namespace string `form:"namespace" json:"namespace" xml:"namespace"`
+	// Workspace type: 'container' (default, runs as a StatefulSet), 'vm' (KubeVirt
+	// VirtualMachine booting a containerDisk image), or 'scratch' (plain
+	// Deployment)
+	Type string `form:"type" json:"type" xml:"type"`
 	// Main container spec
 	Container *WorkspaceContainerRequestBody `form:"container" json:"container" xml:"container"`
 	// Volumes to mount
@@ -44,6 +48,8 @@ type GetResponseBody struct {
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Kubernetes namespace
 	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty" xml:"namespace,omitempty"`
+	// Workspace type: container, vm, or scratch
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
 	// Container image
 	Image *string `form:"image,omitempty" json:"image,omitempty" xml:"image,omitempty"`
 	// Container port
@@ -77,6 +83,8 @@ type CreateResponseBody struct {
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Kubernetes namespace
 	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty" xml:"namespace,omitempty"`
+	// Workspace type: container, vm, or scratch
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
 	// Container image
 	Image *string `form:"image,omitempty" json:"image,omitempty" xml:"image,omitempty"`
 	// Container port
@@ -110,6 +118,8 @@ type StartResponseBody struct {
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Kubernetes namespace
 	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty" xml:"namespace,omitempty"`
+	// Workspace type: container, vm, or scratch
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
 	// Container image
 	Image *string `form:"image,omitempty" json:"image,omitempty" xml:"image,omitempty"`
 	// Container port
@@ -143,6 +153,8 @@ type StopResponseBody struct {
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Kubernetes namespace
 	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty" xml:"namespace,omitempty"`
+	// Workspace type: container, vm, or scratch
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
 	// Container image
 	Image *string `form:"image,omitempty" json:"image,omitempty" xml:"image,omitempty"`
 	// Container port
@@ -175,6 +187,8 @@ type WorkspaceResponse struct {
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Kubernetes namespace
 	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty" xml:"namespace,omitempty"`
+	// Workspace type: container, vm, or scratch
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
 	// Container image
 	Image *string `form:"image,omitempty" json:"image,omitempty" xml:"image,omitempty"`
 	// Container port
@@ -326,6 +340,7 @@ func NewCreateRequestBody(p *workspaces.CreateWorkspacePayload) *CreateRequestBo
 	body := &CreateRequestBody{
 		Name:            p.Name,
 		Namespace:       p.Namespace,
+		Type:            p.Type,
 		SharedMemory:    p.SharedMemory,
 		ImagePullPolicy: p.ImagePullPolicy,
 	}
@@ -333,6 +348,12 @@ func NewCreateRequestBody(p *workspaces.CreateWorkspacePayload) *CreateRequestBo
 		var zero string
 		if body.Namespace == zero {
 			body.Namespace = "workspaces"
+		}
+	}
+	{
+		var zero string
+		if body.Type == zero {
+			body.Type = "container"
 		}
 	}
 	if p.Container != nil {
@@ -412,6 +433,7 @@ func NewGetWorkspaceOK(body *GetResponseBody) *workspacesviews.WorkspaceView {
 	v := &workspacesviews.WorkspaceView{
 		Name:          body.Name,
 		Namespace:     body.Namespace,
+		Type:          body.Type,
 		Image:         body.Image,
 		Port:          body.Port,
 		CPURequest:    body.CPURequest,
@@ -462,6 +484,7 @@ func NewCreateWorkspaceCreated(body *CreateResponseBody) *workspacesviews.Worksp
 	v := &workspacesviews.WorkspaceView{
 		Name:          body.Name,
 		Namespace:     body.Namespace,
+		Type:          body.Type,
 		Image:         body.Image,
 		Port:          body.Port,
 		CPURequest:    body.CPURequest,
@@ -528,6 +551,7 @@ func NewStartWorkspaceOK(body *StartResponseBody) *workspacesviews.WorkspaceView
 	v := &workspacesviews.WorkspaceView{
 		Name:          body.Name,
 		Namespace:     body.Namespace,
+		Type:          body.Type,
 		Image:         body.Image,
 		Port:          body.Port,
 		CPURequest:    body.CPURequest,
@@ -578,6 +602,7 @@ func NewStopWorkspaceOK(body *StopResponseBody) *workspacesviews.WorkspaceView {
 	v := &workspacesviews.WorkspaceView{
 		Name:          body.Name,
 		Namespace:     body.Namespace,
+		Type:          body.Type,
 		Image:         body.Image,
 		Port:          body.Port,
 		CPURequest:    body.CPURequest,
@@ -633,11 +658,19 @@ func ValidateWorkspaceResponse(body *WorkspaceResponse) (err error) {
 	if body.Image == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("image", "body"))
 	}
+	if body.Type == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("type", "body"))
+	}
 	if body.ReadyReplicas == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("ready_replicas", "body"))
 	}
 	if body.Stopped == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("stopped", "body"))
+	}
+	if body.Type != nil {
+		if !(*body.Type == "container" || *body.Type == "vm" || *body.Type == "scratch") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.type", *body.Type, []any{"container", "vm", "scratch"}))
+		}
 	}
 	if body.ContainerState != nil {
 		if err2 := ValidateContainerStateResponse(body.ContainerState); err2 != nil {
