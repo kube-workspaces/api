@@ -60,10 +60,19 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Extract token from cookie
-			cookie, err := r.Cookie(SessionCookieName)
-			if err != nil || cookie.Value == "" {
-				// Check for Bearer token in Authorization header (API clients)
+		// Extract token from cookie
+		cookie, err := r.Cookie(SessionCookieName)
+		if err != nil || cookie.Value == "" {
+			// DEBUG: log what auth material arrived on exec/console requests
+			if strings.HasSuffix(r.URL.Path, "/exec") {
+				cookieNames := []string{}
+				for _, c := range r.Cookies() {
+					cookieNames = append(cookieNames, c.Name)
+				}
+				log.Printf(ctx, "exec auth debug: path=%s cookies=%v authz=%q upgrade=%q",
+					r.URL.Path, cookieNames, r.Header.Get("Authorization") != "", r.Header.Get("Upgrade"))
+			}
+			// Check for Bearer token in Authorization header (API clients)
 				authHeader := r.Header.Get("Authorization")
 				if strings.HasPrefix(authHeader, "Bearer ") {
 					tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
