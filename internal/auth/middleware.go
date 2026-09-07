@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	stdlog "log"
 	"net/http"
 	"strings"
 
@@ -64,15 +63,6 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 		// Extract token from cookie
 		cookie, err := r.Cookie(SessionCookieName)
 		if err != nil || cookie.Value == "" {
-			// DEBUG: log what auth material arrived on exec/console requests
-			if strings.HasSuffix(r.URL.Path, "/exec") {
-				cookieNames := []string{}
-				for _, c := range r.Cookies() {
-					cookieNames = append(cookieNames, c.Name)
-				}
-				stdlog.Printf("exec auth debug: path=%s cookies=%v authz=%v upgrade=%q",
-					r.URL.Path, cookieNames, r.Header.Get("Authorization") != "", r.Header.Get("Upgrade"))
-			}
 			// Check for Bearer token in Authorization header (API clients)
 				authHeader := r.Header.Get("Authorization")
 				if strings.HasPrefix(authHeader, "Bearer ") {
