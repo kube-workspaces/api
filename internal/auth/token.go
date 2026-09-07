@@ -52,6 +52,9 @@ type SessionToken struct {
 
 // CreateSessionToken creates a signed session token for the given user.
 func CreateSessionToken(email, displayName, role string, groups []string, signingKey []byte, expiry time.Duration) (string, error) {
+	if len(signingKey) == 0 {
+		return "", fmt.Errorf("session signing key is not configured")
+	}
 	token := SessionToken{
 		Email:       email,
 		DisplayName: displayName,

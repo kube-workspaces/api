@@ -12,6 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+
+	"goa.design/clue/log"
 )
 
 var authConfigGVR = schema.GroupVersionResource{
@@ -46,7 +48,7 @@ type Config struct {
 	Scopes                  []string
 	UsernameClaim           string
 	GroupsClaim             string
-	SigningKey               []byte
+	SigningKey              []byte
 	TokenExpiry             time.Duration
 	RefreshExpiry           time.Duration
 	PersonalNamespaces      PersonalNamespacesConfig
@@ -113,8 +115,17 @@ func (p *ConfigProvider) refresh(ctx context.Context) (*Config, error) {
 
 	cfg, err := p.loadFromCluster(ctx)
 	if err != nil {
-		// If we can't load, default to auth disabled
-		cfg = &Config{Enabled: false}
+		// Retain the last known-good config instead of replacing it with a
+		// degraded one. Replacing it (e.g. with an empty signing key) would
+		// mint tokens that immediately fail validation, logging every user out.
+		if p.config != nil {
+			log.Printf(ctx, "auth: failed to reload auth config; retaining previous config: %v", err)
+		} else {
+			log.Printf(ctx, "auth: failed to load auth config; defaulting to auth disabled: %v", err)
+			p.config = &Config{Enabled: false}
+		}
+		p.lastFetch = time.Now()
+		return p.config, nil
 	}
 	p.config = cfg
 	p.lastFetch = time.Now()
@@ -225,12 +236,17 @@ func (p *ConfigProvider) loadFromCluster(ctx context.Context) (*Config, error) {
 
 	signingKeyRef, _, _ := unstructured.NestedString(obj.Object, "spec", "session", "signingKey", "name")
 	signingKeyKey, _, _ := unstructured.NestedString(obj.Object, "spec", "session", "signingKey", "key")
-	if signingKeyRef != "" && signingKeyKey != "" {
-		secret, err := p.getSecret(ctx, signingKeyRef, signingKeyKey)
-		if err == nil {
-			cfg.SigningKey = []byte(secret)
-		}
+	if signingKeyRef == "" || signingKeyKey == "" {
+		return nil, fmt.Errorf("auth is enabled but no session signing key secret is configured")
 	}
+	secret, err := p.getSecret(ctx, signingKeyRef, signingKeyKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load session signing key from secret %s/%s: %w", signingKeyRef, signingKeyKey, err)
+	}
+	if secret == "" {
+		return nil, fmt.Errorf("session signing key in secret %s/%s is empty", signingKeyRef, signingKeyKey)
+	}
+	cfg.SigningKey = []byte(secret)
 
 	return cfg, nil
 }
