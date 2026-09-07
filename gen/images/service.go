@@ -69,6 +69,12 @@ type CreateImagePayload struct {
 	ImageHomepageURL *string
 	// Default user for this image
 	DefaultUser *string
+	// Known default password for DefaultUser. Only set when the image has a known
+	// default password; leave unset when the guest uses no password
+	DefaultPassword *string
+	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
+	// a user/password) to be seeded into the guest at first boot
+	DefaultCloudInit *bool
 	// Default home directory for the default user
 	DefaultHomedir *string
 	// Default shell for exec/console sessions (e.g. /bin/bash)
@@ -130,6 +136,12 @@ type Image struct {
 	ImageHomepageURL *string
 	// Default user for this image
 	DefaultUser *string
+	// Known default password for DefaultUser. Only set when the image has a known
+	// default password; leave unset when the guest uses no password
+	DefaultPassword *string
+	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
+	// a user/password) to be seeded into the guest at first boot
+	DefaultCloudInit *bool
 	// Default home directory for the default user
 	DefaultHomedir *string
 	// Default shell for exec/console sessions (e.g. /bin/bash)
@@ -254,6 +266,8 @@ func newImage(vres *imagesviews.ImageView) *Image {
 		SourceURL:           vres.SourceURL,
 		ImageHomepageURL:    vres.ImageHomepageURL,
 		DefaultUser:         vres.DefaultUser,
+		DefaultPassword:     vres.DefaultPassword,
+		DefaultCloudInit:    vres.DefaultCloudInit,
 		DefaultHomedir:      vres.DefaultHomedir,
 		DefaultShell:        vres.DefaultShell,
 	}
@@ -335,6 +349,8 @@ func newImageView(res *Image) *imagesviews.ImageView {
 		SourceURL:           res.SourceURL,
 		ImageHomepageURL:    res.ImageHomepageURL,
 		DefaultUser:         res.DefaultUser,
+		DefaultPassword:     res.DefaultPassword,
+		DefaultCloudInit:    res.DefaultCloudInit,
 		DefaultHomedir:      res.DefaultHomedir,
 		DefaultShell:        res.DefaultShell,
 	}

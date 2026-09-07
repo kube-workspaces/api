@@ -46,6 +46,12 @@ type CreateRequestBody struct {
 	ImageHomepageURL *string `form:"image_homepage_url,omitempty" json:"image_homepage_url,omitempty" xml:"image_homepage_url,omitempty"`
 	// Default user for this image
 	DefaultUser *string `form:"default_user,omitempty" json:"default_user,omitempty" xml:"default_user,omitempty"`
+	// Known default password for DefaultUser. Only set when the image has a known
+	// default password; leave unset when the guest uses no password
+	DefaultPassword *string `form:"default_password,omitempty" json:"default_password,omitempty" xml:"default_password,omitempty"`
+	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
+	// a user/password) to be seeded into the guest at first boot
+	DefaultCloudInit *bool `form:"default_cloud_init,omitempty" json:"default_cloud_init,omitempty" xml:"default_cloud_init,omitempty"`
 	// Default home directory for the default user
 	DefaultHomedir *string `form:"default_homedir,omitempty" json:"default_homedir,omitempty" xml:"default_homedir,omitempty"`
 	// Default shell for exec/console sessions (e.g. /bin/bash)
@@ -108,6 +114,12 @@ type CreateResponseBody struct {
 	ImageHomepageURL *string `form:"image_homepage_url,omitempty" json:"image_homepage_url,omitempty" xml:"image_homepage_url,omitempty"`
 	// Default user for this image
 	DefaultUser *string `form:"default_user,omitempty" json:"default_user,omitempty" xml:"default_user,omitempty"`
+	// Known default password for DefaultUser. Only set when the image has a known
+	// default password; leave unset when the guest uses no password
+	DefaultPassword *string `form:"default_password,omitempty" json:"default_password,omitempty" xml:"default_password,omitempty"`
+	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
+	// a user/password) to be seeded into the guest at first boot
+	DefaultCloudInit *bool `form:"default_cloud_init,omitempty" json:"default_cloud_init,omitempty" xml:"default_cloud_init,omitempty"`
 	// Default home directory for the default user
 	DefaultHomedir *string `form:"default_homedir,omitempty" json:"default_homedir,omitempty" xml:"default_homedir,omitempty"`
 	// Default shell for exec/console sessions (e.g. /bin/bash)
@@ -162,6 +174,12 @@ type ImageResponse struct {
 	ImageHomepageURL *string `form:"image_homepage_url,omitempty" json:"image_homepage_url,omitempty" xml:"image_homepage_url,omitempty"`
 	// Default user for this image
 	DefaultUser *string `form:"default_user,omitempty" json:"default_user,omitempty" xml:"default_user,omitempty"`
+	// Known default password for DefaultUser. Only set when the image has a known
+	// default password; leave unset when the guest uses no password
+	DefaultPassword *string `form:"default_password,omitempty" json:"default_password,omitempty" xml:"default_password,omitempty"`
+	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
+	// a user/password) to be seeded into the guest at first boot
+	DefaultCloudInit *bool `form:"default_cloud_init,omitempty" json:"default_cloud_init,omitempty" xml:"default_cloud_init,omitempty"`
 	// Default home directory for the default user
 	DefaultHomedir *string `form:"default_homedir,omitempty" json:"default_homedir,omitempty" xml:"default_homedir,omitempty"`
 	// Default shell for exec/console sessions (e.g. /bin/bash)
@@ -326,6 +344,8 @@ func NewCreateRequestBody(p *images.CreateImagePayload) *CreateRequestBody {
 		SourceURL:           p.SourceURL,
 		ImageHomepageURL:    p.ImageHomepageURL,
 		DefaultUser:         p.DefaultUser,
+		DefaultPassword:     p.DefaultPassword,
+		DefaultCloudInit:    p.DefaultCloudInit,
 		DefaultHomedir:      p.DefaultHomedir,
 		DefaultShell:        p.DefaultShell,
 		DefaultUID:          p.DefaultUID,
@@ -418,6 +438,8 @@ func NewCreateImageCreated(body *CreateResponseBody) *imagesviews.ImageView {
 		SourceURL:           body.SourceURL,
 		ImageHomepageURL:    body.ImageHomepageURL,
 		DefaultUser:         body.DefaultUser,
+		DefaultPassword:     body.DefaultPassword,
+		DefaultCloudInit:    body.DefaultCloudInit,
 		DefaultHomedir:      body.DefaultHomedir,
 		DefaultShell:        body.DefaultShell,
 	}

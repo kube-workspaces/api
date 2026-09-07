@@ -19,27 +19,29 @@ var imageGVR = schema.GroupVersionResource{
 
 // Image represents a parsed Image CR.
 type Image struct {
-	Name               string
-	DisplayName        string
-	Description        string
-	Category           string
-	Tags               []string
-	Image              string
-	DefaultPort        int32
-	DefaultPath        string
-	Icon               string
-	DefaultArgs        []string
-	DefaultEnv         []ImageEnvVar
-	DefaultCredentials *ImageCredentials
-	Privileged         bool
-	HomepageURL        string
-	SourceURL          string
-	ImageHomepageURL   string
-	DefaultUser        string
-	DefaultHomedir     string
-	DefaultShell       string
-	Links              []ImageLink
-	ProxyConfig        *ImageProxyConfig
+	Name                  string
+	DisplayName           string
+	Description           string
+	Category              string
+	Tags                  []string
+	Image                 string
+	DefaultPort           int32
+	DefaultPath           string
+	Icon                  string
+	DefaultArgs           []string
+	DefaultEnv            []ImageEnvVar
+	DefaultCredentials    *ImageCredentials
+	Privileged            bool
+	HomepageURL           string
+	SourceURL             string
+	ImageHomepageURL      string
+	DefaultUser           string
+	DefaultPassword       string
+	DefaultCloudInit      bool
+	DefaultHomedir        string
+	DefaultShell          string
+	Links                 []ImageLink
+	ProxyConfig           *ImageProxyConfig
 	DefaultUID            *int64
 	DefaultSharedMemory   bool
 	DefaultInitContainers []ImageInitContainer
@@ -88,11 +90,11 @@ type ImagePort struct {
 
 // ImageInitContainer represents a simplified init container spec for Image CR defaults.
 type ImageInitContainer struct {
-	Name    string
-	Image   string
-	Command []string
-	Args    []string
-	Env     []ImageEnvVar
+	Name         string
+	Image        string
+	Command      []string
+	Args         []string
+	Env          []ImageEnvVar
 	VolumeMounts []ImageVolumeMount
 }
 
@@ -258,6 +260,8 @@ func parseImage(obj *unstructured.Unstructured) (*Image, error) {
 	img.SourceURL = strField(spec, "sourceURL")
 	img.ImageHomepageURL = strField(spec, "imageHomepageURL")
 	img.DefaultUser = strField(spec, "defaultUser")
+	img.DefaultPassword = strField(spec, "defaultPassword")
+	img.DefaultCloudInit = boolField(spec, "defaultCloudInit")
 	img.DefaultHomedir = strField(spec, "defaultHomedir")
 	img.DefaultShell = strField(spec, "defaultShell")
 

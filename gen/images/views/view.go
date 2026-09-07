@@ -60,6 +60,12 @@ type ImageView struct {
 	ImageHomepageURL *string
 	// Default user for this image
 	DefaultUser *string
+	// Known default password for DefaultUser. Only set when the image has a known
+	// default password; leave unset when the guest uses no password
+	DefaultPassword *string
+	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
+	// a user/password) to be seeded into the guest at first boot
+	DefaultCloudInit *bool
 	// Default home directory for the default user
 	DefaultHomedir *string
 	// Default shell for exec/console sessions (e.g. /bin/bash)
@@ -141,6 +147,8 @@ var (
 			"source_url",
 			"image_homepage_url",
 			"default_user",
+			"default_password",
+			"default_cloud_init",
 			"default_homedir",
 			"default_shell",
 			"links",

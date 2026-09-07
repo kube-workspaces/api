@@ -197,6 +197,8 @@ func unmarshalImageResponseToImagesImage(v *ImageResponse) *images.Image {
 		SourceURL:           v.SourceURL,
 		ImageHomepageURL:    v.ImageHomepageURL,
 		DefaultUser:         v.DefaultUser,
+		DefaultPassword:     v.DefaultPassword,
+		DefaultCloudInit:    v.DefaultCloudInit,
 		DefaultHomedir:      v.DefaultHomedir,
 		DefaultShell:        v.DefaultShell,
 	}

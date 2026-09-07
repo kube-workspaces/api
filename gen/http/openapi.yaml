@@ -380,15 +380,15 @@ definitions:
             message:
                 type: string
                 description: Details about the state
-                example: Quo culpa adipisci enim dolores blanditiis.
+                example: Qui laudantium.
             reason:
                 type: string
                 description: Reason for the state
-                example: Pariatur eum officiis eius quasi harum.
+                example: Quae quo non eum.
             started_at:
                 type: string
                 description: Time the container started
-                example: Eos assumenda.
+                example: Cumque error ratione ut enim quos error.
             state:
                 type: string
                 description: 'Current state: running, waiting, terminated'
@@ -400,10 +400,10 @@ definitions:
                     - unknown
         description: State of the workspace container
         example:
-            message: Qui ut dolores numquam asperiores reprehenderit.
-            reason: Facere inventore et molestiae et suscipit reprehenderit.
-            started_at: Deleniti consequatur laudantium totam libero odio.
-            state: running
+            message: Enim qui occaecati officiis.
+            reason: Officia ut occaecati officia non.
+            started_at: Fuga sed cumque laudantium voluptas.
+            state: unknown
     CreateImagePayload:
         title: CreateImagePayload
         type: object
@@ -416,13 +416,17 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Quia voluptatibus nam aspernatur cum sapiente neque.
+                    example: Totam voluptates repellat iste aut animi.
                 description: Default command-line args
                 example:
-                    - Sequi quaerat ipsam enim sapiente.
-                    - Totam quod doloremque eligendi.
-                    - Quia hic in enim sit.
-                    - Ipsam ut inventore velit minima et et.
+                    - Necessitatibus ipsa aut ab omnis omnis iusto.
+                    - Non sed unde et.
+                    - Ut atque corrupti exercitationem nobis.
+                    - Quae dolorem.
+            default_cloud_init:
+                type: boolean
+                description: Set to true when the image has cloud-init baked in, allowing user-data (e.g. a user/password) to be seeded into the guest at first boot
+                example: true
             default_credentials:
                 $ref: '#/definitions/ImageCredentials'
             default_env:
@@ -431,14 +435,18 @@ definitions:
                     $ref: '#/definitions/ImageEnvVar'
                 description: Default environment variables
                 example:
-                    - name: Et enim debitis harum nulla quam.
-                      value: Aut aut distinctio est.
-                    - name: Et enim debitis harum nulla quam.
-                      value: Aut aut distinctio est.
+                    - name: Cumque occaecati et facere illum consequatur.
+                      value: Natus eius eum id et.
+                    - name: Cumque occaecati et facere illum consequatur.
+                      value: Natus eius eum id et.
             default_homedir:
                 type: string
                 description: Default home directory for the default user
-                example: Ad incidunt velit ut suscipit.
+                example: Veniam fugit sit.
+            default_password:
+                type: string
+                description: Known default password for DefaultUser. Only set when the image has a known default password; leave unset when the guest uses no password
+                example: Enim debitis.
             default_path:
                 type: string
                 description: Default URL path for connecting
@@ -451,32 +459,32 @@ definitions:
             default_shared_memory:
                 type: boolean
                 description: Automatically mount /dev/shm as emptyDir with medium=Memory (required for Selkies streaming, Chrome, ML frameworks)
-                example: false
+                example: true
             default_shell:
                 type: string
                 description: Default shell for exec/console sessions (e.g. /bin/bash)
-                example: Reiciendis quidem nihil doloremque.
+                example: Sit maxime qui.
             default_uid:
                 type: integer
                 description: UID that the main container runs as (sets runAsUser and fsGroup)
-                example: 4407664929801924130
+                example: 8189582353757298576
                 format: int64
             default_user:
                 type: string
                 description: Default user for this image
-                example: Laborum error.
+                example: Tempora ea.
             description:
                 type: string
                 description: Description of the image
-                example: Aspernatur est.
+                example: Provident vero hic et.
             homepage_url:
                 type: string
                 description: Project homepage or documentation URL
-                example: Consectetur aliquid modi assumenda.
+                example: Nobis doloremque.
             icon:
                 type: string
                 description: Icon identifier
-                example: Odio a sapiente molestiae assumenda.
+                example: Harum quis accusamus.
             image:
                 type: string
                 description: Container image reference
@@ -484,21 +492,19 @@ definitions:
             image_homepage_url:
                 type: string
                 description: Container image registry page (e.g. Docker Hub)
-                example: Magnam quia eos sequi est autem voluptas.
+                example: Fuga et ratione eaque tenetur.
             links:
                 type: array
                 items:
                     $ref: '#/definitions/ImageLink'
                 description: Additional relevant URLs for this image
                 example:
-                    - title: Eius voluptatem sit sit cumque occaecati.
-                      url: Facere illum consequatur iste.
-                    - title: Eius voluptatem sit sit cumque occaecati.
-                      url: Facere illum consequatur iste.
-                    - title: Eius voluptatem sit sit cumque occaecati.
-                      url: Facere illum consequatur iste.
-                    - title: Eius voluptatem sit sit cumque occaecati.
-                      url: Facere illum consequatur iste.
+                    - title: Culpa rerum corporis repellendus tenetur animi.
+                      url: Debitis atque eligendi.
+                    - title: Culpa rerum corporis repellendus tenetur animi.
+                      url: Debitis atque eligendi.
+                    - title: Culpa rerum corporis repellendus tenetur animi.
+                      url: Debitis atque eligendi.
             name:
                 type: string
                 description: Display name
@@ -507,18 +513,18 @@ definitions:
                 type: boolean
                 description: Run container in privileged mode
                 default: false
-                example: true
+                example: false
             proxy_config:
                 $ref: '#/definitions/ImageProxyConfig'
             source_url:
                 type: string
                 description: Source code repository URL
-                example: Hic cupiditate.
+                example: Voluptatem culpa quia eos earum.
             tags:
                 type: array
                 items:
                     type: string
-                    example: Rerum et.
+                    example: Veniam in.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -527,60 +533,63 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Assumenda unde soluta.
+                    example: Sapiente aut.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
         example:
             category: IDE
             default_args:
-                - Modi ipsa consectetur.
-                - Enim minima rem.
-                - Quia quae itaque est ut vel.
-                - Fugiat repudiandae.
+                - Exercitationem voluptatem quis.
+                - Esse vitae quo beatae illum.
+            default_cloud_init: true
             default_credentials:
-                password: Voluptates soluta vel incidunt placeat.
-                username: Eius eum id.
+                password: Ea dicta.
+                username: Voluptatem nam.
             default_env:
-                - name: Et enim debitis harum nulla quam.
-                  value: Aut aut distinctio est.
-                - name: Et enim debitis harum nulla quam.
-                  value: Aut aut distinctio est.
-                - name: Et enim debitis harum nulla quam.
-                  value: Aut aut distinctio est.
-            default_homedir: Totam voluptates repellat iste aut animi.
+                - name: Cumque occaecati et facere illum consequatur.
+                  value: Natus eius eum id et.
+                - name: Cumque occaecati et facere illum consequatur.
+                  value: Natus eius eum id et.
+                - name: Cumque occaecati et facere illum consequatur.
+                  value: Natus eius eum id et.
+                - name: Cumque occaecati et facere illum consequatur.
+                  value: Natus eius eum id et.
+            default_homedir: Aspernatur qui cumque libero.
+            default_password: Earum earum nemo impedit.
             default_path: /
             default_port: 8080
-            default_shared_memory: false
-            default_shell: Ad necessitatibus ipsa aut.
-            default_uid: 8191150732784192709
-            default_user: Harum quis accusamus.
-            description: Id aut neque qui nisi.
-            homepage_url: Voluptas qui dolores.
-            icon: Velit aut vitae animi enim.
+            default_shared_memory: true
+            default_shell: Eos non ut.
+            default_uid: 2370662862392976377
+            default_user: Eos quia vero ab totam.
+            description: Quibusdam sunt ut.
+            homepage_url: Consequuntur omnis eligendi incidunt quia veniam.
+            icon: Voluptas aut voluptate et.
             image: codercom/code-server:latest
-            image_homepage_url: Et eaque veniam in.
+            image_homepage_url: Tempore expedita velit quaerat aliquid.
             links:
-                - title: Eius voluptatem sit sit cumque occaecati.
-                  url: Facere illum consequatur iste.
-                - title: Eius voluptatem sit sit cumque occaecati.
-                  url: Facere illum consequatur iste.
-                - title: Eius voluptatem sit sit cumque occaecati.
-                  url: Facere illum consequatur iste.
+                - title: Culpa rerum corporis repellendus tenetur animi.
+                  url: Debitis atque eligendi.
+                - title: Culpa rerum corporis repellendus tenetur animi.
+                  url: Debitis atque eligendi.
+                - title: Culpa rerum corporis repellendus tenetur animi.
+                  url: Debitis atque eligendi.
             name: Code Server (VS Code)
-            privileged: false
+            privileged: true
             proxy_config:
                 custom_request_headers:
-                    Dolor quod culpa autem.: Quia et voluptas.
-                    Esse amet omnis ex aut rerum perferendis.: Fuga accusantium.
+                    Consequatur blanditiis fuga neque in nostrum maiores.: Voluptas iusto optio asperiores tempora.
+                    Nihil repellat eum.: Sed et quasi corrupti voluptas aut.
+                    Nobis error placeat iste.: Voluptatem eaque.
                 inject_base_tag: false
-                needs_noop_sw: true
-                preserve_path_prefix: true
-                rewrite_host_absolute_paths: true
+                needs_noop_sw: false
+                preserve_path_prefix: false
+                rewrite_host_absolute_paths: false
                 tls_insecure: true
                 websocket_paths:
                     - /websockify
-            source_url: Quidem provident vero.
+            source_url: Voluptatem recusandae.
             tags:
                 - development
                 - vscode
@@ -598,7 +607,7 @@ definitions:
                 type: string
                 description: Access mode
                 default: ReadWriteOnce
-                example: ReadWriteOnce
+                example: ReadWriteMany
                 enum:
                     - ReadWriteOnce
                     - ReadWriteMany
@@ -613,7 +622,7 @@ definitions:
                 type: string
                 description: Target namespace
                 default: workspaces
-                example: Ut libero commodi.
+                example: Quisquam dignissimos consequatur ex accusamus.
             size:
                 type: string
                 description: Storage size
@@ -624,9 +633,9 @@ definitions:
                 description: Storage class name
                 example: standard
         example:
-            access_mode: ReadOnlyMany
+            access_mode: ReadWriteOnce
             name: my-data
-            namespace: Animi voluptatem assumenda ut vitae ullam.
+            namespace: Eos ducimus est.
             size: 10Gi
             storage_class: standard
         required:
@@ -652,7 +661,7 @@ definitions:
                 type: string
                 description: Image pull policy for the workspace container (Always, IfNotPresent, Never)
                 default: IfNotPresent
-                example: IfNotPresent
+                example: Always
                 enum:
                     - Always
                     - IfNotPresent
@@ -672,30 +681,38 @@ definitions:
                 type: object
                 description: Node selector labels for scheduling
                 example:
-                    Alias exercitationem suscipit.: Voluptas optio vel dignissimos deleniti numquam est.
-                    Qui esse exercitationem consequuntur impedit sint itaque.: Quidem ea ipsum fugiat a enim.
-                    Sunt sed eius.: Culpa ut quis numquam.
+                    Consectetur earum aperiam et inventore voluptates.: Officiis in.
+                    Illum non numquam eaque.: Quasi reprehenderit vitae nulla.
+                    Rerum quam officia.: Sunt et veritatis expedita blanditiis quidem.
                 additionalProperties:
                     type: string
-                    example: Sunt eveniet maxime.
+                    example: Magni a.
             shared_memory:
                 type: boolean
                 description: Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML frameworks)
                 default: false
-                example: false
+                example: true
             tolerations:
                 type: array
                 items:
                     $ref: '#/definitions/Toleration'
                 description: Pod tolerations for scheduling
                 example:
-                    - effect: NoExecute
+                    - effect: ""
                       key: nvidia.com/gpu
-                      operator: Equal
+                      operator: Exists
                       value: "true"
-                    - effect: NoExecute
+                    - effect: ""
                       key: nvidia.com/gpu
-                      operator: Equal
+                      operator: Exists
+                      value: "true"
+                    - effect: ""
+                      key: nvidia.com/gpu
+                      operator: Exists
+                      value: "true"
+                    - effect: ""
+                      key: nvidia.com/gpu
+                      operator: Exists
                       value: "true"
             type:
                 type: string
@@ -716,6 +733,10 @@ definitions:
                       name: my-workspace-data
                     - mount_path: /home/coder
                       name: my-workspace-data
+                    - mount_path: /home/coder
+                      name: my-workspace-data
+                    - mount_path: /home/coder
+                      name: my-workspace-data
         example:
             container:
                 cpu_limit: "2"
@@ -726,26 +747,39 @@ definitions:
                 memory_limit: 2Gi
                 memory_request: 512Mi
                 name: code-server
-                port: 7902498288598481105
+                port: 8237893756408585014
             env:
                 - name: MY_VAR
                   value: my-value
                 - name: MY_VAR
                   value: my-value
-            image_pull_policy: Never
+                - name: MY_VAR
+                  value: my-value
+                - name: MY_VAR
+                  value: my-value
+            image_pull_policy: IfNotPresent
             name: my-workspace
             namespace: workspaces
             node_selector:
-                Blanditiis officiis quaerat enim doloribus.: Illum inventore excepturi laborum ullam exercitationem et.
-            shared_memory: true
+                Consequuntur nihil in voluptate est ut dignissimos.: Quia sunt a qui iusto.
+                Unde perferendis corporis est.: Ut necessitatibus eveniet perspiciatis quod vero nobis.
+            shared_memory: false
             tolerations:
-                - effect: NoExecute
+                - effect: ""
                   key: nvidia.com/gpu
-                  operator: Equal
+                  operator: Exists
                   value: "true"
-                - effect: NoExecute
+                - effect: ""
                   key: nvidia.com/gpu
-                  operator: Equal
+                  operator: Exists
+                  value: "true"
+                - effect: ""
+                  key: nvidia.com/gpu
+                  operator: Exists
+                  value: "true"
+                - effect: ""
+                  key: nvidia.com/gpu
+                  operator: Exists
                   value: "true"
             type: container
             volume_mounts:
@@ -786,9 +820,9 @@ definitions:
             status:
                 type: string
                 description: Health status
-                example: Tempora ea.
+                example: Aut molestias odit nam voluptates.
         example:
-            status: Enim debitis.
+            status: Fugit officia voluptatum quis.
         required:
             - status
     Image:
@@ -798,20 +832,24 @@ definitions:
             category:
                 type: string
                 description: Category for grouping (e.g. Desktop, IDE, Tool, Game)
-                example: Atque facilis itaque.
+                example: Laborum aperiam rerum.
             cr_name:
                 type: string
                 description: Kubernetes resource name (metadata.name)
-                example: Ut debitis temporibus nisi illum.
+                example: Voluptatem et.
             default_args:
                 type: array
                 items:
                     type: string
-                    example: Repellendus ipsum quo odit dolores.
+                    example: Consequuntur laborum dolores delectus eos quidem.
                 description: Default command-line args injected at workspace creation
                 example:
-                    - Accusamus sed consectetur dolore.
-                    - Corporis fuga blanditiis repellat.
+                    - Dolores unde harum eligendi.
+                    - Iusto qui aut aperiam veniam explicabo.
+            default_cloud_init:
+                type: boolean
+                description: Set to true when the image has cloud-init baked in, allowing user-data (e.g. a user/password) to be seeded into the guest at first boot
+                example: true
             default_credentials:
                 $ref: '#/definitions/ImageCredentials'
             default_env:
@@ -820,78 +858,82 @@ definitions:
                     $ref: '#/definitions/ImageEnvVar'
                 description: Default environment variables injected at workspace creation
                 example:
-                    - name: Qui sed.
-                      value: Veniam nihil.
-                    - name: Qui sed.
-                      value: Veniam nihil.
+                    - name: Voluptas quia.
+                      value: Adipisci fuga atque.
+                    - name: Voluptas quia.
+                      value: Adipisci fuga atque.
             default_homedir:
                 type: string
                 description: Default home directory for the default user
-                example: Magnam ratione.
+                example: Consequatur et quae est qui.
+            default_password:
+                type: string
+                description: Known default password for DefaultUser. Only set when the image has a known default password; leave unset when the guest uses no password
+                example: Facilis optio.
             default_path:
                 type: string
                 description: Default URL path for connecting (e.g. /vnc.html?resize=remote)
-                example: Eius illum mollitia fuga.
+                example: Autem corporis fuga blanditiis repellat facilis.
             default_port:
                 type: integer
                 description: Default container port
-                example: 7200362454055538940
+                example: 3545430421661998960
                 format: int64
             default_shared_memory:
                 type: boolean
                 description: Automatically mount /dev/shm as emptyDir with medium=Memory (required for Selkies streaming, Chrome, ML frameworks)
-                example: false
+                example: true
             default_shell:
                 type: string
                 description: Default shell for exec/console sessions (e.g. /bin/bash)
-                example: Assumenda tempora sunt.
+                example: Et ipsam vitae in.
             default_uid:
                 type: integer
                 description: UID that the main container runs as (sets runAsUser and fsGroup)
-                example: 4685629040486318995
+                example: 4821713537552210695
                 format: int64
             default_user:
                 type: string
                 description: Default user for this image
-                example: Consectetur inventore rerum et.
+                example: Molestias qui facere minima perspiciatis mollitia laboriosam.
             description:
                 type: string
                 description: Description of the image
-                example: Delectus et fugit expedita.
+                example: Qui earum est quibusdam esse ut.
             homepage_url:
                 type: string
                 description: Project homepage or documentation URL
-                example: Incidunt quam officiis.
+                example: Enim id vero.
             icon:
                 type: string
                 description: Icon identifier
-                example: Nulla veritatis est.
+                example: Ipsum reiciendis et ut.
             image:
                 type: string
                 description: Full image reference
-                example: Esse sed molestias.
+                example: Reprehenderit voluptatum aut nisi.
             image_homepage_url:
                 type: string
                 description: Container image registry page (e.g. Docker Hub)
-                example: Facere quis possimus soluta.
+                example: Ducimus et in et sed id.
             links:
                 type: array
                 items:
                     $ref: '#/definitions/ImageLink'
                 description: Additional relevant URLs for this image
                 example:
-                    - title: Molestiae et dolorem eum.
-                      url: Nisi omnis amet veniam ipsum recusandae consequatur.
-                    - title: Molestiae et dolorem eum.
-                      url: Nisi omnis amet veniam ipsum recusandae consequatur.
-                    - title: Molestiae et dolorem eum.
-                      url: Nisi omnis amet veniam ipsum recusandae consequatur.
-                    - title: Molestiae et dolorem eum.
-                      url: Nisi omnis amet veniam ipsum recusandae consequatur.
+                    - title: Unde ullam.
+                      url: Quas voluptatum voluptatibus quaerat corrupti.
+                    - title: Unde ullam.
+                      url: Quas voluptatum voluptatibus quaerat corrupti.
+                    - title: Unde ullam.
+                      url: Quas voluptatum voluptatibus quaerat corrupti.
+                    - title: Unde ullam.
+                      url: Quas voluptatum voluptatibus quaerat corrupti.
             name:
                 type: string
                 description: Display name
-                example: Quia quam voluptas assumenda.
+                example: Quisquam aut consequuntur dignissimos nostrum dicta perferendis.
             privileged:
                 type: boolean
                 description: Run container in privileged mode
@@ -901,73 +943,68 @@ definitions:
             source_url:
                 type: string
                 description: Source code repository URL
-                example: Aut non aperiam et et illo natus.
+                example: Est eum doloribus expedita enim fugit culpa.
             tags:
                 type: array
                 items:
                     type: string
-                    example: Autem sint repellat voluptatibus laborum.
+                    example: Hic ut tempora odio maxime rerum.
                 description: Tags for filtering/searching images
                 example:
-                    - Pariatur enim ut error vero voluptatem.
-                    - Optio sequi aut minus itaque voluptas voluptatem.
-                    - Ratione saepe.
+                    - Possimus a nulla veritatis est.
+                    - Repellendus ipsum quo odit dolores.
+                    - Inventore accusamus sed.
             workspace_types:
                 type: array
                 items:
                     type: string
-                    example: Vel suscipit dolores unde.
+                    example: Omnis repudiandae exercitationem consequatur nostrum et et.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
-                    - Sunt iusto qui.
-                    - Aperiam veniam explicabo rerum.
-                    - Asperiores dolorum.
-                    - Dolorem fuga porro ratione impedit vero.
+                    - Enim sunt.
+                    - Et tempore maiores assumenda voluptas quia vero.
+                    - Cum enim iure provident alias voluptatibus aut.
         description: An available workspace image (default view)
         example:
-            category: Doloribus expedita enim fugit culpa qui ducimus.
-            cr_name: Omnis animi aut.
+            category: Aspernatur est.
+            cr_name: Quam sed qui autem ducimus alias perspiciatis.
             default_args:
-                - In praesentium ipsam veritatis.
-                - Eos adipisci voluptatibus.
-                - Qui eveniet.
-                - Sint veniam velit iure.
+                - Et reprehenderit et.
+                - Consectetur aliquid modi assumenda.
+                - Hic cupiditate.
+            default_cloud_init: true
             default_credentials:
-                password: Rerum explicabo aut reiciendis sint consectetur tenetur.
-                username: Unde consequatur at.
+                password: Et enim debitis harum nulla quam.
+                username: Natus excepturi ut eveniet velit ut.
             default_env:
-                - name: Qui sed.
-                  value: Veniam nihil.
-                - name: Qui sed.
-                  value: Veniam nihil.
-                - name: Qui sed.
-                  value: Veniam nihil.
-            default_homedir: Tempore maiores assumenda voluptas quia vero voluptas.
-            default_path: Et ipsam vitae in.
-            default_port: 3869557728699737117
+                - name: Voluptas quia.
+                  value: Adipisci fuga atque.
+                - name: Voluptas quia.
+                  value: Adipisci fuga atque.
+            default_homedir: Aut vitae.
+            default_password: Id aut neque qui nisi.
+            default_path: Quod doloremque eligendi quia quia hic in.
+            default_port: 1860388810061855082
             default_shared_memory: false
-            default_shell: Enim iure.
-            default_uid: 268470543903965353
-            default_user: Ut enim sunt est.
-            description: Consectetur est.
-            homepage_url: Quo qui.
-            icon: Dolores nostrum.
-            image: Quia dicta nostrum et enim enim id.
-            image_homepage_url: Omnis repudiandae exercitationem consequatur nostrum et et.
+            default_shell: Enim error est modi ipsa consectetur enim.
+            default_uid: 4963676368776540279
+            default_user: Fuga velit nemo assumenda unde soluta.
+            description: Dolore dolorum.
+            homepage_url: Est autem voluptas est laborum error accusamus.
+            icon: Sit maxime ipsam ut inventore velit.
+            image: Saepe alias rerum sed omnis natus.
+            image_homepage_url: Reiciendis quidem nihil doloremque.
             links:
-                - title: Molestiae et dolorem eum.
-                  url: Nisi omnis amet veniam ipsum recusandae consequatur.
-                - title: Molestiae et dolorem eum.
-                  url: Nisi omnis amet veniam ipsum recusandae consequatur.
-                - title: Molestiae et dolorem eum.
-                  url: Nisi omnis amet veniam ipsum recusandae consequatur.
-                - title: Molestiae et dolorem eum.
-                  url: Nisi omnis amet veniam ipsum recusandae consequatur.
-            name: Vitae fugiat repudiandae fugiat et sequi earum.
-            privileged: false
+                - title: Unde ullam.
+                  url: Quas voluptatum voluptatibus quaerat corrupti.
+                - title: Unde ullam.
+                  url: Quas voluptatum voluptatibus quaerat corrupti.
+            name: Fugiat necessitatibus.
+            privileged: true
             proxy_config:
                 custom_request_headers:
-                    In dolore sint eum est non possimus.: Id dolorem.
+                    Molestiae et dolorem eum.: Nisi omnis amet veniam ipsum recusandae consequatur.
+                    Unde consequatur at.: Rerum explicabo aut reiciendis sint consectetur tenetur.
                 inject_base_tag: false
                 needs_noop_sw: false
                 preserve_path_prefix: false
@@ -975,17 +1012,16 @@ definitions:
                 tls_insecure: false
                 websocket_paths:
                     - /websockify
-            source_url: Delectus sed eligendi pariatur alias.
+            source_url: Incidunt velit ut suscipit.
             tags:
-                - Et sed id laborum.
-                - Qui facere minima perspiciatis mollitia.
-                - In facilis optio distinctio reiciendis.
-                - Et quae est.
+                - Et aliquid odio a sapiente molestiae.
+                - Numquam quia voluptatibus nam.
+                - Cum sapiente neque omnis atque.
+                - Quaerat ipsam enim sapiente.
             workspace_types:
-                - Aut inventore quam.
-                - Qui autem ducimus alias perspiciatis et fugiat.
-                - Voluptatem saepe alias rerum sed omnis natus.
-                - Dolore dolorum.
+                - Dolorem quia quae itaque est.
+                - Vel ducimus fugiat repudiandae.
+                - Neque soluta voluptas qui dolores modi.
         required:
             - cr_name
             - name
@@ -998,15 +1034,15 @@ definitions:
             password:
                 type: string
                 description: Default password
-                example: Officia sed sapiente ipsum reiciendis et.
+                example: Iure quo dolorem excepturi debitis.
             username:
                 type: string
                 description: Default username
-                example: Doloribus ad nulla.
+                example: Dolorem sint veniam.
         description: Default login credentials for a workspace image
         example:
-            password: Delectus eos.
-            username: Natus consequuntur laborum.
+            password: Delectus sed eligendi pariatur alias.
+            username: Quo qui.
     ImageEnvVar:
         title: ImageEnvVar
         type: object
@@ -1014,15 +1050,15 @@ definitions:
             name:
                 type: string
                 description: Name of the environment variable
-                example: Saepe aut impedit.
+                example: Cumque asperiores.
             value:
                 type: string
                 description: Value (supports {{namespace}} and {{name}} placeholders)
-                example: Qui quo.
+                example: Unde dolorem fuga porro ratione impedit.
         description: Environment variable with optional placeholder support
         example:
-            name: Consequatur saepe voluptas ea.
-            value: Quia qui velit fugit est eius nulla.
+            name: Rerum omnis animi aut possimus.
+            value: Fugiat repudiandae fugiat et sequi earum quasi.
         required:
             - name
             - value
@@ -1033,15 +1069,15 @@ definitions:
             title:
                 type: string
                 description: Display label for the link
-                example: Cupiditate nulla recusandae laborum corrupti.
+                example: Dolores nostrum.
             url:
                 type: string
                 description: Link target URL
-                example: Minus in nostrum laudantium ea.
+                example: Numquam in praesentium ipsam.
         description: A named URL link for an image
         example:
-            title: Totam labore consequuntur magni qui nihil sit.
-            url: Dolor magni ut et accusamus cupiditate.
+            title: Non eos.
+            url: Voluptatibus tenetur.
         required:
             - title
             - url
@@ -1053,11 +1089,12 @@ definitions:
                 type: object
                 description: Additional headers to inject into proxied requests
                 example:
-                    Eos ducimus est.: Est voluptatem et quae quisquam aut consequuntur.
-                    Nostrum dicta perferendis magni.: Voluptatum aut nisi.
+                    Aperiam et et illo natus labore facere.: Possimus soluta quisquam consectetur.
+                    Est eius nulla occaecati provident atque.: Qui incidunt quam officiis maiores aut.
+                    Rerum et dolores magnam.: Consequatur assumenda.
                 additionalProperties:
                     type: string
-                    example: Quisquam dignissimos consequatur ex accusamus.
+                    example: Dolor quia qui.
             inject_base_tag:
                 type: boolean
                 description: Inject a <base> tag into HTML responses to fix relative path resolution
@@ -1067,7 +1104,7 @@ definitions:
                 type: boolean
                 description: Serve a no-op ServiceWorker at /sw.js to prevent SW registration errors
                 default: false
-                example: true
+                example: false
             preserve_path_prefix:
                 type: boolean
                 description: Forward the full proxy path (including /proxy/{ns}/{name}) to the pod instead of stripping it. Required for apps configured with a base URL matching the proxy prefix.
@@ -1077,28 +1114,29 @@ definitions:
                 type: boolean
                 description: Rewrite requests with absolute paths that escape the proxy prefix using Referer header
                 default: false
-                example: true
+                example: false
             tls_insecure:
                 type: boolean
                 description: Connect to backend over HTTPS with skip-verify (for self-signed certs)
                 default: false
-                example: false
+                example: true
             websocket_paths:
                 type: array
                 items:
                     type: string
-                    example: Porro molestiae accusamus voluptates possimus ipsam velit.
+                    example: Impedit nihil qui quo quisquam consequatur saepe.
                 description: Paths that use WebSocket (informational, all paths support WS transparently)
                 example:
                     - /websockify
         description: Proxy configuration hints for a workspace image
         example:
             custom_request_headers:
-                Temporibus laborum aperiam rerum.: Hic ut tempora odio maxime rerum.
+                Corrupti dolores minus in nostrum laudantium ea.: Totam labore consequuntur magni qui nihil sit.
+                Dolor magni ut et accusamus cupiditate.: Consequuntur doloribus ad nulla.
             inject_base_tag: true
-            needs_noop_sw: true
+            needs_noop_sw: false
             preserve_path_prefix: false
-            rewrite_host_absolute_paths: true
+            rewrite_host_absolute_paths: false
             tls_insecure: true
             websocket_paths:
                 - /websockify
@@ -1109,20 +1147,20 @@ definitions:
             created_at:
                 type: string
                 description: Creation timestamp
-                example: Perspiciatis quae dolorem aut earum delectus nobis.
+                example: Rerum qui quas quibusdam.
             name:
                 type: string
                 description: Namespace name
-                example: Et non.
+                example: Provident ut beatae est dolores est laboriosam.
             phase:
                 type: string
                 description: Namespace phase
-                example: Unde et nesciunt ut atque corrupti exercitationem.
+                example: Ratione consequatur non repellat ut.
         description: A Kubernetes namespace (default view)
         example:
-            created_at: Fuga et ratione eaque tenetur.
-            name: Eaque voluptatem culpa.
-            phase: Eos earum.
+            created_at: Suscipit quia alias.
+            name: Facilis consequatur nihil voluptatem tempora et non.
+            phase: Totam laborum perspiciatis minus.
         required:
             - name
             - phase
@@ -1133,7 +1171,7 @@ definitions:
             effect:
                 type: string
                 description: 'Taint effect: NoSchedule, PreferNoSchedule, or NoExecute'
-                example: PreferNoSchedule
+                example: NoExecute
                 enum:
                     - NoSchedule
                     - PreferNoSchedule
@@ -1170,51 +1208,52 @@ definitions:
             access_mode:
                 type: string
                 description: Access mode
-                example: Expedita blanditiis.
+                example: Commodi ea nulla quibusdam et.
             created_at:
                 type: string
                 description: Creation timestamp
-                example: Officiis in.
+                example: Beatae qui.
             labels:
                 type: object
                 description: Kubernetes labels on the PVC
                 example:
-                    Est quia.: Necessitatibus eveniet perspiciatis quod vero nobis.
+                    A animi voluptatem assumenda ut vitae.: Tempore id ut debitis.
+                    Corporis qui.: Ut libero commodi.
+                    Nisi illum voluptas quia quam voluptas.: Neque esse sed molestias impedit delectus et.
                 additionalProperties:
                     type: string
-                    example: Officiis qui quisquam libero dolores possimus unde.
+                    example: Voluptas expedita rerum quos.
             name:
                 type: string
                 description: PVC name
-                example: Id quis illum.
+                example: Aut inventore quibusdam quisquam.
             namespace:
                 type: string
                 description: Kubernetes namespace
-                example: Numquam eaque repudiandae quasi reprehenderit vitae.
+                example: Quas tempora quis voluptates.
             phase:
                 type: string
                 description: PVC phase (Bound, Pending, etc.)
-                example: Recusandae consectetur earum aperiam et inventore voluptates.
+                example: Dolore et ipsum doloribus.
             size:
                 type: string
                 description: Storage size
-                example: Unde rerum.
+                example: Ut fuga rem accusantium tempora laboriosam.
             storage_class:
                 type: string
                 description: Storage class
-                example: Officia voluptatibus sunt et.
+                example: Dolor quia.
         description: A persistent volume claim (default view)
         example:
-            access_mode: Ut fuga rem accusantium tempora laboriosam.
-            created_at: Commodi ea nulla quibusdam et.
+            access_mode: Sequi aut minus itaque.
+            created_at: Saepe voluptatem tempora eius illum.
             labels:
-                Et ipsum doloribus.: Beatae qui.
-                Voluptas expedita rerum quos.: Aut corporis qui.
-            name: Consequuntur nihil in voluptate est ut dignissimos.
-            namespace: Quia sunt a qui iusto.
-            phase: Dolor quia.
-            size: Id optio aut inventore quibusdam quisquam.
-            storage_class: Quas tempora quis voluptates.
+                Quo tempore porro molestiae accusamus voluptates possimus.: Velit quis.
+            name: Expedita sed atque.
+            namespace: Itaque ut autem sint repellat voluptatibus.
+            phase: Voluptatem similique.
+            size: Voluptatem fugit pariatur enim.
+            storage_class: Error vero voluptatem suscipit.
         required:
             - name
             - namespace
@@ -1249,74 +1288,64 @@ definitions:
                     $ref: '#/definitions/WorkspaceCondition'
                 description: Workspace conditions
                 example:
-                    - last_transition_time: Dolore sed suscipit in voluptate aut aut.
-                      message: Est repellendus.
-                      reason: Odio blanditiis odio qui rerum molestias quo.
-                      status: Perspiciatis at sed recusandae autem.
-                      type: Aperiam odio.
-                    - last_transition_time: Dolore sed suscipit in voluptate aut aut.
-                      message: Est repellendus.
-                      reason: Odio blanditiis odio qui rerum molestias quo.
-                      status: Perspiciatis at sed recusandae autem.
-                      type: Aperiam odio.
-                    - last_transition_time: Dolore sed suscipit in voluptate aut aut.
-                      message: Est repellendus.
-                      reason: Odio blanditiis odio qui rerum molestias quo.
-                      status: Perspiciatis at sed recusandae autem.
-                      type: Aperiam odio.
-                    - last_transition_time: Dolore sed suscipit in voluptate aut aut.
-                      message: Est repellendus.
-                      reason: Odio blanditiis odio qui rerum molestias quo.
-                      status: Perspiciatis at sed recusandae autem.
-                      type: Aperiam odio.
+                    - last_transition_time: Ut magnam excepturi.
+                      message: Vitae corporis autem amet odio laudantium pariatur.
+                      reason: Et sed dolor est adipisci.
+                      status: Dolore sed suscipit in voluptate aut aut.
+                      type: Est repellendus.
+                    - last_transition_time: Ut magnam excepturi.
+                      message: Vitae corporis autem amet odio laudantium pariatur.
+                      reason: Et sed dolor est adipisci.
+                      status: Dolore sed suscipit in voluptate aut aut.
+                      type: Est repellendus.
             container_state:
                 $ref: '#/definitions/ContainerState'
             cpu_limit:
                 type: string
                 description: CPU limit
-                example: Aut molestiae enim.
+                example: Sunt debitis optio soluta.
             cpu_request:
                 type: string
                 description: CPU request
-                example: Cupiditate est cupiditate ducimus non quas mollitia.
+                example: Dolores numquam asperiores reprehenderit nisi deleniti consequatur.
             created_at:
                 type: string
                 description: Creation timestamp
-                example: Consectetur consequatur labore ipsum.
+                example: Eos atque voluptatem dolorum quia repudiandae.
             image:
                 type: string
                 description: Container image
-                example: Ipsa voluptate voluptas dolorem qui.
+                example: Et suscipit reprehenderit nemo.
             memory_limit:
                 type: string
                 description: Memory limit
-                example: Quia nulla nihil.
+                example: Laborum ab autem pariatur ipsum reprehenderit.
             memory_request:
                 type: string
                 description: Memory request
-                example: Omnis saepe id vitae.
+                example: Totam libero odio.
             name:
                 type: string
                 description: Workspace name
-                example: Molestiae quia tempore ab sunt quibusdam.
+                example: Dolores blanditiis consequatur eos.
             namespace:
                 type: string
                 description: Kubernetes namespace
-                example: Nostrum officia temporibus at et et blanditiis.
+                example: Ducimus tempore facere inventore.
             port:
                 type: integer
                 description: Container port
-                example: 1889849602983432324
+                example: 8369552939118180452
                 format: int64
             ready_replicas:
                 type: integer
                 description: Number of ready replicas
-                example: 2621673586945171566
+                example: 1997307587007705928
                 format: int64
             stopped:
                 type: boolean
                 description: Whether the workspace is stopped
-                example: true
+                example: false
             type:
                 type: string
                 description: 'Workspace type: container, vm, or scratch'
@@ -1336,48 +1365,39 @@ definitions:
                       name: my-workspace-data
                     - mount_path: /home/coder
                       name: my-workspace-data
-                    - mount_path: /home/coder
-                      name: my-workspace-data
-                    - mount_path: /home/coder
-                      name: my-workspace-data
         description: A workspace resource (default view)
         example:
             conditions:
-                - last_transition_time: Dolore sed suscipit in voluptate aut aut.
-                  message: Est repellendus.
-                  reason: Odio blanditiis odio qui rerum molestias quo.
-                  status: Perspiciatis at sed recusandae autem.
-                  type: Aperiam odio.
-                - last_transition_time: Dolore sed suscipit in voluptate aut aut.
-                  message: Est repellendus.
-                  reason: Odio blanditiis odio qui rerum molestias quo.
-                  status: Perspiciatis at sed recusandae autem.
-                  type: Aperiam odio.
-                - last_transition_time: Dolore sed suscipit in voluptate aut aut.
-                  message: Est repellendus.
-                  reason: Odio blanditiis odio qui rerum molestias quo.
-                  status: Perspiciatis at sed recusandae autem.
-                  type: Aperiam odio.
-                - last_transition_time: Dolore sed suscipit in voluptate aut aut.
-                  message: Est repellendus.
-                  reason: Odio blanditiis odio qui rerum molestias quo.
-                  status: Perspiciatis at sed recusandae autem.
-                  type: Aperiam odio.
+                - last_transition_time: Ut magnam excepturi.
+                  message: Vitae corporis autem amet odio laudantium pariatur.
+                  reason: Et sed dolor est adipisci.
+                  status: Dolore sed suscipit in voluptate aut aut.
+                  type: Est repellendus.
+                - last_transition_time: Ut magnam excepturi.
+                  message: Vitae corporis autem amet odio laudantium pariatur.
+                  reason: Et sed dolor est adipisci.
+                  status: Dolore sed suscipit in voluptate aut aut.
+                  type: Est repellendus.
+                - last_transition_time: Ut magnam excepturi.
+                  message: Vitae corporis autem amet odio laudantium pariatur.
+                  reason: Et sed dolor est adipisci.
+                  status: Dolore sed suscipit in voluptate aut aut.
+                  type: Est repellendus.
             container_state:
-                message: Quas nihil sed sapiente.
-                reason: Alias deleniti.
-                started_at: Aut alias.
+                message: Perspiciatis at sed recusandae autem.
+                reason: Sapiente similique aut alias velit aperiam odio.
+                started_at: Odio blanditiis odio qui rerum molestias quo.
                 state: waiting
-            cpu_limit: Voluptatem molestiae voluptatem odit.
-            cpu_request: Voluptatem corporis.
-            created_at: Quae aliquid quibusdam eum.
-            image: Tempore necessitatibus vero.
-            memory_limit: Officia soluta voluptatem autem qui cumque.
-            memory_request: Error ut enim dolore voluptates vel sunt.
-            name: Unde blanditiis aut itaque a occaecati enim.
-            namespace: Eum qui non omnis fuga.
-            port: 5722757023611691011
-            ready_replicas: 752717179665435442
+            cpu_limit: Alias exercitationem suscipit.
+            cpu_request: Qui esse exercitationem consequuntur impedit sint itaque.
+            created_at: Aut dignissimos placeat blanditiis officiis quaerat.
+            image: Ut quis.
+            memory_limit: Voluptas optio vel dignissimos deleniti numquam est.
+            memory_request: Quidem ea ipsum fugiat a enim.
+            name: Sunt eveniet maxime.
+            namespace: Doloremque sunt sed eius.
+            port: 4232258096870363152
+            ready_replicas: 4376092879311850003
             stopped: true
             type: vm
             volume_mounts:
@@ -1399,30 +1419,30 @@ definitions:
             last_transition_time:
                 type: string
                 description: Last transition time
-                example: Qui laudantium.
+                example: Non omnis fuga necessitatibus sit tempore necessitatibus.
             message:
                 type: string
                 description: Detailed message
-                example: Non eum.
+                example: Aut itaque a occaecati enim est eum.
             reason:
                 type: string
                 description: Brief reason
-                example: Aut explicabo quae.
+                example: Labore ipsum recusandae qui unde.
             status:
                 type: string
                 description: Condition status
-                example: Laborum ab autem pariatur ipsum reprehenderit.
+                example: Iusto eum consectetur.
             type:
                 type: string
                 description: Condition type
-                example: Sunt debitis optio soluta.
+                example: Repellendus optio praesentium quo facere voluptatem deleniti.
         description: Condition of a workspace
         example:
-            last_transition_time: Repellendus optio praesentium quo facere voluptatem deleniti.
-            message: Fuga sed cumque laudantium voluptas.
-            reason: Enim qui occaecati officiis.
-            status: Repellendus officia ut occaecati officia non.
-            type: Cumque error ratione ut enim quos error.
+            last_transition_time: Voluptatibus tempore quia quae aliquid quibusdam eum.
+            message: Officia soluta voluptatem autem qui cumque.
+            reason: Molestiae voluptatem odit.
+            status: Ut enim dolore voluptates vel sunt sed.
+            type: Ex eaque voluptatem corporis dolor.
     WorkspaceContainer:
         title: WorkspaceContainer
         type: object
@@ -1468,7 +1488,7 @@ definitions:
                 type: integer
                 description: Container port
                 default: 8080
-                example: 5453871012892101073
+                example: 435978180106199565
                 format: int64
         description: Container specification for a workspace
         example:
@@ -1480,7 +1500,7 @@ definitions:
             memory_limit: 2Gi
             memory_request: 512Mi
             name: code-server
-            port: 4895620423321309028
+            port: 4382964225324264323
         required:
             - name
             - image
