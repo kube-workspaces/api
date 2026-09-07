@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -41,14 +42,18 @@ const LocalAuthSystemNamespace = "kube-workspaces-system"
 
 // Config holds the resolved authentication configuration.
 type Config struct {
-	Enabled                 bool
-	IssuerURL               string
-	ClientID                string
-	ClientSecret            string
-	Scopes                  []string
-	UsernameClaim           string
-	GroupsClaim             string
-	SigningKey              []byte
+	Enabled       bool
+	IssuerURL     string
+	ClientID      string
+	ClientSecret  string
+	Scopes        []string
+	UsernameClaim string
+	GroupsClaim   string
+	SigningKey    []byte
+	// PreviousSigningKey is the signing key that was in use before the current
+	// one. It is retained (for up to one TokenExpiry after a rotation) so that
+	// sessions minted with it keep validating while key rotation settles.
+	PreviousSigningKey      []byte
 	TokenExpiry             time.Duration
 	RefreshExpiry           time.Duration
 	PersonalNamespaces      PersonalNamespacesConfig
@@ -73,12 +78,27 @@ type RegistrationConfig struct {
 	RequireApproval bool
 }
 
+// SessionSigningKeys returns the signing keys acceptable for validating
+// session tokens: the current key first, followed by any rotation predecessor
+// that is still within its acceptance window.
+func (c *Config) SessionSigningKeys() [][]byte {
+	keys := make([][]byte, 0, 2)
+	if len(c.SigningKey) > 0 {
+		keys = append(keys, c.SigningKey)
+	}
+	if len(c.PreviousSigningKey) > 0 {
+		keys = append(keys, c.PreviousSigningKey)
+	}
+	return keys
+}
+
 // ConfigProvider loads and caches the AuthConfig from Kubernetes.
 type ConfigProvider struct {
 	dynamicClient dynamic.Interface
 	mu            sync.RWMutex
 	config        *Config
 	lastFetch     time.Time
+	rotatedAt     time.Time
 	cacheDuration time.Duration
 }
 
@@ -127,9 +147,32 @@ func (p *ConfigProvider) refresh(ctx context.Context) (*Config, error) {
 		p.lastFetch = time.Now()
 		return p.config, nil
 	}
+	p.applyKeyRotation(cfg)
 	p.config = cfg
 	p.lastFetch = time.Now()
 	return cfg, nil
+}
+
+// applyKeyRotation carries the key-rotation state from the previously cached
+// config onto a freshly loaded one. When the primary signing key changes, the
+// retired key is kept as PreviousSigningKey so tokens minted under it stay
+// valid. Once a retired key has been out of use for longer than one token
+// lifetime it is dropped.
+func (p *ConfigProvider) applyKeyRotation(cfg *Config) {
+	now := time.Now()
+	if p.config == nil {
+		return
+	}
+	switch {
+	case bytes.Equal(p.config.SigningKey, cfg.SigningKey):
+		cfg.PreviousSigningKey = p.config.PreviousSigningKey
+		if len(cfg.PreviousSigningKey) > 0 && now.Sub(p.rotatedAt) > cfg.TokenExpiry {
+			cfg.PreviousSigningKey = nil
+		}
+	case len(cfg.SigningKey) > 0:
+		cfg.PreviousSigningKey = p.config.SigningKey
+		p.rotatedAt = now
+	}
 }
 
 func (p *ConfigProvider) loadFromCluster(ctx context.Context) (*Config, error) {

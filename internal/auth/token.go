@@ -80,8 +80,27 @@ func CreateSessionToken(email, displayName, role string, groups []string, signin
 	return encodedPayload + "." + signature, nil
 }
 
-// ValidateSessionToken validates and decodes a session token.
+// ValidateSessionToken validates and decodes a session token signed with the
+// given signing key.
 func ValidateSessionToken(tokenStr string, signingKey []byte) (*SessionToken, error) {
+	if len(signingKey) == 0 {
+		return nil, fmt.Errorf("session signing key is not configured")
+	}
+	return validateSessionTokenWithKeys(tokenStr, [][]byte{signingKey})
+}
+
+// ValidateSessionTokenWithKeys validates and decodes a session token against
+// any of the given signing keys. The current key should be first; keys retired
+// by rotation should follow so that sessions minted before the rotation remain
+// valid while they expire naturally.
+func ValidateSessionTokenWithKeys(tokenStr string, signingKeys [][]byte) (*SessionToken, error) {
+	if len(signingKeys) == 0 {
+		return nil, fmt.Errorf("session signing key is not configured")
+	}
+	return validateSessionTokenWithKeys(tokenStr, signingKeys)
+}
+
+func validateSessionTokenWithKeys(tokenStr string, signingKeys [][]byte) (*SessionToken, error) {
 	parts := strings.SplitN(tokenStr, ".", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid token format")
@@ -90,12 +109,21 @@ func ValidateSessionToken(tokenStr string, signingKey []byte) (*SessionToken, er
 	encodedPayload := parts[0]
 	signature := parts[1]
 
-	// Verify signature
-	mac := hmac.New(sha256.New, signingKey)
-	mac.Write([]byte(encodedPayload))
-	expectedSig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-
-	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
+	// Verify signature against the current key and any rotation predecessors.
+	valid := false
+	for _, key := range signingKeys {
+		if len(key) == 0 {
+			continue
+		}
+		mac := hmac.New(sha256.New, key)
+		mac.Write([]byte(encodedPayload))
+		expectedSig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+		if hmac.Equal([]byte(signature), []byte(expectedSig)) {
+			valid = true
+			break
+		}
+	}
+	if !valid {
 		return nil, fmt.Errorf("invalid token signature")
 	}
 

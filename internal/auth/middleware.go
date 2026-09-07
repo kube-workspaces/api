@@ -96,7 +96,7 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 }
 
 func validateAndGetUser(ctx context.Context, tokenStr string, cfg *Config, provider *ConfigProvider) (*UserInfo, error) {
-	token, err := ValidateSessionToken(tokenStr, cfg.SigningKey)
+	token, err := ValidateSessionTokenWithKeys(tokenStr, cfg.SessionSigningKeys())
 	if err != nil {
 		return nil, fmt.Errorf("invalid session: %w", err)
 	}
