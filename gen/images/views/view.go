@@ -66,6 +66,10 @@ type ImageView struct {
 	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
 	// a user/password) to be seeded into the guest at first boot
 	DefaultCloudInit *bool
+	// Reserved user-data for the guest (cloud-init). Empty by default; later used
+	// to seed first-boot configuration when cloud-init is supported. Not yet
+	// consumed
+	DefaultUserData *string
 	// Default home directory for the default user
 	DefaultHomedir *string
 	// Default shell for exec/console sessions (e.g. /bin/bash)
@@ -149,6 +153,7 @@ var (
 			"default_user",
 			"default_password",
 			"default_cloud_init",
+			"default_user_data",
 			"default_homedir",
 			"default_shell",
 			"links",

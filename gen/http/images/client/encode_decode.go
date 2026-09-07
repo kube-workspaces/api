@@ -199,6 +199,7 @@ func unmarshalImageResponseToImagesImage(v *ImageResponse) *images.Image {
 		DefaultUser:         v.DefaultUser,
 		DefaultPassword:     v.DefaultPassword,
 		DefaultCloudInit:    v.DefaultCloudInit,
+		DefaultUserData:     v.DefaultUserData,
 		DefaultHomedir:      v.DefaultHomedir,
 		DefaultShell:        v.DefaultShell,
 	}

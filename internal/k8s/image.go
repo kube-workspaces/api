@@ -38,6 +38,7 @@ type Image struct {
 	DefaultUser           string
 	DefaultPassword       string
 	DefaultCloudInit      bool
+	DefaultUserData       string
 	DefaultHomedir        string
 	DefaultShell          string
 	Links                 []ImageLink
@@ -262,6 +263,7 @@ func parseImage(obj *unstructured.Unstructured) (*Image, error) {
 	img.DefaultUser = strField(spec, "defaultUser")
 	img.DefaultPassword = strField(spec, "defaultPassword")
 	img.DefaultCloudInit = boolField(spec, "defaultCloudInit")
+	img.DefaultUserData = strField(spec, "defaultUserData")
 	img.DefaultHomedir = strField(spec, "defaultHomedir")
 	img.DefaultShell = strField(spec, "defaultShell")
 

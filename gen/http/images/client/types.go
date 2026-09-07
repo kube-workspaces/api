@@ -52,6 +52,10 @@ type CreateRequestBody struct {
 	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
 	// a user/password) to be seeded into the guest at first boot
 	DefaultCloudInit *bool `form:"default_cloud_init,omitempty" json:"default_cloud_init,omitempty" xml:"default_cloud_init,omitempty"`
+	// Reserved user-data for the guest (cloud-init). Empty by default; later used
+	// to seed first-boot configuration when cloud-init is supported. Not yet
+	// consumed
+	DefaultUserData *string `form:"default_user_data,omitempty" json:"default_user_data,omitempty" xml:"default_user_data,omitempty"`
 	// Default home directory for the default user
 	DefaultHomedir *string `form:"default_homedir,omitempty" json:"default_homedir,omitempty" xml:"default_homedir,omitempty"`
 	// Default shell for exec/console sessions (e.g. /bin/bash)
@@ -120,6 +124,10 @@ type CreateResponseBody struct {
 	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
 	// a user/password) to be seeded into the guest at first boot
 	DefaultCloudInit *bool `form:"default_cloud_init,omitempty" json:"default_cloud_init,omitempty" xml:"default_cloud_init,omitempty"`
+	// Reserved user-data for the guest (cloud-init). Empty by default; later used
+	// to seed first-boot configuration when cloud-init is supported. Not yet
+	// consumed
+	DefaultUserData *string `form:"default_user_data,omitempty" json:"default_user_data,omitempty" xml:"default_user_data,omitempty"`
 	// Default home directory for the default user
 	DefaultHomedir *string `form:"default_homedir,omitempty" json:"default_homedir,omitempty" xml:"default_homedir,omitempty"`
 	// Default shell for exec/console sessions (e.g. /bin/bash)
@@ -180,6 +188,10 @@ type ImageResponse struct {
 	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
 	// a user/password) to be seeded into the guest at first boot
 	DefaultCloudInit *bool `form:"default_cloud_init,omitempty" json:"default_cloud_init,omitempty" xml:"default_cloud_init,omitempty"`
+	// Reserved user-data for the guest (cloud-init). Empty by default; later used
+	// to seed first-boot configuration when cloud-init is supported. Not yet
+	// consumed
+	DefaultUserData *string `form:"default_user_data,omitempty" json:"default_user_data,omitempty" xml:"default_user_data,omitempty"`
 	// Default home directory for the default user
 	DefaultHomedir *string `form:"default_homedir,omitempty" json:"default_homedir,omitempty" xml:"default_homedir,omitempty"`
 	// Default shell for exec/console sessions (e.g. /bin/bash)
@@ -346,6 +358,7 @@ func NewCreateRequestBody(p *images.CreateImagePayload) *CreateRequestBody {
 		DefaultUser:         p.DefaultUser,
 		DefaultPassword:     p.DefaultPassword,
 		DefaultCloudInit:    p.DefaultCloudInit,
+		DefaultUserData:     p.DefaultUserData,
 		DefaultHomedir:      p.DefaultHomedir,
 		DefaultShell:        p.DefaultShell,
 		DefaultUID:          p.DefaultUID,
@@ -440,6 +453,7 @@ func NewCreateImageCreated(body *CreateResponseBody) *imagesviews.ImageView {
 		DefaultUser:         body.DefaultUser,
 		DefaultPassword:     body.DefaultPassword,
 		DefaultCloudInit:    body.DefaultCloudInit,
+		DefaultUserData:     body.DefaultUserData,
 		DefaultHomedir:      body.DefaultHomedir,
 		DefaultShell:        body.DefaultShell,
 	}

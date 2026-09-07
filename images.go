@@ -95,6 +95,9 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 	if p.DefaultCloudInit != nil && *p.DefaultCloudInit {
 		spec["defaultCloudInit"] = true
 	}
+	if p.DefaultUserData != nil {
+		spec["defaultUserData"] = *p.DefaultUserData
+	}
 	if p.DefaultHomedir != nil {
 		spec["defaultHomedir"] = *p.DefaultHomedir
 	}
@@ -211,6 +214,7 @@ func imageToResult(img *k8s.Image) *images.Image {
 		ImageHomepageURL: strPtr(img.ImageHomepageURL),
 		DefaultUser:      strPtr(img.DefaultUser),
 		DefaultPassword:  strPtr(img.DefaultPassword),
+		DefaultUserData:  strPtr(img.DefaultUserData),
 		DefaultHomedir:   strPtr(img.DefaultHomedir),
 		DefaultShell:     strPtr(img.DefaultShell),
 		DefaultUID:       img.DefaultUID,
