@@ -41,6 +41,20 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 			return
 		}
 
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+
+		// Reserve this workspace's VNC slot before dialing. KubeVirt's VNC is
+		// single-session; without a guard a second client would be denied by the
+		// VMI mid-handshake, but refusing here keeps the behaviour predictable
+		// and lets the UI show a clean "another session holds the display" hint.
+		handle := &sessionHandle{cancel: cancel}
+		if _, ok := vncSessions.acquire(consoleKey(namespace, name), handle); !ok {
+			http.Error(w, "VNC display is in use for this workspace", http.StatusConflict)
+			return
+		}
+		defer vncSessions.release(consoleKey(namespace, name), handle)
+
 		// Build the VMI VNC subresource URL on the API server:
 		// /apis/subresources.kubevirt.io/v1/namespaces/{ns}/virtualmachineinstances/{name}/vnc
 		vncURL, err := vmVNCURL(opts.RESTConfig, namespace, name)
@@ -84,8 +98,10 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 		}
 		defer clientConn.Close()
 
-		ctx, cancel := context.WithCancel(r.Context())
-		defer cancel()
+		handle.close = func() {
+			clientConn.Close()
+			vmConn.Close()
+		}
 
 		var wg sync.WaitGroup
 

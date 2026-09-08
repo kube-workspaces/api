@@ -32,6 +32,23 @@ func VMConsoleHandler(opts *Options) http.HandlerFunc {
 			return
 		}
 
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+
+		// Reserve this workspace's serial-console slot before dialing. KubeVirt
+		// serial consoles are single-session and last-wins — a blind dial would
+		// silently sever an existing session. A second bridge is therefore only
+		// accepted once the UI has explicitly taken the console over
+		// (POST /v1/workspaces/{name}/console/takeover).
+		handle := &sessionHandle{cancel: cancel}
+		var acquired bool
+		_, acquired = serialSessions.acquire(consoleKey(namespace, name), handle)
+		if !acquired {
+			http.Error(w, "serial console is in use for this workspace", http.StatusConflict)
+			return
+		}
+		defer serialSessions.release(consoleKey(namespace, name), handle)
+
 		// Build the VMI console subresource URL on the API server:
 		// /apis/subresources.kubevirt.io/v1/namespaces/{ns}/virtualmachineinstances/{name}/console
 		consoleURL, err := vmConsoleURL(opts.RESTConfig, namespace, name)
@@ -75,8 +92,24 @@ func VMConsoleHandler(opts *Options) http.HandlerFunc {
 		}
 		defer clientConn.Close()
 
-		ctx, cancel := context.WithCancel(r.Context())
-		defer cancel()
+		// When a take-over evicts this session, send a clean close with an
+		// explicit reason so the browser treats it as intentional rather than
+		// starting an auto-reconnect war against the new owner.
+		handle.close = func() {
+			_ = clientConn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "taken over by another user"),
+				time.Now().Add(time.Second))
+			clientConn.Close()
+			vmConn.Close()
+		}
+
+		// If a take-over superseded us while dialing/upgrading, abandon this
+		// half-built bridge so it doesn't straddle the slot the new owner holds.
+		if !serialSessions.stillCurrent(consoleKey(namespace, name), handle) {
+			clientConn.Close()
+			vmConn.Close()
+			return
+		}
 
 		var wg sync.WaitGroup
 

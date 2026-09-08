@@ -1469,24 +1469,27 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		execHandler := exec.Handler(execOpts)
 		vmConsoleHandler := exec.VMConsoleHandler(execOpts)
 		vmVNCHandler := exec.VMVNCHandler(execOpts)
-		mux.Handle("GET", "/v1/workspaces/{name}/exec", func(w http.ResponseWriter, r *http.Request) {
-			// Auth check: require editor or admin role
+
+		// requireEditorAccess enforces editor/admin access plus namespace scoping
+		// for the console endpoints and returns the resolved workspace name and
+		// namespace. Shared by the exec, VNC, serial-console status and take-over
+		// routes.
+		requireEditorAccess := func(w http.ResponseWriter, r *http.Request) (ns, name string, ok bool) {
 			if auth.AuthEnabled(r.Context()) {
 				user := auth.UserFromContext(r.Context())
 				if user == nil {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusUnauthorized)
 					json.NewEncoder(w).Encode(map[string]string{"error": "authentication required"})
-					return
+					return "", "", false
 				}
 				if !auth.HasMinimumRole(user.Role, "editor") {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusForbidden)
 					json.NewEncoder(w).Encode(map[string]string{"error": "editor or admin role required for console access"})
-					return
+					return "", "", false
 				}
-				// Check namespace access
-				ns := r.URL.Query().Get("namespace")
+				ns = r.URL.Query().Get("namespace")
 				if ns == "" {
 					ns = "workspaces"
 				}
@@ -1494,14 +1497,25 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusForbidden)
 					json.NewEncoder(w).Encode(map[string]string{"error": "no access to namespace"})
-					return
+					return "", "", false
+				}
+			} else {
+				ns = r.URL.Query().Get("namespace")
+				if ns == "" {
+					ns = "workspaces"
 				}
 			}
+			name = r.PathValue("name")
+			if name == "" {
+				name = extractPathParam(r, "name", 4)
+			}
+			return ns, name, true
+		}
 
-			name := extractPathParam(r, "name", 4)
-			ns := r.URL.Query().Get("namespace")
-			if ns == "" {
-				ns = "workspaces"
+		mux.Handle("GET", "/v1/workspaces/{name}/exec", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
 			}
 
 			// VM workspaces expose the guest serial console instead of a pod exec.
@@ -1538,41 +1552,13 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 
 		// Workspace VNC display: GET /v1/workspaces/{name}/vnc
 		// Upgrades to WebSocket and bridges to the KubeVirt VMI VNC subresource
-		// (raw RFB stream for a noVNC client). VM workspaces only.
+		// (raw RFB stream for a noVNC client). VM workspaces only. The bridge is
+		// single-session — a second connection gets 409 while another holds it.
 		// Requires editor or admin role when auth is enabled.
 		mux.Handle("GET", "/v1/workspaces/{name}/vnc", func(w http.ResponseWriter, r *http.Request) {
-			// Auth check: require editor or admin role
-			if auth.AuthEnabled(r.Context()) {
-				user := auth.UserFromContext(r.Context())
-				if user == nil {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]string{"error": "authentication required"})
-					return
-				}
-				if !auth.HasMinimumRole(user.Role, "editor") {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusForbidden)
-					json.NewEncoder(w).Encode(map[string]string{"error": "editor or admin role required for console access"})
-					return
-				}
-				// Check namespace access
-				ns := r.URL.Query().Get("namespace")
-				if ns == "" {
-					ns = "workspaces"
-				}
-				if !auth.UserHasNamespaceAccess(user, ns) {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusForbidden)
-					json.NewEncoder(w).Encode(map[string]string{"error": "no access to namespace"})
-					return
-				}
-			}
-
-			name := extractPathParam(r, "name", 4)
-			ns := r.URL.Query().Get("namespace")
-			if ns == "" {
-				ns = "workspaces"
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
 			}
 
 			// Only VM workspaces expose a graphical display.
@@ -1584,6 +1570,45 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			}
 
 			vmVNCHandler(w, r)
+		})
+
+		// Serial console session status: GET /v1/workspaces/{name}/console/status
+		// KubeVirt's serial console is single-session and last-wins, so the UI
+		// checks status before connecting and asks for consent before taking a
+		// held console over rather than silently severing the other user.
+		mux.Handle("GET", "/v1/workspaces/{name}/console/status", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "serial console is only available for VM workspaces"})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"inUse": exec.SerialConsoleInUse(ns, name)})
+		})
+
+		// Serial console take-over: POST /v1/workspaces/{name}/console/takeover
+		// Force-ends the active serial console session (if any) so the caller
+		// can open a fresh one. Only invoked after the user explicitly confirms
+		// wanting to disconnect whoever currently holds the console.
+		mux.Handle("POST", "/v1/workspaces/{name}/console/takeover", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "serial console is only available for VM workspaces"})
+				return
+			}
+			wasInUse := exec.TakeOverSerialConsole(ns, name)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
 		})
 	}
 
