@@ -103,6 +103,14 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 			vmConn.Close()
 		}
 
+		// Force-close both sockets when the session is cancelled (TTL expiry or
+		// API shutdown) so blocked ReadMessage pumps unwind and the slot frees.
+		go func() {
+			<-ctx.Done()
+			vmConn.Close()
+			clientConn.Close()
+		}()
+
 		var wg sync.WaitGroup
 
 		// client → VM: forward the raw RFB input stream

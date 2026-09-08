@@ -111,6 +111,15 @@ func VMConsoleHandler(opts *Options) http.HandlerFunc {
 			return
 		}
 
+		// Force-close both sockets when the session is cancelled (take-over, TTL
+		// expiry, or API shutdown). Without this a blocked ReadMessage keeps the
+		// pumps (and the handler) alive forever, wedging the single-session slot.
+		go func() {
+			<-ctx.Done()
+			vmConn.Close()
+			clientConn.Close()
+		}()
+
 		var wg sync.WaitGroup
 
 		// client → VM: forward raw input; swallow terminal resize control messages
