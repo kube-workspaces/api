@@ -25,6 +25,7 @@ type Server struct {
 	Delete http.Handler
 	Start  http.Handler
 	Stop   http.Handler
+	Reset  http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -60,6 +61,7 @@ func New(
 			{"Delete", "DELETE", "/v1/workspaces/{name}"},
 			{"Start", "POST", "/v1/workspaces/{name}/start"},
 			{"Stop", "POST", "/v1/workspaces/{name}/stop"},
+			{"Reset", "POST", "/v1/workspaces/{name}/reset"},
 		},
 		List:   NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
 		Get:    NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
@@ -67,6 +69,7 @@ func New(
 		Delete: NewDeleteHandler(e.Delete, mux, decoder, encoder, errhandler, formatter),
 		Start:  NewStartHandler(e.Start, mux, decoder, encoder, errhandler, formatter),
 		Stop:   NewStopHandler(e.Stop, mux, decoder, encoder, errhandler, formatter),
+		Reset:  NewResetHandler(e.Reset, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -81,6 +84,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Delete = m(s.Delete)
 	s.Start = m(s.Start)
 	s.Stop = m(s.Stop)
+	s.Reset = m(s.Reset)
 }
 
 // MethodNames returns the methods served.
@@ -94,6 +98,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountDeleteHandler(mux, h.Delete)
 	MountStartHandler(mux, h.Start)
 	MountStopHandler(mux, h.Stop)
+	MountResetHandler(mux, h.Reset)
 }
 
 // Mount configures the mux to serve the workspaces endpoints.
@@ -396,6 +401,59 @@ func NewStopHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "stop")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "workspaces")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountResetHandler configures the mux to serve the "workspaces" service
+// "reset" endpoint.
+func MountResetHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/v1/workspaces/{name}/reset", f)
+}
+
+// NewResetHandler creates a HTTP handler which loads the HTTP request and
+// calls the "workspaces" service "reset" endpoint.
+func NewResetHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeResetRequest(mux, decoder)
+		encodeResponse = EncodeResetResponse(encoder)
+		encodeError    = EncodeResetError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "reset")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "workspaces")
 		payload, err := decodeRequest(r)
 		if err != nil {

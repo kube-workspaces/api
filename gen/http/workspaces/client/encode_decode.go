@@ -558,6 +558,112 @@ func DecodeStopResponse(decoder func(*http.Response) goahttp.Decoder, restoreBod
 	}
 }
 
+// BuildResetRequest instantiates a HTTP request object with method and path
+// set to call the "workspaces" service "reset" endpoint
+func (c *Client) BuildResetRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		name string
+	)
+	{
+		p, ok := v.(*workspaces.ResetPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("workspaces", "reset", "*workspaces.ResetPayload", v)
+		}
+		name = p.Name
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ResetWorkspacesPath(name)}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("workspaces", "reset", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeResetRequest returns an encoder for requests sent to the workspaces
+// reset server.
+func EncodeResetRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*workspaces.ResetPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("workspaces", "reset", "*workspaces.ResetPayload", v)
+		}
+		values := req.URL.Query()
+		values.Add("namespace", p.Namespace)
+		req.URL.RawQuery = values.Encode()
+		return nil
+	}
+}
+
+// DecodeResetResponse returns a decoder for responses returned by the
+// workspaces reset endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeResetResponse may return the following errors:
+//   - "invalid" (type workspaces.Invalid): http.StatusBadRequest
+//   - "not_found" (type workspaces.NotFound): http.StatusNotFound
+//   - error: internal error
+func DecodeResetResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ResetResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("workspaces", "reset", err)
+			}
+			p := NewResetWorkspaceOK(&body)
+			view := "default"
+			vres := &workspacesviews.Workspace{Projected: p, View: view}
+			if err = workspacesviews.ValidateWorkspace(vres); err != nil {
+				return nil, goahttp.ErrValidationError("workspaces", "reset", err)
+			}
+			res := workspaces.NewWorkspace(vres)
+			return res, nil
+		case http.StatusBadRequest:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("workspaces", "reset", err)
+			}
+			return nil, NewResetInvalid(body)
+		case http.StatusNotFound:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("workspaces", "reset", err)
+			}
+			return nil, NewResetNotFound(body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("workspaces", "reset", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // unmarshalWorkspaceResponseToWorkspacesWorkspace builds a value of type
 // *workspaces.Workspace from a value of type *WorkspaceResponse.
 func unmarshalWorkspaceResponseToWorkspacesWorkspace(v *WorkspaceResponse) *workspaces.Workspace {

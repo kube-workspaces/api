@@ -362,6 +362,74 @@ func EncodeStopError(encoder func(context.Context, http.ResponseWriter) goahttp.
 	}
 }
 
+// EncodeResetResponse returns an encoder for responses returned by the
+// workspaces reset endpoint.
+func EncodeResetResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res := v.(*workspacesviews.Workspace)
+		enc := encoder(ctx, w)
+		body := NewResetResponseBody(res.Projected)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeResetRequest returns a decoder for requests sent to the workspaces
+// reset endpoint.
+func DecodeResetRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*workspaces.ResetPayload, error) {
+	return func(r *http.Request) (*workspaces.ResetPayload, error) {
+		var payload *workspaces.ResetPayload
+		var (
+			name      string
+			namespace string
+
+			params = mux.Vars(r)
+		)
+		name = params["name"]
+		namespaceRaw := r.URL.Query().Get("namespace")
+		if namespaceRaw != "" {
+			namespace = namespaceRaw
+		} else {
+			namespace = "workspaces"
+		}
+		payload = NewResetPayload(name, namespace)
+
+		return payload, nil
+	}
+}
+
+// EncodeResetError returns an encoder for errors returned by the reset
+// workspaces endpoint.
+func EncodeResetError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "invalid":
+			var res workspaces.Invalid
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		case "not_found":
+			var res workspaces.NotFound
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // marshalWorkspacesWorkspaceToWorkspaceResponse builds a value of type
 // *WorkspaceResponse from a value of type *workspaces.Workspace.
 func marshalWorkspacesWorkspaceToWorkspaceResponse(v *workspaces.Workspace) *WorkspaceResponse {

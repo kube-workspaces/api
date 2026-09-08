@@ -40,3 +40,8 @@ func StartWorkspacesPath(name string) string {
 func StopWorkspacesPath(name string) string {
 	return fmt.Sprintf("/v1/workspaces/%v/stop", name)
 }
+
+// ResetWorkspacesPath returns the URL path to the workspaces service reset HTTP endpoint.
+func ResetWorkspacesPath(name string) string {
+	return fmt.Sprintf("/v1/workspaces/%v/reset", name)
+}

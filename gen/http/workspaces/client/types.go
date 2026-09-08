@@ -181,6 +181,41 @@ type StopResponseBody struct {
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 }
 
+// ResetResponseBody is the type of the "workspaces" service "reset" endpoint
+// HTTP response body.
+type ResetResponseBody struct {
+	// Workspace name
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// Kubernetes namespace
+	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty" xml:"namespace,omitempty"`
+	// Workspace type: container, vm, or scratch
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
+	// Container image
+	Image *string `form:"image,omitempty" json:"image,omitempty" xml:"image,omitempty"`
+	// Container port
+	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
+	// CPU request
+	CPURequest *string `form:"cpu_request,omitempty" json:"cpu_request,omitempty" xml:"cpu_request,omitempty"`
+	// Memory request
+	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
+	// CPU limit
+	CPULimit *string `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty" xml:"cpu_limit,omitempty"`
+	// Memory limit
+	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	// Number of ready replicas
+	ReadyReplicas *int `form:"ready_replicas,omitempty" json:"ready_replicas,omitempty" xml:"ready_replicas,omitempty"`
+	// Container state
+	ContainerState *ContainerStateResponseBody `form:"container_state,omitempty" json:"container_state,omitempty" xml:"container_state,omitempty"`
+	// Workspace conditions
+	Conditions []*WorkspaceConditionResponseBody `form:"conditions,omitempty" json:"conditions,omitempty" xml:"conditions,omitempty"`
+	// Whether the workspace is stopped
+	Stopped *bool `form:"stopped,omitempty" json:"stopped,omitempty" xml:"stopped,omitempty"`
+	// Creation timestamp
+	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	// Attached volumes
+	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+}
+
 // WorkspaceResponse is used to define fields on response body types.
 type WorkspaceResponse struct {
 	// Workspace name
@@ -642,6 +677,64 @@ func NewStopWorkspaceOK(body *StopResponseBody) *workspacesviews.WorkspaceView {
 
 // NewStopNotFound builds a workspaces service stop endpoint not_found error.
 func NewStopNotFound(body string) workspaces.NotFound {
+	v := workspaces.NotFound(body)
+
+	return v
+}
+
+// NewResetWorkspaceOK builds a "workspaces" service "reset" endpoint result
+// from a HTTP "OK" response.
+func NewResetWorkspaceOK(body *ResetResponseBody) *workspacesviews.WorkspaceView {
+	v := &workspacesviews.WorkspaceView{
+		Name:          body.Name,
+		Namespace:     body.Namespace,
+		Type:          body.Type,
+		Image:         body.Image,
+		Port:          body.Port,
+		CPURequest:    body.CPURequest,
+		MemoryRequest: body.MemoryRequest,
+		CPULimit:      body.CPULimit,
+		MemoryLimit:   body.MemoryLimit,
+		ReadyReplicas: body.ReadyReplicas,
+		Stopped:       body.Stopped,
+		CreatedAt:     body.CreatedAt,
+	}
+	if body.ContainerState != nil {
+		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
+	}
+	if body.Conditions != nil {
+		v.Conditions = make([]*workspacesviews.WorkspaceConditionView, len(body.Conditions))
+		for i, val := range body.Conditions {
+			if val == nil {
+				v.Conditions[i] = nil
+				continue
+			}
+			v.Conditions[i] = unmarshalWorkspaceConditionResponseBodyToWorkspacesviewsWorkspaceConditionView(val)
+		}
+	}
+	if body.VolumeMounts != nil {
+		v.VolumeMounts = make([]*workspacesviews.VolumeMountView, len(body.VolumeMounts))
+		for i, val := range body.VolumeMounts {
+			if val == nil {
+				v.VolumeMounts[i] = nil
+				continue
+			}
+			v.VolumeMounts[i] = unmarshalVolumeMountResponseBodyToWorkspacesviewsVolumeMountView(val)
+		}
+	}
+
+	return v
+}
+
+// NewResetInvalid builds a workspaces service reset endpoint invalid error.
+func NewResetInvalid(body string) workspaces.Invalid {
+	v := workspaces.Invalid(body)
+
+	return v
+}
+
+// NewResetNotFound builds a workspaces service reset endpoint not_found error.
+func NewResetNotFound(body string) workspaces.NotFound {
 	v := workspaces.NotFound(body)
 
 	return v

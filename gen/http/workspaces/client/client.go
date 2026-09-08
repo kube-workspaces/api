@@ -35,6 +35,9 @@ type Client struct {
 	// Stop Doer is the HTTP client used to make requests to the stop endpoint.
 	StopDoer goahttp.Doer
 
+	// Reset Doer is the HTTP client used to make requests to the reset endpoint.
+	ResetDoer goahttp.Doer
+
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -61,6 +64,7 @@ func NewClient(
 		DeleteDoer:          doer,
 		StartDoer:           doer,
 		StopDoer:            doer,
+		ResetDoer:           doer,
 		RestoreResponseBody: restoreBody,
 		scheme:              scheme,
 		host:                host,
@@ -208,6 +212,30 @@ func (c *Client) Stop() goa.Endpoint {
 		resp, err := c.StopDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("workspaces", "stop", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// Reset returns an endpoint that makes HTTP requests to the workspaces service
+// reset server.
+func (c *Client) Reset() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeResetRequest(c.encoder)
+		decodeResponse = DecodeResetResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildResetRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ResetDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("workspaces", "reset", err)
 		}
 		return decodeResponse(resp)
 	}

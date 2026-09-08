@@ -21,10 +21,11 @@ type Client struct {
 	DeleteEndpoint goa.Endpoint
 	StartEndpoint  goa.Endpoint
 	StopEndpoint   goa.Endpoint
+	ResetEndpoint  goa.Endpoint
 }
 
 // NewClient initializes a "workspaces" service client given the endpoints.
-func NewClient(list, get, create, delete_, start, stop goa.Endpoint) *Client {
+func NewClient(list, get, create, delete_, start, stop, reset goa.Endpoint) *Client {
 	return &Client{
 		ListEndpoint:   list,
 		GetEndpoint:    get,
@@ -32,6 +33,7 @@ func NewClient(list, get, create, delete_, start, stop goa.Endpoint) *Client {
 		DeleteEndpoint: delete_,
 		StartEndpoint:  start,
 		StopEndpoint:   stop,
+		ResetEndpoint:  reset,
 	}
 }
 
@@ -101,6 +103,20 @@ func (c *Client) Start(ctx context.Context, p *StartPayload) (res *Workspace, er
 func (c *Client) Stop(ctx context.Context, p *StopPayload) (res *Workspace, err error) {
 	var ires any
 	ires, err = c.StopEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*Workspace), nil
+}
+
+// Reset calls the "reset" endpoint of the "workspaces" service.
+// Reset may return the following errors:
+//   - "not_found" (type NotFound)
+//   - "invalid" (type Invalid)
+//   - error: internal error
+func (c *Client) Reset(ctx context.Context, p *ResetPayload) (res *Workspace, err error) {
+	var ires any
+	ires, err = c.ResetEndpoint(ctx, p)
 	if err != nil {
 		return
 	}

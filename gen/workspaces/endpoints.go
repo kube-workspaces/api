@@ -21,6 +21,7 @@ type Endpoints struct {
 	Delete goa.Endpoint
 	Start  goa.Endpoint
 	Stop   goa.Endpoint
+	Reset  goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "workspaces" service with endpoints.
@@ -32,6 +33,7 @@ func NewEndpoints(s Service) *Endpoints {
 		Delete: NewDeleteEndpoint(s),
 		Start:  NewStartEndpoint(s),
 		Stop:   NewStopEndpoint(s),
+		Reset:  NewResetEndpoint(s),
 	}
 }
 
@@ -43,6 +45,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Delete = m(e.Delete)
 	e.Start = m(e.Start)
 	e.Stop = m(e.Stop)
+	e.Reset = m(e.Reset)
 }
 
 // NewListEndpoint returns an endpoint function that calls the method "list" of
@@ -111,6 +114,20 @@ func NewStopEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*StopPayload)
 		res, err := s.Stop(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		vres := NewViewedWorkspace(res, "default")
+		return vres, nil
+	}
+}
+
+// NewResetEndpoint returns an endpoint function that calls the method "reset"
+// of service "workspaces".
+func NewResetEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ResetPayload)
+		res, err := s.Reset(ctx, p)
 		if err != nil {
 			return nil, err
 		}

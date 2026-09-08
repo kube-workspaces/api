@@ -456,6 +456,27 @@ var _ = Service("workspaces", func() {
 			Response("not_found", StatusNotFound)
 		})
 	})
+
+	Method("reset", func() {
+		Description("Reset a workspace by re-provisioning it from its image")
+		Payload(func() {
+			Attribute("namespace", String, "Namespace", func() {
+				Default("workspaces")
+			})
+			Attribute("name", String, "Workspace name")
+			Required("name")
+		})
+		Result(WorkspaceResult)
+		Error("not_found", String, "Workspace not found")
+		Error("invalid", String, "Workspace cannot be reset")
+		HTTP(func() {
+			POST("/v1/workspaces/{name}/reset")
+			Param("namespace")
+			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("invalid", StatusBadRequest)
+		})
+	})
 })
 
 var _ = Service("volumes", func() {

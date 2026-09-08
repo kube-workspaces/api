@@ -283,6 +283,59 @@ func (s *workspacessrvc) Stop(ctx context.Context, p *workspaces.StopPayload) (r
 	return unstructuredToWorkspace(updated), nil
 }
 
+// Reset a workspace by re-provisioning it from its image. For vm workspaces the
+// controller reacts to this by deleting the VirtualMachine (and with it the
+// persistent root volume it owns) and recreating the workspace fresh, the
+// equivalent of re-provisioning. The annotation value is a timestamp so each
+// reset is unique and reliably triggers a reconcile.
+func (s *workspacessrvc) Reset(ctx context.Context, p *workspaces.ResetPayload) (res *workspaces.Workspace, err error) {
+	log.Printf(ctx, "workspaces.reset name=%s namespace=%s", p.Name, p.Namespace)
+
+	// Determine actor
+	actor := "unknown"
+	if user := auth.UserFromContext(ctx); user != nil {
+		actor = user.Email
+	}
+
+	obj, err := s.client.GetWorkspace(ctx, p.Namespace, p.Name)
+	if err != nil {
+		return nil, workspaces.NotFound(fmt.Sprintf("workspace %s/%s not found", p.Namespace, p.Name))
+	}
+
+	// Reset re-provisions the workload's root storage. Today only vm
+	// workspaces back their root volume from an image, so anything else is a
+	// no-op and rejected up front rather than pretending it did something.
+	if wsType, _, _ := unstructured.NestedString(obj.Object, "spec", "type"); wsType != "vm" {
+		return nil, workspaces.Invalid(fmt.Sprintf("workspace %s/%s has type %q; only vm workspaces can be reset", p.Namespace, p.Name, wsType))
+	}
+
+	// Add the reset annotation and set action annotations
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	annotations["kubeworkspaces.io/reset"] = time.Now().UTC().Format(time.RFC3339Nano)
+	annotations["kubeworkspaces.io/last-action"] = "Reset"
+	annotations["kubeworkspaces.io/last-action-by"] = actor
+	annotations["kubeworkspaces.io/last-action-time"] = time.Now().UTC().Format(time.RFC3339)
+	obj.SetAnnotations(annotations)
+
+	updated, err := s.client.UpdateWorkspace(ctx, obj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reset workspace: %w", err)
+	}
+
+	// Emit a Kubernetes Event for the action (best-effort)
+	if s.coreClient != nil {
+		msg := fmt.Sprintf("Workspace reset (re-provisioned from image) by %s", actor)
+		if evErr := s.coreClient.CreateWorkspaceEvent(ctx, p.Namespace, p.Name, "Reset", actor, msg); evErr != nil {
+			log.Printf(ctx, "warning: failed to emit workspace event: %v", evErr)
+		}
+	}
+
+	return unstructuredToWorkspace(updated), nil
+}
+
 // buildWorkspaceCR builds an unstructured Workspace CR from the create payload.
 func buildWorkspaceCR(p *workspaces.CreateWorkspacePayload, imageClient *k8s.ImageClient) *unstructured.Unstructured {
 	containerPort := int64(p.Container.Port)

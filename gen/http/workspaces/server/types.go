@@ -187,6 +187,41 @@ type StopResponseBody struct {
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 }
 
+// ResetResponseBody is the type of the "workspaces" service "reset" endpoint
+// HTTP response body.
+type ResetResponseBody struct {
+	// Workspace name
+	Name string `form:"name" json:"name" xml:"name"`
+	// Kubernetes namespace
+	Namespace string `form:"namespace" json:"namespace" xml:"namespace"`
+	// Workspace type: container, vm, or scratch
+	Type string `form:"type" json:"type" xml:"type"`
+	// Container image
+	Image string `form:"image" json:"image" xml:"image"`
+	// Container port
+	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
+	// CPU request
+	CPURequest *string `form:"cpu_request,omitempty" json:"cpu_request,omitempty" xml:"cpu_request,omitempty"`
+	// Memory request
+	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
+	// CPU limit
+	CPULimit *string `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty" xml:"cpu_limit,omitempty"`
+	// Memory limit
+	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	// Number of ready replicas
+	ReadyReplicas int `form:"ready_replicas" json:"ready_replicas" xml:"ready_replicas"`
+	// Container state
+	ContainerState *ContainerStateResponseBody `form:"container_state,omitempty" json:"container_state,omitempty" xml:"container_state,omitempty"`
+	// Workspace conditions
+	Conditions []*WorkspaceConditionResponseBody `form:"conditions,omitempty" json:"conditions,omitempty" xml:"conditions,omitempty"`
+	// Whether the workspace is stopped
+	Stopped bool `form:"stopped" json:"stopped" xml:"stopped"`
+	// Creation timestamp
+	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	// Attached volumes
+	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+}
+
 // WorkspaceResponse is used to define fields on response body types.
 type WorkspaceResponse struct {
 	// Workspace name
@@ -526,6 +561,49 @@ func NewStopResponseBody(res *workspacesviews.WorkspaceView) *StopResponseBody {
 	return body
 }
 
+// NewResetResponseBody builds the HTTP response body from the result of the
+// "reset" endpoint of the "workspaces" service.
+func NewResetResponseBody(res *workspacesviews.WorkspaceView) *ResetResponseBody {
+	body := &ResetResponseBody{
+		Name:          *res.Name,
+		Namespace:     *res.Namespace,
+		Type:          *res.Type,
+		Image:         *res.Image,
+		Port:          res.Port,
+		CPURequest:    res.CPURequest,
+		MemoryRequest: res.MemoryRequest,
+		CPULimit:      res.CPULimit,
+		MemoryLimit:   res.MemoryLimit,
+		ReadyReplicas: *res.ReadyReplicas,
+		Stopped:       *res.Stopped,
+		CreatedAt:     res.CreatedAt,
+	}
+	if res.ContainerState != nil {
+		body.ContainerState = marshalWorkspacesviewsContainerStateViewToContainerStateResponseBody(res.ContainerState)
+	}
+	if res.Conditions != nil {
+		body.Conditions = make([]*WorkspaceConditionResponseBody, len(res.Conditions))
+		for i, val := range res.Conditions {
+			if val == nil {
+				body.Conditions[i] = nil
+				continue
+			}
+			body.Conditions[i] = marshalWorkspacesviewsWorkspaceConditionViewToWorkspaceConditionResponseBody(val)
+		}
+	}
+	if res.VolumeMounts != nil {
+		body.VolumeMounts = make([]*VolumeMountResponseBody, len(res.VolumeMounts))
+		for i, val := range res.VolumeMounts {
+			if val == nil {
+				body.VolumeMounts[i] = nil
+				continue
+			}
+			body.VolumeMounts[i] = marshalWorkspacesviewsVolumeMountViewToVolumeMountResponseBody(val)
+		}
+	}
+	return body
+}
+
 // NewListPayload builds a workspaces service list endpoint payload.
 func NewListPayload(namespace string) *workspaces.ListPayload {
 	v := &workspaces.ListPayload{}
@@ -637,6 +715,15 @@ func NewStartPayload(name string, namespace string) *workspaces.StartPayload {
 // NewStopPayload builds a workspaces service stop endpoint payload.
 func NewStopPayload(name string, namespace string) *workspaces.StopPayload {
 	v := &workspaces.StopPayload{}
+	v.Name = name
+	v.Namespace = namespace
+
+	return v
+}
+
+// NewResetPayload builds a workspaces service reset endpoint payload.
+func NewResetPayload(name string, namespace string) *workspaces.ResetPayload {
+	v := &workspaces.ResetPayload{}
 	v.Name = name
 	v.Namespace = namespace
 

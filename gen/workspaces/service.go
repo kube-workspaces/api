@@ -27,6 +27,8 @@ type Service interface {
 	Start(context.Context, *StartPayload) (res *Workspace, err error)
 	// Stop a running workspace
 	Stop(context.Context, *StopPayload) (res *Workspace, err error)
+	// Reset a workspace by re-provisioning it from its image
+	Reset(context.Context, *ResetPayload) (res *Workspace, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -43,7 +45,7 @@ const ServiceName = "workspaces"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [6]string{"list", "get", "create", "delete", "start", "stop"}
+var MethodNames = [7]string{"list", "get", "create", "delete", "start", "stop", "reset"}
 
 // State of the workspace container
 type ContainerState struct {
@@ -113,6 +115,14 @@ type GetPayload struct {
 type ListPayload struct {
 	// Filter by namespace
 	Namespace string
+}
+
+// ResetPayload is the payload type of the workspaces service reset method.
+type ResetPayload struct {
+	// Namespace
+	Namespace string
+	// Workspace name
+	Name string
 }
 
 // StartPayload is the payload type of the workspaces service start method.
