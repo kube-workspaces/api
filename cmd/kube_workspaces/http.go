@@ -1468,6 +1468,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		}
 		execHandler := exec.Handler(execOpts)
 		vmConsoleHandler := exec.VMConsoleHandler(execOpts)
+		vmVNCHandler := exec.VMVNCHandler(execOpts)
 		mux.Handle("GET", "/v1/workspaces/{name}/exec", func(w http.ResponseWriter, r *http.Request) {
 			// Auth check: require editor or admin role
 			if auth.AuthEnabled(r.Context()) {
@@ -1533,6 +1534,56 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			}
 
 			execHandler(w, r)
+		})
+
+		// Workspace VNC display: GET /v1/workspaces/{name}/vnc
+		// Upgrades to WebSocket and bridges to the KubeVirt VMI VNC subresource
+		// (raw RFB stream for a noVNC client). VM workspaces only.
+		// Requires editor or admin role when auth is enabled.
+		mux.Handle("GET", "/v1/workspaces/{name}/vnc", func(w http.ResponseWriter, r *http.Request) {
+			// Auth check: require editor or admin role
+			if auth.AuthEnabled(r.Context()) {
+				user := auth.UserFromContext(r.Context())
+				if user == nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]string{"error": "authentication required"})
+					return
+				}
+				if !auth.HasMinimumRole(user.Role, "editor") {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					json.NewEncoder(w).Encode(map[string]string{"error": "editor or admin role required for console access"})
+					return
+				}
+				// Check namespace access
+				ns := r.URL.Query().Get("namespace")
+				if ns == "" {
+					ns = "workspaces"
+				}
+				if !auth.UserHasNamespaceAccess(user, ns) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					json.NewEncoder(w).Encode(map[string]string{"error": "no access to namespace"})
+					return
+				}
+			}
+
+			name := extractPathParam(r, "name", 4)
+			ns := r.URL.Query().Get("namespace")
+			if ns == "" {
+				ns = "workspaces"
+			}
+
+			// Only VM workspaces expose a graphical display.
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "vnc console is only available for VM workspaces"})
+				return
+			}
+
+			vmVNCHandler(w, r)
 		})
 	}
 
