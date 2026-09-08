@@ -13,6 +13,16 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// vncUpgrader negotiates the RFB WebSocket with the browser client. noVNC and
+// virtctl-style clients advertise one of these subprotocols; the upgrader must
+// echo a match or the browser abandons the handshake.
+var vncUpgrader = websocket.Upgrader{
+	Subprotocols: []string{"binary", "base64", "plain.kubevirt.io"},
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Origin checking is handled by CORS middleware
+	},
+}
+
 // VMVNCHandler returns an HTTP handler that upgrades the client connection to
 // a WebSocket and bridges it to the KubeVirt VMI VNC subresource. The VMI name
 // equals the workspace name. The socket carries the raw RFB (VNC) byte stream;
@@ -68,7 +78,7 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 		defer vmConn.Close()
 
 		// Upgrade the client connection to WebSocket.
-		clientConn, err := upgrader.Upgrade(w, r, nil)
+		clientConn, err := vncUpgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return // Upgrade already wrote the error response
 		}
