@@ -53,12 +53,8 @@ func VMConsoleHandler(opts *Options) http.HandlerFunc {
 
 		// Propagate the API server's own identity (service account bearer token).
 		headers := http.Header{}
-		if opts.RESTConfig.BearerToken != "" {
-			headers.Set("Authorization", "Bearer "+opts.RESTConfig.BearerToken)
-		} else if opts.RESTConfig.BearerTokenFile != "" {
-			if tok, err := os.ReadFile(opts.RESTConfig.BearerTokenFile); err == nil {
-				headers.Set("Authorization", "Bearer "+strings.TrimSpace(string(tok)))
-			}
+		if tok := consoleToken(opts.RESTConfig); tok != "" {
+			headers.Set("Authorization", "Bearer "+tok)
 		}
 
 		vmConn, resp, err := dialer.Dial(consoleURL, headers)
@@ -165,4 +161,24 @@ func vmConsoleURL(cfg *rest.Config, namespace, name string) (string, error) {
 		return "", fmt.Errorf("invalid console URL: %w", err)
 	}
 	return u.String(), nil
+}
+
+// consoleToken returns the API server's own bearer token for the KubeVirt
+// console subresource. client-go's InClusterConfig sets both BearerToken (read
+// once at startup) and BearerTokenFile (the projected token kubelet refreshes
+// in place). Prefer the freshly-read file so an expired startup token in the
+// long-running API pod doesn't 401 the console dial; fall back to the static
+// token when no file is configured (e.g. out-of-cluster configs).
+func consoleToken(cfg *rest.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if cfg.BearerTokenFile != "" {
+		if tok, err := os.ReadFile(cfg.BearerTokenFile); err == nil {
+			if tok = []byte(strings.TrimSpace(string(tok))); len(tok) > 0 {
+				return string(tok)
+			}
+		}
+	}
+	return strings.TrimSpace(cfg.BearerToken)
 }
