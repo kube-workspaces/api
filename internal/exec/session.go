@@ -2,7 +2,17 @@ package exec
 
 import (
 	"sync"
+	"time"
 )
+
+// defaultSessionTTL bounds how long a bridge may sit idle before the registry
+// reclaims its slot. A browser tab that dies without closing its WebSocket would
+// otherwise hold the single-session slot forever, locking every later
+// connection out with 409s.
+const defaultSessionTTL = 6 * time.Hour
+
+// sessionSweepInterval is how often the registry scans for idled-out sessions.
+const sessionSweepInterval = 30 * time.Second
 
 // sessionHandle tracks one active bridge session (serial console or VNC) for a
 // workspace. closeAndCancel force-tears down the underlying connections so a
@@ -12,6 +22,9 @@ type sessionHandle struct {
 	id     uint64
 	cancel func()
 	close  func()
+	// touch refreshes the session's idle deadline while the handle still owns
+	// the slot. Assigned by the registry at acquire time.
+	touch func()
 }
 
 // sessionRegistry guards single-session VM bridges. KubeVirt's serial console
@@ -20,14 +33,38 @@ type sessionHandle struct {
 // a second browser tab would kick the session the user is actually looking at.
 // The registry turns that into a clean "in use" signal the UI can prompt on
 // (serial console take-over with consent) or reject outright (strict VNC guard).
+// An idle session is reclaimed after ttl so an abandoned-but-open WebSocket
+// cannot wedge the slot indefinitely.
 type sessionRegistry struct {
-	mu     sync.Mutex
-	active map[string]*sessionHandle
-	nextID uint64
+	mu            sync.Mutex
+	active        map[string]*sessionHandle
+	expires       map[string]time.Time
+	nextID        uint64
+	ttl           time.Duration
+	sweepInterval time.Duration
 }
 
 func newSessionRegistry() *sessionRegistry {
-	return &sessionRegistry{active: make(map[string]*sessionHandle)}
+	return newSessionRegistryWithInterval(defaultSessionTTL, sessionSweepInterval)
+}
+
+func newSessionRegistryWithTTL(ttl time.Duration) *sessionRegistry {
+	sweep := ttl / 2
+	if sweep < 20*time.Millisecond {
+		sweep = 20 * time.Millisecond
+	}
+	return newSessionRegistryWithInterval(ttl, sweep)
+}
+
+func newSessionRegistryWithInterval(ttl, sweep time.Duration) *sessionRegistry {
+	s := &sessionRegistry{
+		active:        make(map[string]*sessionHandle),
+		expires:       make(map[string]time.Time),
+		ttl:           ttl,
+		sweepInterval: sweep,
+	}
+	go s.sweep()
+	return s
 }
 
 // acquire registers handle as the active session for key when none is active.
@@ -41,7 +78,15 @@ func (s *sessionRegistry) acquire(key string, handle *sessionHandle) (*sessionHa
 	}
 	s.nextID++
 	handle.id = s.nextID
+	handle.touch = func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if cur, ok := s.active[key]; ok && cur == handle {
+			s.expires[key] = time.Now().Add(s.ttl)
+		}
+	}
 	s.active[key] = handle
+	s.expires[key] = time.Now().Add(s.ttl)
 	return handle, true
 }
 
@@ -67,12 +112,13 @@ func (s *sessionRegistry) stillCurrent(key string, handle *sessionHandle) bool {
 // user before the taker opens their own session.
 func (s *sessionRegistry) forceRelease(key string) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	cur, ok := s.active[key]
 	if !ok {
+		s.mu.Unlock()
 		return false
 	}
-	delete(s.active, key)
+	s.removeLocked(key)
+	s.mu.Unlock()
 	cur.closeAndCancel()
 	return true
 }
@@ -84,8 +130,38 @@ func (s *sessionRegistry) release(key string, handle *sessionHandle) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if cur, ok := s.active[key]; ok && cur == handle {
-		delete(s.active, key)
+		s.removeLocked(key)
 	}
+}
+
+// sweep periodically ends sessions that have sat idle past their deadline so an
+// abandoned-but-open WebSocket cannot wedge the slot forever.
+func (s *sessionRegistry) sweep() {
+	ticker := time.NewTicker(s.sweepInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.mu.Lock()
+		var expired []*sessionHandle
+		now := time.Now()
+		for key, deadline := range s.expires {
+			if now.After(deadline) {
+				if handle, ok := s.active[key]; ok {
+					s.removeLocked(key)
+					expired = append(expired, handle)
+				}
+			}
+		}
+		s.mu.Unlock()
+		for _, handle := range expired {
+			handle.closeAndCancel()
+		}
+	}
+}
+
+// removeLocked unregisters the session for key. Callers must hold s.mu.
+func (s *sessionRegistry) removeLocked(key string) {
+	delete(s.active, key)
+	delete(s.expires, key)
 }
 
 func (h *sessionHandle) closeAndCancel() {

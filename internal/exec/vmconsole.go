@@ -129,6 +129,7 @@ func VMConsoleHandler(opts *Options) http.HandlerFunc {
 						continue // serial consoles have no resize channel
 					}
 				}
+				handle.touch()
 				if err := vmConn.WriteMessage(websocket.BinaryMessage, msg); err != nil {
 					return
 				}

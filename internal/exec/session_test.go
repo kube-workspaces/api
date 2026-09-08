@@ -4,6 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestSessionRegistryAcquireAndRelease(t *testing.T) {
@@ -76,6 +77,58 @@ func TestSessionRegistryForceRelease(t *testing.T) {
 	r.release(key, h1) // late unwind of the evicted session
 	if !r.held(key) {
 		t.Fatal("late release by an evicted session must not clear the successor")
+	}
+}
+
+func TestSessionRegistryIdleExpiry(t *testing.T) {
+	r := newSessionRegistryWithTTL(150 * time.Millisecond)
+	key := "ns/idle"
+
+	var closed atomic.Bool
+	h1 := &sessionHandle{
+		cancel: func() {},
+		close:  func() { closed.Store(true) },
+	}
+	if _, ok := r.acquire(key, h1); !ok {
+		t.Fatal("acquire should succeed")
+	}
+
+	time.Sleep(400 * time.Millisecond)
+	if r.held(key) {
+		t.Fatal("an idle session should be reclaimed after its TTL")
+	}
+	if !closed.Load() {
+		t.Fatal("the reclaimed session should be torn down")
+	}
+
+	// A freed slot must accept a successor.
+	if _, ok := r.acquire(key, &sessionHandle{cancel: func() {}}); !ok {
+		t.Fatal("a successor should be able to acquire a reclaimed slot")
+	}
+}
+
+func TestSessionRegistryTouchRenews(t *testing.T) {
+	r := newSessionRegistryWithTTL(200 * time.Millisecond)
+	key := "ns/renew"
+
+	h1 := &sessionHandle{cancel: func() {}}
+	if _, ok := r.acquire(key, h1); !ok {
+		t.Fatal("acquire should succeed")
+	}
+
+	// Constant activity must keep the session alive past its TTL.
+	for i := 0; i < 8; i++ {
+		time.Sleep(60 * time.Millisecond)
+		h1.touch()
+	}
+	if !r.held(key) {
+		t.Fatal("an actively used session should not be reclaimed")
+	}
+
+	// Once activity stops it should expire.
+	time.Sleep(600 * time.Millisecond)
+	if r.held(key) {
+		t.Fatal("a session that stopped touching should expire")
 	}
 }
 

@@ -115,6 +115,7 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 				if err != nil {
 					return
 				}
+				handle.touch()
 				if err := vmConn.WriteMessage(msgType, msg); err != nil {
 					return
 				}
