@@ -8,8 +8,8 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
-	"runtime"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,8 +32,11 @@ import (
 	"goa.design/clue/debug"
 	"goa.design/clue/log"
 	goahttp "goa.design/goa/v3/http"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 )
 
@@ -893,7 +896,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			Name      string            `json:"name"`
 			Phase     string            `json:"phase"`
 			Enabled   bool              `json:"enabled"`
-			Labels    map[string]string  `json:"labels,omitempty"`
+			Labels    map[string]string `json:"labels,omitempty"`
 			CreatedAt string            `json:"created_at"`
 		}
 
@@ -1117,14 +1120,14 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			fmt.Sprintf("involvedObject.name=%s", name))
 
 		type eventEntry struct {
-			Type          string `json:"type"`
-			Reason        string `json:"reason"`
-			Message       string `json:"message"`
-			Object        string `json:"object"`
-			FirstSeen     string `json:"first_seen,omitempty"`
-			LastSeen      string `json:"last_seen,omitempty"`
-			Count         int32  `json:"count"`
-			Source        string `json:"source,omitempty"`
+			Type      string `json:"type"`
+			Reason    string `json:"reason"`
+			Message   string `json:"message"`
+			Object    string `json:"object"`
+			FirstSeen string `json:"first_seen,omitempty"`
+			LastSeen  string `json:"last_seen,omitempty"`
+			Count     int32  `json:"count"`
+			Source    string `json:"source,omitempty"`
 		}
 
 		var events []eventEntry
@@ -1191,13 +1194,13 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		}
 
 		var payload struct {
-			Image        *string                `json:"image"`
-			Port         *int                   `json:"port"`
-			CPURequest   *string                `json:"cpu_request"`
-			MemoryRequest *string               `json:"memory_request"`
-			CPULimit     *string                `json:"cpu_limit"`
-			MemoryLimit  *string                `json:"memory_limit"`
-			VolumeMounts *[]struct {
+			Image         *string `json:"image"`
+			Port          *int    `json:"port"`
+			CPURequest    *string `json:"cpu_request"`
+			MemoryRequest *string `json:"memory_request"`
+			CPULimit      *string `json:"cpu_limit"`
+			MemoryLimit   *string `json:"memory_limit"`
+			VolumeMounts  *[]struct {
 				Name      string `json:"name"`
 				MountPath string `json:"mount_path"`
 			} `json:"volume_mounts"`
@@ -1431,9 +1434,9 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		points, container := metricsBuffer.GetMetrics(ns, podName, window)
 
 		type response struct {
-			Container string        `json:"container"`
+			Container string            `json:"container"`
 			Points    []k8s.MetricPoint `json:"points"`
-			Message   string        `json:"message,omitempty"`
+			Message   string            `json:"message,omitempty"`
 		}
 
 		resp := response{
@@ -1610,6 +1613,32 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
 		})
+
+		// VM reboot: POST /v1/workspaces/{name}/reboot
+		// Deletes the VMI so KubeVirt recreates it from the VM spec (persistent
+		// disk preserved).
+		mux.Handle("POST", "/v1/workspaces/{name}/reboot", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "reboot is only available for VM workspaces"})
+				return
+			}
+			gvr := schema.GroupVersionResource{Group: "kubevirt.io", Version: "v1", Resource: "virtualmachineinstances"}
+			if err := dynClient.Resource(gvr).Namespace(ns).Delete(r.Context(), name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+				log.Printf(r.Context(), "reboot failed for %s/%s: %v", ns, name, err)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": "failed to reboot VM"})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		})
 	}
 
 	var handler http.Handler = mux
@@ -1778,10 +1807,10 @@ func parseWindow(s string) (time.Duration, error) {
 // in an unexported function in a different package.
 func unstructuredToWorkspaceResult(obj *unstructured.Unstructured) map[string]interface{} {
 	result := map[string]interface{}{
-		"name":              obj.GetName(),
-		"namespace":         obj.GetNamespace(),
-		"ready_replicas":    0,
-		"stopped":           false,
+		"name":           obj.GetName(),
+		"namespace":      obj.GetNamespace(),
+		"ready_replicas": 0,
+		"stopped":        false,
 	}
 
 	wsType, _, _ := unstructured.NestedString(obj.Object, "spec", "type")
