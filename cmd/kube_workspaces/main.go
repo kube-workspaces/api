@@ -17,6 +17,7 @@ import (
 	health "github.com/kube-workspaces/api/gen/health"
 	images "github.com/kube-workspaces/api/gen/images"
 	namespaces "github.com/kube-workspaces/api/gen/namespaces"
+	sshkeys "github.com/kube-workspaces/api/gen/sshkeys"
 	volumes "github.com/kube-workspaces/api/gen/volumes"
 	workspaces "github.com/kube-workspaces/api/gen/workspaces"
 	"github.com/kube-workspaces/api/internal/auth"
@@ -135,6 +136,7 @@ func main() {
 		volumesSvc    volumes.Service
 		imagesSvc     images.Service
 		namespacesSvc namespaces.Service
+		sshkeysSvc    sshkeys.Service
 		healthSvc     health.Service
 	)
 	{
@@ -142,6 +144,7 @@ func main() {
 		volumesSvc = kubeworkspaces.NewVolumes(authProvider)
 		imagesSvc = kubeworkspaces.NewImages(imageClient)
 		namespacesSvc = kubeworkspaces.NewNamespaces(authProvider)
+		sshkeysSvc = kubeworkspaces.NewSSHKeys(authProvider)
 		healthSvc = kubeworkspaces.NewHealth()
 	}
 
@@ -152,6 +155,7 @@ func main() {
 		volumesEndpoints    *volumes.Endpoints
 		imagesEndpoints     *images.Endpoints
 		namespacesEndpoints *namespaces.Endpoints
+		sshkeysEndpoints    *sshkeys.Endpoints
 		healthEndpoints     *health.Endpoints
 	)
 	{
@@ -167,6 +171,9 @@ func main() {
 		namespacesEndpoints = namespaces.NewEndpoints(namespacesSvc)
 		namespacesEndpoints.Use(debug.LogPayloads())
 		namespacesEndpoints.Use(log.Endpoint)
+		sshkeysEndpoints = sshkeys.NewEndpoints(sshkeysSvc)
+		sshkeysEndpoints.Use(debug.LogPayloads())
+		sshkeysEndpoints.Use(log.Endpoint)
 		healthEndpoints = health.NewEndpoints(healthSvc)
 		healthEndpoints.Use(debug.LogPayloads())
 		healthEndpoints.Use(log.Endpoint)
@@ -211,7 +218,7 @@ func main() {
 			} else if u.Port() == "" {
 				u.Host = net.JoinHostPort(u.Host, "80")
 			}
-			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, healthEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, &wg, errc, *dbgF)
+			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, &wg, errc, *dbgF)
 		}
 
 	default:

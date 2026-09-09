@@ -348,6 +348,40 @@ var NamespaceResult = ResultType("application/vnd.namespace+json", func() {
 	Required("name", "phase")
 })
 
+// SSH key types
+
+var CreateSshKeyPayload = Type("CreateSshKeyPayload", func() {
+	Description("Payload for storing a user's SSH public key")
+	Attribute("name", String, "Resource name for the SshKey CR", func() {
+		Pattern(`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`)
+		MaxLength(63)
+		Example("laptop-2025")
+	})
+	Attribute("namespace", String, "Target namespace (defaults to the user's personal namespace)", func() {
+		Example("chris-at-fordham-id-au")
+	})
+	Attribute("key_name", String, "Human-friendly label for the key", func() {
+		Example("Laptop 2025")
+	})
+	Attribute("public_key", String, "SSH public key line (e.g. ssh-ed25519 AAAA... user@host)", func() {
+		Example("ssh-ed25519 AAAA... user@host")
+	})
+	Required("name", "public_key")
+})
+
+var SshKeyResult = ResultType("application/vnd.sshkey+json", func() {
+	Description("A stored SSH public key")
+	Attributes(func() {
+		Attribute("name", String, "Resource name of the SshKey CR")
+		Attribute("namespace", String, "Kubernetes namespace")
+		Attribute("key_name", String, "Human-friendly label")
+		Attribute("public_key", String, "SSH public key line")
+		Attribute("fingerprint", String, "SHA256 fingerprint of the key")
+		Attribute("created_at", String, "Creation timestamp")
+	})
+	Required("name", "namespace", "public_key")
+})
+
 // Service definitions
 
 var _ = Service("workspaces", func() {
@@ -542,6 +576,76 @@ var _ = Service("volumes", func() {
 		Error("not_found", String, "Volume not found")
 		HTTP(func() {
 			DELETE("/v1/volumes/{name}")
+			Param("namespace")
+			Response(StatusNoContent)
+			Response("not_found", StatusNotFound)
+		})
+	})
+})
+
+var _ = Service("sshkeys", func() {
+	Description("SSH public key management service")
+
+	Method("list", func() {
+		Description("List the user's SSH public keys")
+		Payload(func() {
+			Attribute("namespace", String, "Filter by namespace", func() {
+				Example("chris-at-fordham-id-au")
+			})
+		})
+		Result(ArrayOf(SshKeyResult))
+		HTTP(func() {
+			GET("/v1/sshkeys")
+			Param("namespace")
+			Response(StatusOK)
+		})
+	})
+
+	Method("get", func() {
+		Description("Get an SSH public key by name")
+		Payload(func() {
+			Attribute("namespace", String, "Namespace", func() {
+				Example("chris-at-fordham-id-au")
+			})
+			Attribute("name", String, "SSH key name")
+			Required("name")
+		})
+		Result(SshKeyResult)
+		Error("not_found", String, "SSH key not found")
+		HTTP(func() {
+			GET("/v1/sshkeys/{name}")
+			Param("namespace")
+			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+		})
+	})
+
+	Method("create", func() {
+		Description("Store a new SSH public key")
+		Payload(CreateSshKeyPayload)
+		Result(SshKeyResult)
+		Error("already_exists", String, "SSH key already exists")
+		Error("invalid", String, "Invalid SSH key")
+		HTTP(func() {
+			POST("/v1/sshkeys")
+			Response(StatusCreated)
+			Response("already_exists", StatusConflict)
+			Response("invalid", StatusBadRequest)
+		})
+	})
+
+	Method("delete", func() {
+		Description("Delete an SSH public key")
+		Payload(func() {
+			Attribute("namespace", String, "Namespace", func() {
+				Example("chris-at-fordham-id-au")
+			})
+			Attribute("name", String, "SSH key name")
+			Required("name")
+		})
+		Error("not_found", String, "SSH key not found")
+		HTTP(func() {
+			DELETE("/v1/sshkeys/{name}")
 			Param("namespace")
 			Response(StatusNoContent)
 			Response("not_found", StatusNotFound)

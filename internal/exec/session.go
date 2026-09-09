@@ -183,6 +183,7 @@ func consoleKey(namespace, name string) string {
 var (
 	serialSessions = newSessionRegistry()
 	vncSessions    = newSessionRegistry()
+	sshSessions    = newSessionRegistry()
 )
 
 // SerialConsoleInUse reports whether a serial console bridge is currently

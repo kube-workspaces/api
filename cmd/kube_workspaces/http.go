@@ -19,10 +19,12 @@ import (
 	healthsvr "github.com/kube-workspaces/api/gen/http/health/server"
 	imagessvr "github.com/kube-workspaces/api/gen/http/images/server"
 	namespacessvr "github.com/kube-workspaces/api/gen/http/namespaces/server"
+	sshkeyssvr "github.com/kube-workspaces/api/gen/http/sshkeys/server"
 	volumessvr "github.com/kube-workspaces/api/gen/http/volumes/server"
 	workspacessvr "github.com/kube-workspaces/api/gen/http/workspaces/server"
 	images "github.com/kube-workspaces/api/gen/images"
 	namespaces "github.com/kube-workspaces/api/gen/namespaces"
+	sshkeys "github.com/kube-workspaces/api/gen/sshkeys"
 	volumes "github.com/kube-workspaces/api/gen/volumes"
 	workspaces "github.com/kube-workspaces/api/gen/workspaces"
 	"github.com/kube-workspaces/api/internal/auth"
@@ -51,7 +53,7 @@ var godocFS embed.FS
 
 // handleHTTPServer starts configures and starts a HTTP server on the given
 // URL. It shuts down the server if any error is received in the error channel.
-func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, healthEndpoints *health.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, wg *sync.WaitGroup, errc chan error, dbg bool) {
+func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, wg *sync.WaitGroup, errc chan error, dbg bool) {
 
 	// Provide the transport specific request decoder and response encoder.
 	// The goa http package has built-in support for JSON, XML and gob.
@@ -84,6 +86,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		volumesServer    *volumessvr.Server
 		imagesServer     *imagessvr.Server
 		namespacesServer *namespacessvr.Server
+		sshkeysServer    *sshkeyssvr.Server
 		healthServer     *healthsvr.Server
 	)
 	{
@@ -92,6 +95,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		volumesServer = volumessvr.New(volumesEndpoints, mux, dec, enc, eh, nil)
 		imagesServer = imagessvr.New(imagesEndpoints, mux, dec, enc, eh, nil)
 		namespacesServer = namespacessvr.New(namespacesEndpoints, mux, dec, enc, eh, nil)
+		sshkeysServer = sshkeyssvr.New(sshkeysEndpoints, mux, dec, enc, eh, nil)
 		healthServer = healthsvr.New(healthEndpoints, mux, dec, enc, eh, nil)
 	}
 
@@ -100,6 +104,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	volumessvr.Mount(mux, volumesServer)
 	imagessvr.Mount(mux, imagesServer)
 	namespacessvr.Mount(mux, namespacesServer)
+	sshkeyssvr.Mount(mux, sshkeysServer)
 	healthsvr.Mount(mux, healthServer)
 
 	// Serve OpenAPI spec, rewriting the server URL to use EXTERNAL_HOST.
@@ -1472,6 +1477,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		execHandler := exec.Handler(execOpts)
 		vmConsoleHandler := exec.VMConsoleHandler(execOpts)
 		vmVNCHandler := exec.VMVNCHandler(execOpts)
+		sshHandler := exec.SSHHandler(&exec.SSHOptions{Clientset: execClientset})
 
 		// requireEditorAccess enforces editor/admin access plus namespace scoping
 		// for the console endpoints and returns the resolved workspace name and
@@ -1638,6 +1644,60 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		})
+
+		// Web SSH console: GET /v1/workspaces/{name}/ssh
+		// Upgrades to WebSocket and bridges to the guest sshd (via the
+		// workspace's masqueraded port on the virt-launcher pod). The client's
+		// first WebSocket message must carry {"type":"ssh","user":...,"privateKey":...}.
+		// VM workspaces only. Single-session — a second connection gets 409
+		// while another holds it. The guest must have the caller's SSH public
+		// key seeded (SshKey CRs) for the private-key auth to succeed.
+		mux.Handle("GET", "/v1/workspaces/{name}/ssh", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "ssh console is only available for VM workspaces"})
+				return
+			}
+			sshHandler(w, r)
+		})
+
+		// Web SSH session status: GET /v1/workspaces/{name}/ssh/status
+		mux.Handle("GET", "/v1/workspaces/{name}/ssh/status", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "ssh console is only available for VM workspaces"})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"inUse": exec.SSHConsoleInUse(ns, name)})
+		})
+
+		// Web SSH take-over: POST /v1/workspaces/{name}/ssh/takeover
+		mux.Handle("POST", "/v1/workspaces/{name}/ssh/takeover", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "ssh console is only available for VM workspaces"})
+				return
+			}
+			wasInUse := exec.TakeOverSSHConsole(ns, name)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
 		})
 	}
 
