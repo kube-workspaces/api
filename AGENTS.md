@@ -12,7 +12,7 @@ REST API service for the kube-workspaces platform. Built with Goa v3.
 | `design/design.go` | Goa DSL design (source of truth for API routes) |
 | `gen/` | Generated Goa code (types, endpoints, HTTP transport, OpenAPI) |
 | `internal/auth/` | Auth middleware (OIDC, session cookies, Bearer tokens) |
-| `internal/exec/` | Workspace exec (WebSocket terminal) |
+| `internal/exec/` | WebSocket bridges: exec, VM serial console, VM noVNC display, web SSH + session registry |
 | `internal/k8s/` | Kubernetes client utilities |
 | `internal/platform/` | PlatformConfig reading |
 | `internal/proxy/` | Legacy proxy support |
@@ -34,6 +34,12 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
 - Auth is opt-in. When `AuthConfig.spec.enabled` is false, auth middleware is a no-op.
 - Uses unstructured/dynamic K8s client for CRD access (no import from controller).
 - Maintenance mode: returns 503 for non-admin users on non-exempt paths when enabled.
+- VM access WebSocket bridges live in `internal/exec/` (`vmconsole.go` serial
+  console, `vmvnc.go` noVNC display, `ssh.go` web SSH). All are single-session
+  via `session.go`'s registry with an idle TTL and take-over consent; `PUT`
+  workspace updates and `shared_memory`/`volume_mounts` are rejected for `vm`.
+- SshKey CRUD is implemented in `sshkeys.go` (`/v1/sshkeys*`) backed by
+  `internal/k8s/sshkey.go`; keys live in the user's personal namespace.
 
 ## Docker Image
 
