@@ -130,12 +130,11 @@ func (s *workspacessrvc) Create(ctx context.Context, p *workspaces.CreateWorkspa
 	log.Printf(ctx, "workspaces.create name=%s namespace=%s type=%s", p.Name, p.Namespace, p.Type)
 
 	// Validate per-type constraints. VM workspaces boot a containerDisk image
-	// via KubeVirt, so container-only options (GPU, shared memory, volume
-	// mounts) are rejected until DataVolume support lands.
+	// via KubeVirt. GPU requests are supported: the requested GPU resource is
+	// recorded in the container limits and the controller translates it into a
+	// KubeVirt `domain.devices.gpus` passthrough device. shared_memory and
+	// volume mounts are still container-only and rejected for VMs.
 	if p.Type == "vm" {
-		if p.Container.GpuRequest != nil && *p.Container.GpuRequest != "" && *p.Container.GpuRequest != "0" {
-			return nil, workspaces.Invalid("gpu_request is not supported for vm workspaces")
-		}
 		if p.SharedMemory {
 			return nil, workspaces.Invalid("shared_memory is not supported for vm workspaces")
 		}
