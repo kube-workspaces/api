@@ -670,7 +670,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 
 	// Admin: list CustomResourceDefinitions used by kube-workspaces
 	mux.Handle("GET", "/admin/crds/definitions", func(w http.ResponseWriter, r *http.Request) {
-		crdNames := []string{"workspaces.kubeworkspaces.io", "images.kubeworkspaces.io", "users.kubeworkspaces.io", "authconfigs.kubeworkspaces.io", "platformconfigs.kubeworkspaces.io"}
+		crdNames := []string{"workspaces.kubeworkspaces.io", "images.kubeworkspaces.io", "users.kubeworkspaces.io", "authconfigs.kubeworkspaces.io", "platformconfigs.kubeworkspaces.io", "poddefaults.kubeworkspaces.io", "sshkeys.kubeworkspaces.io"}
 		type crdVersion struct {
 			Name    string `json:"name"`
 			Served  bool   `json:"served"`
