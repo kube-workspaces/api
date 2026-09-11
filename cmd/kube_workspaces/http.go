@@ -196,20 +196,24 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		if ns == "" {
 			ns = "kube-workspaces-system"
 		}
-		components := map[string]string{}
+		components := map[string]componentStatus{}
 		for _, comp := range []string{"controller", "api", "proxy", "frontend"} {
 			pods, err := coreClient.ListPods(r.Context(), ns,
 				"app.kubernetes.io/component="+comp)
 			if err != nil || pods == nil || len(pods.Items) == 0 {
 				continue
 			}
-			pod := pods.Items[0]
-			if len(pod.Spec.Containers) > 0 {
-				components[comp] = pod.Spec.Containers[0].Image
-			}
+			components[comp] = summarizeComponent(pods.Items)
 		}
 		if len(components) > 0 {
-			resp["images"] = components
+			// Back-compat: keep the plain image-per-component map, and add
+			// the richer status object for the admin overview badges.
+			images := map[string]string{}
+			for comp, cs := range components {
+				images[comp] = cs.Image
+			}
+			resp["images"] = images
+			resp["components"] = components
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1860,6 +1864,85 @@ func parseWindow(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid window %q: allowed values: 5m, 15m, 1h, 3h, 6h, 24h", s)
 	}
 	return dur, nil
+}
+
+// componentStatus is the per-component summary returned by /platform/version.
+// Status is one of "healthy", "starting" or "down".
+type componentStatus struct {
+	Version string `json:"version"`
+	Image   string `json:"image"`
+	Status  string `json:"status"`
+	Ready   int    `json:"ready"`
+	Total   int    `json:"total"`
+}
+
+// summarizeComponent derives a component's running state from its pods. A
+// component is "healthy" while at least one replica is Running with all
+// containers ready; "starting" while pods exist but none are ready and no pod
+// has failed; "down" otherwise.
+func summarizeComponent(pods []corev1.Pod) componentStatus {
+	cs := componentStatus{Status: "down"}
+	for i := range pods {
+		p := &pods[i]
+		if cs.Image == "" && len(p.Spec.Containers) > 0 {
+			cs.Image = p.Spec.Containers[0].Image
+			cs.Version = imageTag(cs.Image)
+		}
+		ready := p.Status.Phase == corev1.PodRunning
+		if ready {
+			for _, c := range p.Status.ContainerStatuses {
+				if !c.Ready {
+					ready = false
+					break
+				}
+			}
+		}
+		if ready {
+			cs.Ready++
+		}
+	}
+	cs.Total = len(pods)
+	switch {
+	case cs.Ready > 0:
+		cs.Status = "healthy"
+	case cs.Total > 0:
+		if componentPodFailed(pods) {
+			cs.Status = "down"
+		} else {
+			cs.Status = "starting"
+		}
+	}
+	return cs
+}
+
+// componentPodFailed reports whether any pod is in a terminal/failing state
+// (failed/unknown phase, or a container stuck in a well-known crash state).
+func componentPodFailed(pods []corev1.Pod) bool {
+	for i := range pods {
+		p := &pods[i]
+		if p.Status.Phase == corev1.PodFailed || p.Status.Phase == corev1.PodUnknown {
+			return true
+		}
+		for _, c := range p.Status.ContainerStatuses {
+			if c.State.Waiting == nil {
+				continue
+			}
+			switch c.State.Waiting.Reason {
+			case "ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff", "CreateContainerConfigError":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// imageTag returns the tag suffix of a container image reference, or the whole
+// reference when there is no tag.
+func imageTag(image string) string {
+	if i := strings.LastIndex(image, ":"); i >= 0 {
+		return image[i+1:]
+	}
+	return image
 }
 
 // unstructuredToWorkspaceResult converts an unstructured Workspace CR to a JSON-serializable map
