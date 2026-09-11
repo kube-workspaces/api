@@ -148,13 +148,13 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		}
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Cache-Control", "no-store")
 		w.Write(data)
 	})
 	mux.Handle("GET", "/godoc", func(w http.ResponseWriter, r *http.Request) {
 		data, _ := fs.ReadFile(godocSub, "index.json")
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Cache-Control", "no-store")
 		w.Write(data)
 	})
 
