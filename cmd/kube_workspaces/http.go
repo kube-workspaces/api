@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -51,10 +50,6 @@ var openapi3YAML []byte
 
 //go:embed godoc
 var godocFS embed.FS
-
-// workspaceNameRe enforces the same RFC 1123 label pattern used by the
-// CreateWorkspace payload (lowercase letters, digits, '-'; 63 chars max).
-var workspaceNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`)
 
 // handleHTTPServer starts configures and starts a HTTP server on the given
 // URL. It shuts down the server if any error is received in the error channel.
@@ -1362,190 +1357,6 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		// Return updated workspace using the same format as get
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(unstructuredToWorkspaceResult(updated))
-	})
-
-	// Workspace clone: POST /v1/workspaces/{name}/clone
-	// Copies the source workspace (spec, labels and non-action annotations) to
-	// a new name in the same namespace. Volume mounts are carried over because
-	// they live in the copied spec and reference PVCs in the namespace; no data
-	// volumes are cloned (the controller provisions a fresh workload, so the
-	// clone gets its own empty home / root disk).
-	mux.Handle("POST", "/v1/workspaces/{name}/clone", func(w http.ResponseWriter, r *http.Request) {
-		ns := r.URL.Query().Get("namespace")
-		if ns == "" {
-			ns = "workspaces"
-		}
-		name := extractPathParam(r, "name", 4)
-		if name == "" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "workspace name is required"})
-			return
-		}
-
-		var payload struct {
-			NewName       *string `json:"new_name"`
-			Image         *string `json:"image"`
-			Port          *int    `json:"port"`
-			CPURequest    *string `json:"cpu_request"`
-			MemoryRequest *string `json:"memory_request"`
-			CPULimit      *string `json:"cpu_limit"`
-			MemoryLimit   *string `json:"memory_limit"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
-			return
-		}
-		if payload.NewName == nil || *payload.NewName == "" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "new_name is required"})
-			return
-		}
-		newName := *payload.NewName
-		if newName == name {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "new_name must differ from the source workspace name"})
-			return
-		}
-		if len(newName) > 63 || !workspaceNameRe.MatchString(newName) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "new_name must be a lowercase RFC 1123 label (letters, digits, '-'), up to 63 characters, starting and ending with a letter or digit"})
-			return
-		}
-
-		src, err := wsClient.GetWorkspace(r.Context(), ns, name)
-		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("workspace %s/%s not found", ns, name)})
-			return
-		}
-
-		// Determine actor
-		actor := "unknown"
-		if user := auth.UserFromContext(r.Context()); user != nil {
-			actor = user.Email
-		}
-
-		clone := src.DeepCopy()
-		// Reset identity/metadata that belongs to the source object.
-		clone.SetName(newName)
-		clone.SetNamespace(ns)
-		clone.SetResourceVersion("")
-		clone.SetUID("")
-		clone.SetSelfLink("")
-		clone.SetGeneration(0)
-		clone.SetCreationTimestamp(metav1.Time{})
-		clone.SetManagedFields(nil)
-		clone.SetOwnerReferences(nil)
-		unstructured.RemoveNestedField(clone.Object, "status")
-
-		annotations := clone.GetAnnotations()
-		if annotations == nil {
-			annotations = make(map[string]string)
-		}
-		// Drop one-shot action triggers/audit trail; the proxy-relevant
-		// annotations (e.g. preserve-path-prefix) and the stopped marker are
-		// intentionally carried over.
-		delete(annotations, "kubeworkspaces.io/created-by")
-		delete(annotations, "kubeworkspaces.io/last-action")
-		delete(annotations, "kubeworkspaces.io/last-action-by")
-		delete(annotations, "kubeworkspaces.io/last-action-time")
-		delete(annotations, "kubeworkspaces.io/reset")
-		annotations["kubeworkspaces.io/cloned-from"] = name
-		annotations["kubeworkspaces.io/created-by"] = actor
-		annotations["kubeworkspaces.io/last-action"] = "Cloned"
-		annotations["kubeworkspaces.io/last-action-by"] = actor
-		annotations["kubeworkspaces.io/last-action-time"] = time.Now().UTC().Format(time.RFC3339)
-		clone.SetAnnotations(annotations)
-
-		// Apply optional overrides to the main container.
-		containers, found, _ := unstructured.NestedSlice(clone.Object, "spec", "template", "spec", "containers")
-		if found && len(containers) > 0 {
-			if container, ok := containers[0].(map[string]interface{}); ok {
-				if payload.Image != nil && *payload.Image != "" {
-					container["image"] = *payload.Image
-				}
-				if payload.Port != nil {
-					container["ports"] = []interface{}{
-						map[string]interface{}{
-							"containerPort": int64(*payload.Port),
-							"name":          "workspace-port",
-							"protocol":      "TCP",
-						},
-					}
-				}
-				resources, _ := container["resources"].(map[string]interface{})
-				if resources == nil {
-					resources = make(map[string]interface{})
-				}
-				if payload.CPURequest != nil || payload.MemoryRequest != nil {
-					requests, _ := resources["requests"].(map[string]interface{})
-					if requests == nil {
-						requests = make(map[string]interface{})
-					}
-					if payload.CPURequest != nil {
-						requests["cpu"] = *payload.CPURequest
-					}
-					if payload.MemoryRequest != nil {
-						requests["memory"] = *payload.MemoryRequest
-					}
-					resources["requests"] = requests
-				}
-				if payload.CPULimit != nil || payload.MemoryLimit != nil {
-					limits, _ := resources["limits"].(map[string]interface{})
-					if limits == nil {
-						limits = make(map[string]interface{})
-					}
-					if payload.CPULimit != nil {
-						limits["cpu"] = *payload.CPULimit
-					}
-					if payload.MemoryLimit != nil {
-						limits["memory"] = *payload.MemoryLimit
-					}
-					resources["limits"] = limits
-				}
-				container["resources"] = resources
-				containers[0] = container
-			}
-			if err := unstructured.SetNestedSlice(clone.Object, containers, "spec", "template", "spec", "containers"); err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]string{"error": "failed to update cloned container spec"})
-				return
-			}
-		}
-
-		created, err := wsClient.CreateWorkspace(r.Context(), clone)
-		if err != nil {
-			if errors.IsAlreadyExists(err) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusConflict)
-				json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("workspace %s/%s already exists", ns, newName)})
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to clone workspace: %v", err)})
-			return
-		}
-
-		// Emit a Kubernetes Event for the action (best-effort)
-		if coreClient != nil {
-			msg := fmt.Sprintf("Workspace %s cloned from %s by %s", newName, name, actor)
-			if evErr := coreClient.CreateWorkspaceEvent(r.Context(), ns, newName, "Cloned", actor, msg); evErr != nil {
-				log.Printf(r.Context(), "warning: failed to emit workspace clone event: %v", evErr)
-			}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(unstructuredToWorkspaceResult(created))
 	})
 
 	// Workspace pod YAML: GET /v1/workspaces/{name}/pod

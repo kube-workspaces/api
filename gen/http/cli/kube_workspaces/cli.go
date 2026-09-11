@@ -28,7 +28,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"workspaces (list|get|create|delete|start|stop|reset)",
+		"workspaces (list|get|create|delete|start|stop|reset|clone)",
 		"volumes (list|get|create|delete)",
 		"sshkeys (list|get|create|delete)",
 		"images (list|create)",
@@ -39,8 +39,8 @@ func UsageCommands() []string {
 
 // UsageExamples produces an example of a valid invocation of the CLI tool.
 func UsageExamples() string {
-	return os.Args[0] + " " + "workspaces list --namespace \"Laudantium pariatur ipsa.\"" + "\n" +
-		os.Args[0] + " " + "volumes list --namespace \"Soluta praesentium in sequi qui.\"" + "\n" +
+	return os.Args[0] + " " + "workspaces list --namespace \"Nostrum nostrum officia minima aliquid.\"" + "\n" +
+		os.Args[0] + " " + "volumes list --namespace \"Unde ullam.\"" + "\n" +
 		os.Args[0] + " " + "sshkeys list --namespace \"chris-at-fordham-id-au\"" + "\n" +
 		os.Args[0] + " " + "images list" + "\n" +
 		os.Args[0] + " " + "namespaces list" + "\n" +
@@ -84,6 +84,11 @@ func ParseEndpoint(
 		workspacesResetFlags         = flag.NewFlagSet("reset", flag.ExitOnError)
 		workspacesResetNameFlag      = workspacesResetFlags.String("name", "REQUIRED", "Workspace name")
 		workspacesResetNamespaceFlag = workspacesResetFlags.String("namespace", "workspaces", "")
+
+		workspacesCloneFlags         = flag.NewFlagSet("clone", flag.ExitOnError)
+		workspacesCloneBodyFlag      = workspacesCloneFlags.String("body", "REQUIRED", "")
+		workspacesCloneNameFlag      = workspacesCloneFlags.String("name", "REQUIRED", "Source workspace name")
+		workspacesCloneNamespaceFlag = workspacesCloneFlags.String("namespace", "workspaces", "")
 
 		volumesFlags = flag.NewFlagSet("volumes", flag.ContinueOnError)
 
@@ -140,6 +145,7 @@ func ParseEndpoint(
 	workspacesStartFlags.Usage = workspacesStartUsage
 	workspacesStopFlags.Usage = workspacesStopUsage
 	workspacesResetFlags.Usage = workspacesResetUsage
+	workspacesCloneFlags.Usage = workspacesCloneUsage
 
 	volumesFlags.Usage = volumesUsage
 	volumesListFlags.Usage = volumesListUsage
@@ -227,6 +233,9 @@ func ParseEndpoint(
 
 			case "reset":
 				epf = workspacesResetFlags
+
+			case "clone":
+				epf = workspacesCloneFlags
 
 			}
 
@@ -330,6 +339,9 @@ func ParseEndpoint(
 			case "reset":
 				endpoint = c.Reset()
 				data, err = workspacesc.BuildResetPayload(*workspacesResetNameFlag, *workspacesResetNamespaceFlag)
+			case "clone":
+				endpoint = c.Clone()
+				data, err = workspacesc.BuildClonePayload(*workspacesCloneBodyFlag, *workspacesCloneNameFlag, *workspacesCloneNamespaceFlag)
 			}
 		case "volumes":
 			c := volumesc.NewClient(scheme, host, doer, enc, dec, restore)
@@ -406,6 +418,7 @@ func workspacesUsage() {
 	fmt.Fprintln(os.Stderr, `    start: Start a stopped workspace`)
 	fmt.Fprintln(os.Stderr, `    stop: Stop a running workspace`)
 	fmt.Fprintln(os.Stderr, `    reset: Reset a workspace by re-provisioning it from its image`)
+	fmt.Fprintln(os.Stderr, `    clone: Clone an existing workspace under a new name, copying its spec and volume mounts`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s workspaces COMMAND --help\n", os.Args[0])
@@ -425,7 +438,7 @@ func workspacesListUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces list --namespace \"Laudantium pariatur ipsa.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces list --namespace \"Nostrum nostrum officia minima aliquid.\"")
 }
 
 func workspacesGetUsage() {
@@ -445,7 +458,7 @@ func workspacesGetUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces get --name \"Impedit dicta quo et perferendis.\" --namespace \"Autem dolor.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces get --name \"Voluptates voluptatem nobis ut.\" --namespace \"Vero quis.\"")
 }
 
 func workspacesCreateUsage() {
@@ -463,7 +476,7 @@ func workspacesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces create --body '{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 1526708642241994080\n      },\n      \"env\": [\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"Eum sapiente.\": \"Et odio occaecati deleniti ut.\",\n         \"Quidem ad itaque.\": \"Repudiandae sunt voluptatem.\",\n         \"Recusandae accusantium.\": \"Molestiae alias quaerat sit et vitae.\"\n      },\n      \"shared_memory\": false,\n      \"tolerations\": [\n         {\n            \"effect\": \"\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces create --body '{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 299691316021780547\n      },\n      \"env\": [\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"Dolores non.\": \"Adipisci minus est itaque ut doloremque.\",\n         \"Quo enim repellendus repellat odio odit.\": \"Quia voluptas rerum consequatur.\"\n      },\n      \"shared_memory\": false,\n      \"tolerations\": [\n         {\n            \"effect\": \"PreferNoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"PreferNoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"PreferNoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
 }
 
 func workspacesDeleteUsage() {
@@ -483,7 +496,7 @@ func workspacesDeleteUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces delete --name \"Praesentium enim consequatur excepturi ab.\" --namespace \"Aliquam harum nulla.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces delete --name \"Delectus voluptatem non.\" --namespace \"Consectetur porro.\"")
 }
 
 func workspacesStartUsage() {
@@ -503,7 +516,7 @@ func workspacesStartUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces start --name \"Delectus voluptatem non.\" --namespace \"Consectetur porro.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces start --name \"Ratione ut minus dolorum.\" --namespace \"Facilis velit fugit odit modi repudiandae.\"")
 }
 
 func workspacesStopUsage() {
@@ -523,7 +536,7 @@ func workspacesStopUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces stop --name \"Ratione ut minus dolorum.\" --namespace \"Facilis velit fugit odit modi repudiandae.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces stop --name \"Ut consectetur.\" --namespace \"Porro cupiditate.\"")
 }
 
 func workspacesResetUsage() {
@@ -543,7 +556,29 @@ func workspacesResetUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces reset --name \"Ut consectetur.\" --namespace \"Porro cupiditate.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces reset --name \"Sit ut quis maiores odio.\" --namespace \"Soluta praesentium in sequi qui.\"")
+}
+
+func workspacesCloneUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] workspaces clone", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprint(os.Stderr, " -name STRING")
+	fmt.Fprint(os.Stderr, " -namespace STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Clone an existing workspace under a new name, copying its spec and volume mounts`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+	fmt.Fprintln(os.Stderr, `    -name STRING: Source workspace name`)
+	fmt.Fprintln(os.Stderr, `    -namespace STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces clone --body '{\n      \"cpu_limit\": \"Dolorem corporis.\",\n      \"cpu_request\": \"Ipsum officia in dolore sint.\",\n      \"image\": \"Voluptatem dolorem necessitatibus rerum fugiat.\",\n      \"memory_limit\": \"Accusamus ratione.\",\n      \"memory_request\": \"Est non possimus accusantium.\",\n      \"new_name\": \"my-workspace-clone\",\n      \"port\": 7867977708732767225\n   }' --name \"Sed aliquid veniam nihil.\" --namespace \"Molestiae et dolorem eum.\"")
 }
 
 // volumesUsage displays the usage of the volumes command and its subcommands.
@@ -574,7 +609,7 @@ func volumesListUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes list --namespace \"Soluta praesentium in sequi qui.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes list --namespace \"Unde ullam.\"")
 }
 
 func volumesGetUsage() {
@@ -594,7 +629,7 @@ func volumesGetUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes get --name \"Nihil vel unde recusandae.\" --namespace \"Assumenda inventore dolores ad.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes get --name \"Velit ut quod.\" --namespace \"Enim debitis.\"")
 }
 
 func volumesCreateUsage() {
@@ -612,7 +647,7 @@ func volumesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes create --body '{\n      \"access_mode\": \"ReadWriteMany\",\n      \"name\": \"my-data\",\n      \"namespace\": \"Unde ullam.\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes create --body '{\n      \"access_mode\": \"ReadWriteMany\",\n      \"name\": \"my-data\",\n      \"namespace\": \"Quia et voluptas.\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\"\n   }'")
 }
 
 func volumesDeleteUsage() {
@@ -632,7 +667,7 @@ func volumesDeleteUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes delete --name \"Aut ab et velit consequuntur cupiditate explicabo.\" --namespace \"Assumenda harum aut iusto facilis id.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes delete --name \"Ea dicta.\" --namespace \"Iste quis eos.\"")
 }
 
 // sshkeysUsage displays the usage of the sshkeys command and its subcommands.
@@ -683,7 +718,7 @@ func sshkeysGetUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "sshkeys get --name \"Iste natus eius eum id et.\" --namespace \"chris-at-fordham-id-au\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "sshkeys get --name \"Asperiores tempora necessitatibus nobis.\" --namespace \"chris-at-fordham-id-au\"")
 }
 
 func sshkeysCreateUsage() {
@@ -721,7 +756,7 @@ func sshkeysDeleteUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "sshkeys delete --name \"Repellat eum.\" --namespace \"chris-at-fordham-id-au\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "sshkeys delete --name \"Neque quaerat nisi.\" --namespace \"chris-at-fordham-id-au\"")
 }
 
 // imagesUsage displays the usage of the images command and its subcommands.
@@ -766,7 +801,7 @@ func imagesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "images create --body '{\n      \"category\": \"IDE\",\n      \"default_args\": [\n         \"Est libero eum et.\",\n         \"Dolorum ea qui qui quis.\",\n         \"Neque quaerat nisi.\"\n      ],\n      \"default_cloud_init\": true,\n      \"default_credentials\": {\n         \"password\": \"Minus facilis cumque.\",\n         \"username\": \"Quisquam quas inventore magnam iusto.\"\n      },\n      \"default_env\": [\n         {\n            \"name\": \"Est sint.\",\n            \"value\": \"Accusantium eos est.\"\n         },\n         {\n            \"name\": \"Est sint.\",\n            \"value\": \"Accusantium eos est.\"\n         },\n         {\n            \"name\": \"Est sint.\",\n            \"value\": \"Accusantium eos est.\"\n         },\n         {\n            \"name\": \"Est sint.\",\n            \"value\": \"Accusantium eos est.\"\n         }\n      ],\n      \"default_homedir\": \"Nihil id qui aspernatur dolores delectus sint.\",\n      \"default_password\": \"Minus optio facilis eum.\",\n      \"default_path\": \"/\",\n      \"default_port\": 8080,\n      \"default_shared_memory\": true,\n      \"default_shell\": \"Rem sint ab id minus ad.\",\n      \"default_uid\": 7800828953940796297,\n      \"default_user\": \"Consequuntur veritatis aut voluptas tenetur atque.\",\n      \"default_user_data\": \"Similique impedit unde repellendus voluptatem iste.\",\n      \"description\": \"Dolorum nam distinctio.\",\n      \"homepage_url\": \"Porro molestias ut dolor quia.\",\n      \"icon\": \"Blanditiis est et molestiae pariatur quo.\",\n      \"image\": \"codercom/code-server:latest\",\n      \"image_homepage_url\": \"Facilis qui.\",\n      \"links\": [\n         {\n            \"title\": \"Natus odio rerum exercitationem eum harum molestiae.\",\n            \"url\": \"Ut nulla dolorem.\"\n         },\n         {\n            \"title\": \"Natus odio rerum exercitationem eum harum molestiae.\",\n            \"url\": \"Ut nulla dolorem.\"\n         }\n      ],\n      \"name\": \"Code Server (VS Code)\",\n      \"privileged\": true,\n      \"proxy_config\": {\n         \"custom_request_headers\": {\n            \"Quia tempore ab sunt quibusdam voluptas nostrum.\": \"Temporibus at et et blanditiis rerum id.\",\n            \"Voluptate voluptas dolorem qui aut inventore.\": \"Est cupiditate ducimus.\"\n         },\n         \"inject_base_tag\": false,\n         \"needs_noop_sw\": true,\n         \"preserve_path_prefix\": true,\n         \"rewrite_host_absolute_paths\": false,\n         \"tls_insecure\": true,\n         \"websocket_paths\": [\n            \"/websockify\"\n         ]\n      },\n      \"source_url\": \"Deserunt totam.\",\n      \"tags\": [\n         \"development\",\n         \"vscode\"\n      ],\n      \"workspace_types\": [\n         \"container\"\n      ]\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "images create --body '{\n      \"category\": \"IDE\",\n      \"default_args\": [\n         \"Eum harum molestiae.\",\n         \"Ut nulla dolorem.\",\n         \"Quisquam quas inventore magnam iusto.\"\n      ],\n      \"default_cloud_init\": false,\n      \"default_credentials\": {\n         \"password\": \"Molestiae et suscipit reprehenderit nemo qui.\",\n         \"username\": \"Ducimus tempore facere inventore.\"\n      },\n      \"default_env\": [\n         {\n            \"name\": \"Facilis cumque molestiae eum.\",\n            \"value\": \"Molestiae quia tempore ab sunt quibusdam.\"\n         },\n         {\n            \"name\": \"Facilis cumque molestiae eum.\",\n            \"value\": \"Molestiae quia tempore ab sunt quibusdam.\"\n         },\n         {\n            \"name\": \"Facilis cumque molestiae eum.\",\n            \"value\": \"Molestiae quia tempore ab sunt quibusdam.\"\n         },\n         {\n            \"name\": \"Facilis cumque molestiae eum.\",\n            \"value\": \"Molestiae quia tempore ab sunt quibusdam.\"\n         }\n      ],\n      \"default_homedir\": \"Unde pariatur.\",\n      \"default_password\": \"Aut molestiae enim.\",\n      \"default_path\": \"/\",\n      \"default_port\": 8080,\n      \"default_shared_memory\": false,\n      \"default_shell\": \"Officiis eius quasi harum.\",\n      \"default_uid\": 6209001819115181753,\n      \"default_user\": \"Quas mollitia dolorem omnis saepe id vitae.\",\n      \"default_user_data\": \"Nulla nihil excepturi.\",\n      \"description\": \"Id minus.\",\n      \"homepage_url\": \"Officia temporibus at et et.\",\n      \"icon\": \"Ut quis natus odio.\",\n      \"image\": \"codercom/code-server:latest\",\n      \"image_homepage_url\": \"Inventore cupiditate est cupiditate ducimus.\",\n      \"links\": [\n         {\n            \"title\": \"Culpa adipisci.\",\n            \"url\": \"Dolores blanditiis consequatur eos.\"\n         },\n         {\n            \"title\": \"Culpa adipisci.\",\n            \"url\": \"Dolores blanditiis consequatur eos.\"\n         }\n      ],\n      \"name\": \"Code Server (VS Code)\",\n      \"privileged\": false,\n      \"proxy_config\": {\n         \"custom_request_headers\": {\n            \"Explicabo quae quo non eum rerum qui.\": \"Magnam cumque error ratione ut enim.\",\n            \"Optio soluta unde laborum ab autem pariatur.\": \"Reprehenderit beatae.\",\n            \"Reprehenderit nisi deleniti consequatur laudantium totam.\": \"Odio quis sunt.\"\n         },\n         \"inject_base_tag\": false,\n         \"needs_noop_sw\": true,\n         \"preserve_path_prefix\": false,\n         \"rewrite_host_absolute_paths\": false,\n         \"tls_insecure\": true,\n         \"websocket_paths\": [\n            \"/websockify\"\n         ]\n      },\n      \"source_url\": \"Rerum id ipsa voluptate voluptas dolorem qui.\",\n      \"tags\": [\n         \"development\",\n         \"vscode\"\n      ],\n      \"workspace_types\": [\n         \"container\"\n      ]\n   }'")
 }
 
 // namespacesUsage displays the usage of the namespaces command and its

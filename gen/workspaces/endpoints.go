@@ -22,6 +22,7 @@ type Endpoints struct {
 	Start  goa.Endpoint
 	Stop   goa.Endpoint
 	Reset  goa.Endpoint
+	Clone  goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "workspaces" service with endpoints.
@@ -34,6 +35,7 @@ func NewEndpoints(s Service) *Endpoints {
 		Start:  NewStartEndpoint(s),
 		Stop:   NewStopEndpoint(s),
 		Reset:  NewResetEndpoint(s),
+		Clone:  NewCloneEndpoint(s),
 	}
 }
 
@@ -46,6 +48,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Start = m(e.Start)
 	e.Stop = m(e.Stop)
 	e.Reset = m(e.Reset)
+	e.Clone = m(e.Clone)
 }
 
 // NewListEndpoint returns an endpoint function that calls the method "list" of
@@ -128,6 +131,20 @@ func NewResetEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*ResetPayload)
 		res, err := s.Reset(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		vres := NewViewedWorkspace(res, "default")
+		return vres, nil
+	}
+}
+
+// NewCloneEndpoint returns an endpoint function that calls the method "clone"
+// of service "workspaces".
+func NewCloneEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ClonePayload)
+		res, err := s.Clone(ctx, p)
 		if err != nil {
 			return nil, err
 		}

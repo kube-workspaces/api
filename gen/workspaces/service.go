@@ -29,6 +29,9 @@ type Service interface {
 	Stop(context.Context, *StopPayload) (res *Workspace, err error)
 	// Reset a workspace by re-provisioning it from its image
 	Reset(context.Context, *ResetPayload) (res *Workspace, err error)
+	// Clone an existing workspace under a new name, copying its spec and volume
+	// mounts
+	Clone(context.Context, *ClonePayload) (res *Workspace, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -45,7 +48,29 @@ const ServiceName = "workspaces"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [7]string{"list", "get", "create", "delete", "start", "stop", "reset"}
+var MethodNames = [8]string{"list", "get", "create", "delete", "start", "stop", "reset", "clone"}
+
+// ClonePayload is the payload type of the workspaces service clone method.
+type ClonePayload struct {
+	// Namespace
+	Namespace string
+	// Source workspace name
+	Name string
+	// Name for the cloned workspace
+	NewName string
+	// Override the container image on the clone
+	Image *string
+	// Override the container port on the clone
+	Port *int
+	// Override the CPU request on the clone
+	CPURequest *string
+	// Override the memory request on the clone
+	MemoryRequest *string
+	// Override the CPU limit on the clone
+	CPULimit *string
+	// Override the memory limit on the clone
+	MemoryLimit *string
+}
 
 // State of the workspace container
 type ContainerState struct {

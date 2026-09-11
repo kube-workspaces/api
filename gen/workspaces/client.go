@@ -22,10 +22,11 @@ type Client struct {
 	StartEndpoint  goa.Endpoint
 	StopEndpoint   goa.Endpoint
 	ResetEndpoint  goa.Endpoint
+	CloneEndpoint  goa.Endpoint
 }
 
 // NewClient initializes a "workspaces" service client given the endpoints.
-func NewClient(list, get, create, delete_, start, stop, reset goa.Endpoint) *Client {
+func NewClient(list, get, create, delete_, start, stop, reset, clone goa.Endpoint) *Client {
 	return &Client{
 		ListEndpoint:   list,
 		GetEndpoint:    get,
@@ -34,6 +35,7 @@ func NewClient(list, get, create, delete_, start, stop, reset goa.Endpoint) *Cli
 		StartEndpoint:  start,
 		StopEndpoint:   stop,
 		ResetEndpoint:  reset,
+		CloneEndpoint:  clone,
 	}
 }
 
@@ -117,6 +119,21 @@ func (c *Client) Stop(ctx context.Context, p *StopPayload) (res *Workspace, err 
 func (c *Client) Reset(ctx context.Context, p *ResetPayload) (res *Workspace, err error) {
 	var ires any
 	ires, err = c.ResetEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*Workspace), nil
+}
+
+// Clone calls the "clone" endpoint of the "workspaces" service.
+// Clone may return the following errors:
+//   - "not_found" (type NotFound)
+//   - "already_exists" (type AlreadyExists)
+//   - "invalid" (type Invalid)
+//   - error: internal error
+func (c *Client) Clone(ctx context.Context, p *ClonePayload) (res *Workspace, err error) {
+	var ires any
+	ires, err = c.CloneEndpoint(ctx, p)
 	if err != nil {
 		return
 	}

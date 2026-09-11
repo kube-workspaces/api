@@ -511,6 +511,40 @@ var _ = Service("workspaces", func() {
 			Response("invalid", StatusBadRequest)
 		})
 	})
+
+	Method("clone", func() {
+		Description("Clone an existing workspace under a new name, copying its spec and volume mounts")
+		Payload(func() {
+			Attribute("namespace", String, "Namespace", func() {
+				Default("workspaces")
+			})
+			Attribute("name", String, "Source workspace name")
+			Attribute("new_name", String, "Name for the cloned workspace", func() {
+				Pattern(`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`)
+				MaxLength(63)
+				Example("my-workspace-clone")
+			})
+			Attribute("image", String, "Override the container image on the clone")
+			Attribute("port", Int, "Override the container port on the clone")
+			Attribute("cpu_request", String, "Override the CPU request on the clone")
+			Attribute("memory_request", String, "Override the memory request on the clone")
+			Attribute("cpu_limit", String, "Override the CPU limit on the clone")
+			Attribute("memory_limit", String, "Override the memory limit on the clone")
+			Required("name", "new_name")
+		})
+		Result(WorkspaceResult)
+		Error("not_found", String, "Source workspace not found")
+		Error("already_exists", String, "A workspace with the new name already exists")
+		Error("invalid", String, "Invalid clone specification")
+		HTTP(func() {
+			POST("/v1/workspaces/{name}/clone")
+			Param("namespace")
+			Response(StatusCreated)
+			Response("not_found", StatusNotFound)
+			Response("already_exists", StatusConflict)
+			Response("invalid", StatusBadRequest)
+		})
+	})
 })
 
 var _ = Service("volumes", func() {

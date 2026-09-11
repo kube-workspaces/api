@@ -45,3 +45,8 @@ func StopWorkspacesPath(name string) string {
 func ResetWorkspacesPath(name string) string {
 	return fmt.Sprintf("/v1/workspaces/%v/reset", name)
 }
+
+// CloneWorkspacesPath returns the URL path to the workspaces service clone HTTP endpoint.
+func CloneWorkspacesPath(name string) string {
+	return fmt.Sprintf("/v1/workspaces/%v/clone", name)
+}

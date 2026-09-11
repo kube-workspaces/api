@@ -38,6 +38,9 @@ type Client struct {
 	// Reset Doer is the HTTP client used to make requests to the reset endpoint.
 	ResetDoer goahttp.Doer
 
+	// Clone Doer is the HTTP client used to make requests to the clone endpoint.
+	CloneDoer goahttp.Doer
+
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -65,6 +68,7 @@ func NewClient(
 		StartDoer:           doer,
 		StopDoer:            doer,
 		ResetDoer:           doer,
+		CloneDoer:           doer,
 		RestoreResponseBody: restoreBody,
 		scheme:              scheme,
 		host:                host,
@@ -236,6 +240,30 @@ func (c *Client) Reset() goa.Endpoint {
 		resp, err := c.ResetDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("workspaces", "reset", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// Clone returns an endpoint that makes HTTP requests to the workspaces service
+// clone server.
+func (c *Client) Clone() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeCloneRequest(c.encoder)
+		decodeResponse = DecodeCloneResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildCloneRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.CloneDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("workspaces", "clone", err)
 		}
 		return decodeResponse(resp)
 	}

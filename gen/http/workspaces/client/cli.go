@@ -59,7 +59,7 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 	{
 		err = json.Unmarshal([]byte(workspacesCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 1526708642241994080\n      },\n      \"env\": [\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"Eum sapiente.\": \"Et odio occaecati deleniti ut.\",\n         \"Quidem ad itaque.\": \"Repudiandae sunt voluptatem.\",\n         \"Recusandae accusantium.\": \"Molestiae alias quaerat sit et vitae.\"\n      },\n      \"shared_memory\": false,\n      \"tolerations\": [\n         {\n            \"effect\": \"\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 299691316021780547\n      },\n      \"env\": [\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         },\n         {\n            \"name\": \"MY_VAR\",\n            \"value\": \"my-value\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"Dolores non.\": \"Adipisci minus est itaque ut doloremque.\",\n         \"Quo enim repellendus repellat odio odit.\": \"Quia voluptas rerum consequatur.\"\n      },\n      \"shared_memory\": false,\n      \"tolerations\": [\n         {\n            \"effect\": \"PreferNoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"PreferNoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         },\n         {\n            \"effect\": \"PreferNoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Exists\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         },\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
 		}
 		if body.Container == nil {
 			err = goa.MergeErrors(err, goa.MissingFieldError("container", "body"))
@@ -235,6 +235,49 @@ func BuildResetPayload(workspacesResetName string, workspacesResetNamespace stri
 		}
 	}
 	v := &workspaces.ResetPayload{}
+	v.Name = name
+	v.Namespace = namespace
+
+	return v, nil
+}
+
+// BuildClonePayload builds the payload for the workspaces clone endpoint from
+// CLI flags.
+func BuildClonePayload(workspacesCloneBody string, workspacesCloneName string, workspacesCloneNamespace string) (*workspaces.ClonePayload, error) {
+	var err error
+	var body CloneRequestBody
+	{
+		err = json.Unmarshal([]byte(workspacesCloneBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"cpu_limit\": \"Dolorem corporis.\",\n      \"cpu_request\": \"Ipsum officia in dolore sint.\",\n      \"image\": \"Voluptatem dolorem necessitatibus rerum fugiat.\",\n      \"memory_limit\": \"Accusamus ratione.\",\n      \"memory_request\": \"Est non possimus accusantium.\",\n      \"new_name\": \"my-workspace-clone\",\n      \"port\": 7867977708732767225\n   }'")
+		}
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.new_name", body.NewName, "^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?$"))
+		if utf8.RuneCountInString(body.NewName) > 63 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.new_name", body.NewName, utf8.RuneCountInString(body.NewName), 63, false))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	var name string
+	{
+		name = workspacesCloneName
+	}
+	var namespace string
+	{
+		if workspacesCloneNamespace != "" {
+			namespace = workspacesCloneNamespace
+		}
+	}
+	v := &workspaces.ClonePayload{
+		NewName:       body.NewName,
+		Image:         body.Image,
+		Port:          body.Port,
+		CPURequest:    body.CPURequest,
+		MemoryRequest: body.MemoryRequest,
+		CPULimit:      body.CPULimit,
+		MemoryLimit:   body.MemoryLimit,
+	}
 	v.Name = name
 	v.Namespace = namespace
 

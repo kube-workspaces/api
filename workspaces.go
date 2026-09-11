@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/kube-workspaces/api/gen/workspaces"
@@ -333,6 +335,139 @@ func (s *workspacessrvc) Reset(ctx context.Context, p *workspaces.ResetPayload) 
 	}
 
 	return unstructuredToWorkspace(updated), nil
+}
+
+// Clone copies an existing workspace under a new name in the same namespace.
+// The clone inherits the source workspace's spec, including volume mounts
+// (which reference PVCs in the namespace). It does NOT copy the source's data
+// volumes: the controller provisions a fresh workload, so the clone gets its
+// own empty storage (and, for vm workspaces, a fresh root disk booted fresh
+// from the image).
+func (s *workspacessrvc) Clone(ctx context.Context, p *workspaces.ClonePayload) (res *workspaces.Workspace, err error) {
+	log.Printf(ctx, "workspaces.clone name=%s new_name=%s namespace=%s", p.Name, p.NewName, p.Namespace)
+
+	if p.NewName == p.Name {
+		return nil, workspaces.Invalid("new_name must differ from the source workspace name")
+	}
+
+	src, err := s.client.GetWorkspace(ctx, p.Namespace, p.Name)
+	if err != nil {
+		return nil, workspaces.NotFound(fmt.Sprintf("workspace %s/%s not found", p.Namespace, p.Name))
+	}
+
+	// Determine actor
+	actor := "unknown"
+	if user := auth.UserFromContext(ctx); user != nil {
+		actor = user.Email
+	}
+
+	clone := src.DeepCopy()
+	// Reset identity/metadata that belongs to the source object. Volume mounts
+	// referencing PVCs in the namespace are intentionally carried over.
+	clone.SetName(p.NewName)
+	clone.SetNamespace(p.Namespace)
+	clone.SetResourceVersion("")
+	clone.SetUID("")
+	clone.SetSelfLink("")
+	clone.SetGeneration(0)
+	clone.SetCreationTimestamp(metav1.Time{})
+	clone.SetManagedFields(nil)
+	clone.SetOwnerReferences(nil)
+	unstructured.RemoveNestedField(clone.Object, "status")
+
+	// Drop one-shot action triggers and the audit trail, carry over proxy
+	// annotations and the stopped marker, and stamp the clone lineage.
+	annotations := clone.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	for _, a := range []string{
+		"kubeworkspaces.io/created-by",
+		"kubeworkspaces.io/last-action",
+		"kubeworkspaces.io/last-action-by",
+		"kubeworkspaces.io/last-action-time",
+		"kubeworkspaces.io/reset",
+	} {
+		delete(annotations, a)
+	}
+	annotations["kubeworkspaces.io/cloned-from"] = p.Name
+	annotations["kubeworkspaces.io/created-by"] = actor
+	annotations["kubeworkspaces.io/last-action"] = "Cloned"
+	annotations["kubeworkspaces.io/last-action-by"] = actor
+	annotations["kubeworkspaces.io/last-action-time"] = time.Now().UTC().Format(time.RFC3339)
+	clone.SetAnnotations(annotations)
+
+	// Apply optional overrides to the main container.
+	containers, found, _ := unstructured.NestedSlice(clone.Object, "spec", "template", "spec", "containers")
+	if found && len(containers) > 0 {
+		if container, ok := containers[0].(map[string]interface{}); ok {
+			if p.Image != nil && *p.Image != "" {
+				container["image"] = *p.Image
+			}
+			if p.Port != nil {
+				container["ports"] = []interface{}{
+					map[string]interface{}{
+						"containerPort": *p.Port,
+						"name":          "workspace-port",
+						"protocol":      "TCP",
+					},
+				}
+			}
+			resources, _ := container["resources"].(map[string]interface{})
+			if resources == nil {
+				resources = make(map[string]interface{})
+			}
+			if p.CPURequest != nil || p.MemoryRequest != nil {
+				requests, _ := resources["requests"].(map[string]interface{})
+				if requests == nil {
+					requests = make(map[string]interface{})
+				}
+				if p.CPURequest != nil {
+					requests["cpu"] = *p.CPURequest
+				}
+				if p.MemoryRequest != nil {
+					requests["memory"] = *p.MemoryRequest
+				}
+				resources["requests"] = requests
+			}
+			if p.CPULimit != nil || p.MemoryLimit != nil {
+				limits, _ := resources["limits"].(map[string]interface{})
+				if limits == nil {
+					limits = make(map[string]interface{})
+				}
+				if p.CPULimit != nil {
+					limits["cpu"] = *p.CPULimit
+				}
+				if p.MemoryLimit != nil {
+					limits["memory"] = *p.MemoryLimit
+				}
+				resources["limits"] = limits
+			}
+			container["resources"] = resources
+			containers[0] = container
+		}
+		if err := unstructured.SetNestedSlice(clone.Object, containers, "spec", "template", "spec", "containers"); err != nil {
+			return nil, fmt.Errorf("failed to apply clone overrides: %w", err)
+		}
+	}
+
+	created, err := s.client.CreateWorkspace(ctx, clone)
+	if err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return nil, workspaces.AlreadyExists(fmt.Sprintf("workspace %s/%s already exists", p.Namespace, p.NewName))
+		}
+		return nil, fmt.Errorf("failed to clone workspace: %w", err)
+	}
+
+	// Emit a Kubernetes Event for the action (best-effort)
+	if s.coreClient != nil {
+		msg := fmt.Sprintf("Workspace %s cloned from %s by %s", p.NewName, p.Name, actor)
+		if evErr := s.coreClient.CreateWorkspaceEvent(ctx, p.Namespace, p.NewName, "Cloned", actor, msg); evErr != nil {
+			log.Printf(ctx, "warning: failed to emit workspace event: %v", evErr)
+		}
+	}
+
+	return unstructuredToWorkspace(created), nil
 }
 
 // buildWorkspaceCR builds an unstructured Workspace CR from the create payload.

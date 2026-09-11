@@ -43,6 +43,25 @@ type CreateRequestBody struct {
 	ImagePullPolicy *string `form:"image_pull_policy,omitempty" json:"image_pull_policy,omitempty" xml:"image_pull_policy,omitempty"`
 }
 
+// CloneRequestBody is the type of the "workspaces" service "clone" endpoint
+// HTTP request body.
+type CloneRequestBody struct {
+	// Name for the cloned workspace
+	NewName *string `form:"new_name,omitempty" json:"new_name,omitempty" xml:"new_name,omitempty"`
+	// Override the container image on the clone
+	Image *string `form:"image,omitempty" json:"image,omitempty" xml:"image,omitempty"`
+	// Override the container port on the clone
+	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
+	// Override the CPU request on the clone
+	CPURequest *string `form:"cpu_request,omitempty" json:"cpu_request,omitempty" xml:"cpu_request,omitempty"`
+	// Override the memory request on the clone
+	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
+	// Override the CPU limit on the clone
+	CPULimit *string `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty" xml:"cpu_limit,omitempty"`
+	// Override the memory limit on the clone
+	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+}
+
 // ListResponseBody is the type of the "workspaces" service "list" endpoint
 // HTTP response body.
 type ListResponseBody []*WorkspaceResponse
@@ -190,6 +209,41 @@ type StopResponseBody struct {
 // ResetResponseBody is the type of the "workspaces" service "reset" endpoint
 // HTTP response body.
 type ResetResponseBody struct {
+	// Workspace name
+	Name string `form:"name" json:"name" xml:"name"`
+	// Kubernetes namespace
+	Namespace string `form:"namespace" json:"namespace" xml:"namespace"`
+	// Workspace type: container, vm, or scratch
+	Type string `form:"type" json:"type" xml:"type"`
+	// Container image
+	Image string `form:"image" json:"image" xml:"image"`
+	// Container port
+	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
+	// CPU request
+	CPURequest *string `form:"cpu_request,omitempty" json:"cpu_request,omitempty" xml:"cpu_request,omitempty"`
+	// Memory request
+	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
+	// CPU limit
+	CPULimit *string `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty" xml:"cpu_limit,omitempty"`
+	// Memory limit
+	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	// Number of ready replicas
+	ReadyReplicas int `form:"ready_replicas" json:"ready_replicas" xml:"ready_replicas"`
+	// Container state
+	ContainerState *ContainerStateResponseBody `form:"container_state,omitempty" json:"container_state,omitempty" xml:"container_state,omitempty"`
+	// Workspace conditions
+	Conditions []*WorkspaceConditionResponseBody `form:"conditions,omitempty" json:"conditions,omitempty" xml:"conditions,omitempty"`
+	// Whether the workspace is stopped
+	Stopped bool `form:"stopped" json:"stopped" xml:"stopped"`
+	// Creation timestamp
+	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	// Attached volumes
+	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+}
+
+// CloneResponseBody is the type of the "workspaces" service "clone" endpoint
+// HTTP response body.
+type CloneResponseBody struct {
 	// Workspace name
 	Name string `form:"name" json:"name" xml:"name"`
 	// Kubernetes namespace
@@ -604,6 +658,49 @@ func NewResetResponseBody(res *workspacesviews.WorkspaceView) *ResetResponseBody
 	return body
 }
 
+// NewCloneResponseBody builds the HTTP response body from the result of the
+// "clone" endpoint of the "workspaces" service.
+func NewCloneResponseBody(res *workspacesviews.WorkspaceView) *CloneResponseBody {
+	body := &CloneResponseBody{
+		Name:          *res.Name,
+		Namespace:     *res.Namespace,
+		Type:          *res.Type,
+		Image:         *res.Image,
+		Port:          res.Port,
+		CPURequest:    res.CPURequest,
+		MemoryRequest: res.MemoryRequest,
+		CPULimit:      res.CPULimit,
+		MemoryLimit:   res.MemoryLimit,
+		ReadyReplicas: *res.ReadyReplicas,
+		Stopped:       *res.Stopped,
+		CreatedAt:     res.CreatedAt,
+	}
+	if res.ContainerState != nil {
+		body.ContainerState = marshalWorkspacesviewsContainerStateViewToContainerStateResponseBody(res.ContainerState)
+	}
+	if res.Conditions != nil {
+		body.Conditions = make([]*WorkspaceConditionResponseBody, len(res.Conditions))
+		for i, val := range res.Conditions {
+			if val == nil {
+				body.Conditions[i] = nil
+				continue
+			}
+			body.Conditions[i] = marshalWorkspacesviewsWorkspaceConditionViewToWorkspaceConditionResponseBody(val)
+		}
+	}
+	if res.VolumeMounts != nil {
+		body.VolumeMounts = make([]*VolumeMountResponseBody, len(res.VolumeMounts))
+		for i, val := range res.VolumeMounts {
+			if val == nil {
+				body.VolumeMounts[i] = nil
+				continue
+			}
+			body.VolumeMounts[i] = marshalWorkspacesviewsVolumeMountViewToVolumeMountResponseBody(val)
+		}
+	}
+	return body
+}
+
 // NewListPayload builds a workspaces service list endpoint payload.
 func NewListPayload(namespace string) *workspaces.ListPayload {
 	v := &workspaces.ListPayload{}
@@ -730,6 +827,23 @@ func NewResetPayload(name string, namespace string) *workspaces.ResetPayload {
 	return v
 }
 
+// NewClonePayload builds a workspaces service clone endpoint payload.
+func NewClonePayload(body *CloneRequestBody, name string, namespace string) *workspaces.ClonePayload {
+	v := &workspaces.ClonePayload{
+		NewName:       *body.NewName,
+		Image:         body.Image,
+		Port:          body.Port,
+		CPURequest:    body.CPURequest,
+		MemoryRequest: body.MemoryRequest,
+		CPULimit:      body.CPULimit,
+		MemoryLimit:   body.MemoryLimit,
+	}
+	v.Name = name
+	v.Namespace = namespace
+
+	return v
+}
+
 // ValidateCreateRequestBody runs the validations defined on CreateRequestBody
 func ValidateCreateRequestBody(body *CreateRequestBody) (err error) {
 	if body.Name == nil {
@@ -780,6 +894,22 @@ func ValidateCreateRequestBody(body *CreateRequestBody) (err error) {
 	if body.ImagePullPolicy != nil {
 		if !(*body.ImagePullPolicy == "Always" || *body.ImagePullPolicy == "IfNotPresent" || *body.ImagePullPolicy == "Never") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.image_pull_policy", *body.ImagePullPolicy, []any{"Always", "IfNotPresent", "Never"}))
+		}
+	}
+	return
+}
+
+// ValidateCloneRequestBody runs the validations defined on CloneRequestBody
+func ValidateCloneRequestBody(body *CloneRequestBody) (err error) {
+	if body.NewName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("new_name", "body"))
+	}
+	if body.NewName != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.new_name", *body.NewName, "^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?$"))
+	}
+	if body.NewName != nil {
+		if utf8.RuneCountInString(*body.NewName) > 63 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.new_name", *body.NewName, utf8.RuneCountInString(*body.NewName), 63, false))
 		}
 	}
 	return

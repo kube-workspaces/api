@@ -41,6 +41,25 @@ type CreateRequestBody struct {
 	ImagePullPolicy string `form:"image_pull_policy" json:"image_pull_policy" xml:"image_pull_policy"`
 }
 
+// CloneRequestBody is the type of the "workspaces" service "clone" endpoint
+// HTTP request body.
+type CloneRequestBody struct {
+	// Name for the cloned workspace
+	NewName string `form:"new_name" json:"new_name" xml:"new_name"`
+	// Override the container image on the clone
+	Image *string `form:"image,omitempty" json:"image,omitempty" xml:"image,omitempty"`
+	// Override the container port on the clone
+	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
+	// Override the CPU request on the clone
+	CPURequest *string `form:"cpu_request,omitempty" json:"cpu_request,omitempty" xml:"cpu_request,omitempty"`
+	// Override the memory request on the clone
+	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
+	// Override the CPU limit on the clone
+	CPULimit *string `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty" xml:"cpu_limit,omitempty"`
+	// Override the memory limit on the clone
+	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+}
+
 // GetResponseBody is the type of the "workspaces" service "get" endpoint HTTP
 // response body.
 type GetResponseBody struct {
@@ -184,6 +203,41 @@ type StopResponseBody struct {
 // ResetResponseBody is the type of the "workspaces" service "reset" endpoint
 // HTTP response body.
 type ResetResponseBody struct {
+	// Workspace name
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// Kubernetes namespace
+	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty" xml:"namespace,omitempty"`
+	// Workspace type: container, vm, or scratch
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
+	// Container image
+	Image *string `form:"image,omitempty" json:"image,omitempty" xml:"image,omitempty"`
+	// Container port
+	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
+	// CPU request
+	CPURequest *string `form:"cpu_request,omitempty" json:"cpu_request,omitempty" xml:"cpu_request,omitempty"`
+	// Memory request
+	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
+	// CPU limit
+	CPULimit *string `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty" xml:"cpu_limit,omitempty"`
+	// Memory limit
+	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	// Number of ready replicas
+	ReadyReplicas *int `form:"ready_replicas,omitempty" json:"ready_replicas,omitempty" xml:"ready_replicas,omitempty"`
+	// Container state
+	ContainerState *ContainerStateResponseBody `form:"container_state,omitempty" json:"container_state,omitempty" xml:"container_state,omitempty"`
+	// Workspace conditions
+	Conditions []*WorkspaceConditionResponseBody `form:"conditions,omitempty" json:"conditions,omitempty" xml:"conditions,omitempty"`
+	// Whether the workspace is stopped
+	Stopped *bool `form:"stopped,omitempty" json:"stopped,omitempty" xml:"stopped,omitempty"`
+	// Creation timestamp
+	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	// Attached volumes
+	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+}
+
+// CloneResponseBody is the type of the "workspaces" service "clone" endpoint
+// HTTP response body.
+type CloneResponseBody struct {
 	// Workspace name
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Kubernetes namespace
@@ -443,6 +497,21 @@ func NewCreateRequestBody(p *workspaces.CreateWorkspacePayload) *CreateRequestBo
 		if body.ImagePullPolicy == zero {
 			body.ImagePullPolicy = "IfNotPresent"
 		}
+	}
+	return body
+}
+
+// NewCloneRequestBody builds the HTTP request body from the payload of the
+// "clone" endpoint of the "workspaces" service.
+func NewCloneRequestBody(p *workspaces.ClonePayload) *CloneRequestBody {
+	body := &CloneRequestBody{
+		NewName:       p.NewName,
+		Image:         p.Image,
+		Port:          p.Port,
+		CPURequest:    p.CPURequest,
+		MemoryRequest: p.MemoryRequest,
+		CPULimit:      p.CPULimit,
+		MemoryLimit:   p.MemoryLimit,
 	}
 	return body
 }
@@ -735,6 +804,72 @@ func NewResetInvalid(body string) workspaces.Invalid {
 
 // NewResetNotFound builds a workspaces service reset endpoint not_found error.
 func NewResetNotFound(body string) workspaces.NotFound {
+	v := workspaces.NotFound(body)
+
+	return v
+}
+
+// NewCloneWorkspaceCreated builds a "workspaces" service "clone" endpoint
+// result from a HTTP "Created" response.
+func NewCloneWorkspaceCreated(body *CloneResponseBody) *workspacesviews.WorkspaceView {
+	v := &workspacesviews.WorkspaceView{
+		Name:          body.Name,
+		Namespace:     body.Namespace,
+		Type:          body.Type,
+		Image:         body.Image,
+		Port:          body.Port,
+		CPURequest:    body.CPURequest,
+		MemoryRequest: body.MemoryRequest,
+		CPULimit:      body.CPULimit,
+		MemoryLimit:   body.MemoryLimit,
+		ReadyReplicas: body.ReadyReplicas,
+		Stopped:       body.Stopped,
+		CreatedAt:     body.CreatedAt,
+	}
+	if body.ContainerState != nil {
+		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
+	}
+	if body.Conditions != nil {
+		v.Conditions = make([]*workspacesviews.WorkspaceConditionView, len(body.Conditions))
+		for i, val := range body.Conditions {
+			if val == nil {
+				v.Conditions[i] = nil
+				continue
+			}
+			v.Conditions[i] = unmarshalWorkspaceConditionResponseBodyToWorkspacesviewsWorkspaceConditionView(val)
+		}
+	}
+	if body.VolumeMounts != nil {
+		v.VolumeMounts = make([]*workspacesviews.VolumeMountView, len(body.VolumeMounts))
+		for i, val := range body.VolumeMounts {
+			if val == nil {
+				v.VolumeMounts[i] = nil
+				continue
+			}
+			v.VolumeMounts[i] = unmarshalVolumeMountResponseBodyToWorkspacesviewsVolumeMountView(val)
+		}
+	}
+
+	return v
+}
+
+// NewCloneAlreadyExists builds a workspaces service clone endpoint
+// already_exists error.
+func NewCloneAlreadyExists(body string) workspaces.AlreadyExists {
+	v := workspaces.AlreadyExists(body)
+
+	return v
+}
+
+// NewCloneInvalid builds a workspaces service clone endpoint invalid error.
+func NewCloneInvalid(body string) workspaces.Invalid {
+	v := workspaces.Invalid(body)
+
+	return v
+}
+
+// NewCloneNotFound builds a workspaces service clone endpoint not_found error.
+func NewCloneNotFound(body string) workspaces.NotFound {
 	v := workspaces.NotFound(body)
 
 	return v
