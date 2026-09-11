@@ -1,10 +1,10 @@
 {
-  "generated": "2026-07-24T07:30:00Z",
+  "generated": "2026-09-11T05:08:03Z",
   "modules": [
     {
       "name": "Controller",
       "path": "controller",
-      "goVersion": "1.24",
+      "goVersion": "1.24.0",
       "module": "github.com/kube-workspaces/controller",
       "description": "Kubernetes controllers for Workspace, User, and AuthConfig CRDs",
       "packages": [
@@ -15,14 +15,28 @@
     {
       "name": "API",
       "path": "api",
-      "goVersion": "1.26",
+      "goVersion": "1.26.0",
       "module": "github.com/kube-workspaces/api",
-      "description": "REST API server built with Goa framework",
+      "description": "REST API service built with Goa",
       "packages": [
         ".",
         "internal/auth",
         "internal/k8s",
+        "internal/proxy",
         "internal/exec"
+      ]
+    },
+    {
+      "name": "Proxy",
+      "path": "proxy",
+      "goVersion": "1.26.0",
+      "module": "github.com/kube-workspaces/proxy",
+      "description": "Reverse proxy for workspace traffic (/proxy/{ns}/{name}/...)",
+      "packages": [
+        "cmd/proxy",
+        "internal/auth",
+        "internal/k8s",
+        "internal/proxy"
       ]
     }
   ]
