@@ -59,7 +59,7 @@ func BuildCreatePayload(volumesCreateBody string) (*volumes.CreateVolumePayload,
 	{
 		err = json.Unmarshal([]byte(volumesCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"access_mode\": \"ReadWriteMany\",\n      \"name\": \"my-data\",\n      \"namespace\": \"Quia et voluptas.\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"access_mode\": \"ReadWriteOnce\",\n      \"name\": \"my-data\",\n      \"namespace\": \"workspaces\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.name", body.Name, "^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?$"))
 		if utf8.RuneCountInString(body.Name) > 63 {
