@@ -11,7 +11,7 @@ REST API service for the kube-workspaces platform. Built with Goa v3.
 | `cmd/kube_workspaces/` | Main entrypoint + HTTP handlers |
 | `design/design.go` | Goa DSL design (source of truth for API routes) |
 | `gen/` | Generated Goa code (types, endpoints, HTTP transport, OpenAPI) |
-| `internal/auth/` | Auth middleware (OIDC, session cookies, Bearer tokens) |
+| `internal/auth/` | Auth middleware (OIDC, local auth, session cookies, Bearer tokens, RFC 8252 native-app flow) |
 | `internal/exec/` | WebSocket bridges: exec, VM serial console, VM noVNC display, web SSH + session registry |
 | `internal/k8s/` | Kubernetes client utilities |
 | `internal/platform/` | PlatformConfig reading |
@@ -40,6 +40,14 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
   workspace updates and `shared_memory`/`volume_mounts` are rejected for `vm`.
 - SshKey CRUD is implemented in `sshkeys.go` (`/v1/sshkeys*`) backed by
   `internal/k8s/sshkey.go`; keys live in the user's personal namespace.
+- Native (desktop) auth: `internal/auth/native.go` implements the RFC 8252
+  loopback + PKCE flow — `/auth/login` takes `native_redirect`/`code_challenge`,
+  `/auth/callback` returns a single-use code to the loopback listener instead of
+  setting a cookie, and `POST /auth/native/token` exchanges it for the session
+  token in the response body. `validateLoopbackRedirect` is security-critical:
+  loosening it turns `/auth/login` into a token-leaking open redirect. The
+  `/auth/*` routes are hand-written in `cmd/kube_workspaces/http.go` and are not
+  part of the Goa design, so no regeneration is needed when adding one.
 
 ## Docker Image
 

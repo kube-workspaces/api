@@ -221,7 +221,8 @@ func (h *LocalAuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Reque
 
 // HandleChangePassword lets an authenticated local user set a new password.
 // Note: the auth middleware skips /auth/* paths, so this handler must
-// validate the session cookie directly (mirrors OIDCHandler.HandleMe).
+// validate the session token directly (mirrors OIDCHandler.HandleMe): session
+// cookie first, then an Authorization: Bearer header for native/API clients.
 func (h *LocalAuthHandler) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -231,13 +232,13 @@ func (h *LocalAuthHandler) HandleChangePassword(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	cookie, err := r.Cookie(SessionCookieName)
-	if err != nil || cookie.Value == "" {
+	tokenStr := sessionTokenFromRequest(r)
+	if tokenStr == "" {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
 
-	user, authErr := validateAndGetUser(ctx, cookie.Value, cfg, h.provider)
+	user, authErr := validateAndGetUser(ctx, tokenStr, cfg, h.provider)
 	if authErr != nil {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return

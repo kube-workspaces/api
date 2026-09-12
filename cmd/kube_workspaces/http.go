@@ -173,6 +173,10 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	mux.Handle("POST", "/auth/logout", oidcHandler.HandleLogout)
 	mux.Handle("GET", "/auth/me", oidcHandler.HandleMe)
 	mux.Handle("POST", "/auth/login/local", localAuthHandler.HandleLocalLogin)
+	// RFC 8252 native-app flow: the desktop client opens /auth/login with
+	// native_redirect + PKCE in the system browser and redeems the resulting
+	// single-use code here for a session token it can actually read.
+	mux.Handle("POST", "/auth/native/token", oidcHandler.HandleNativeToken)
 	mux.Handle("POST", "/auth/change-password", localAuthHandler.HandleChangePassword)
 
 	// Platform version endpoint (public). Reports this build plus the image each

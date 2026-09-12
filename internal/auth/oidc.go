@@ -46,13 +46,26 @@ type IDTokenClaims struct {
 // OIDCHandler handles the OIDC authentication flow.
 type OIDCHandler struct {
 	provider *ConfigProvider
+	// codes holds authorization codes for in-flight RFC 8252 native logins
+	// (see native.go). Empty for ordinary browser logins.
+	codes *nativeCodeStore
+	// nativeLimiter rate-limits POST /auth/native/token by client IP.
+	nativeLimiter *ipRateLimiter
 }
 
 // NewOIDCHandler creates a new OIDC handler.
 func NewOIDCHandler(provider *ConfigProvider) *OIDCHandler {
 	return &OIDCHandler{
-		provider: provider,
+		provider:      provider,
+		codes:         newNativeCodeStore(nativeCodeTTL, nativeCodeMaxEntries),
+		nativeLimiter: newIPRateLimiter(10, time.Minute),
 	}
+}
+
+// Close releases background resources held by the handler (the native
+// authorization code sweeper).
+func (h *OIDCHandler) Close() {
+	h.codes.Close()
 }
 
 // callbackURLFromRequest derives the OIDC callback URL from the incoming request,
@@ -99,6 +112,13 @@ func (h *OIDCHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 		response["localAuth"] = map[string]interface{}{
 			"enabled": cfg.LocalAuthEnabled,
 		}
+		// Advertise the RFC 8252 native-app flow so a desktop client can detect
+		// support from this document rather than by probing /auth/login with
+		// parameters an older build would silently ignore.
+		response["nativeAuth"] = map[string]interface{}{
+			"enabled": true,
+			"methods": []string{"loopback-pkce"},
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -111,6 +131,40 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.provider.GetConfig(ctx)
 	if err != nil || !cfg.Enabled {
 		http.Error(w, "authentication not enabled", http.StatusBadRequest)
+		return
+	}
+
+	// RFC 8252 native-app parameters. They are absent for ordinary browser
+	// logins, in which case everything below behaves exactly as it always has.
+	nativeRedirect := r.URL.Query().Get("native_redirect")
+	codeChallenge := r.URL.Query().Get("code_challenge")
+	codeChallengeMethod := r.URL.Query().Get("code_challenge_method")
+	// The client's own state, echoed back on the loopback redirect so it can
+	// perform the RFC 6749 §10.12 check. Ignored (as any unknown parameter is)
+	// outside the native flow, so the browser flow is untouched.
+	nativeState := r.URL.Query().Get("state")
+	if nativeRedirect != "" {
+		// SECURITY: validating the loopback redirect is what stops this
+		// endpoint becoming an open redirect that hands a session token to an
+		// attacker-chosen host. See validateLoopbackRedirect.
+		if _, err := validateLoopbackRedirect(nativeRedirect); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := validateCodeChallenge(codeChallenge, codeChallengeMethod); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := validateNativeState(nativeState); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	} else if codeChallenge != "" || codeChallengeMethod != "" {
+		// PKCE without a loopback redirect is a confused client: it would get a
+		// cookie-only browser session and never be told why its listener was
+		// never called. No existing browser sends these parameters, so failing
+		// loudly here costs nothing in compatibility.
+		http.Error(w, "code_challenge requires native_redirect", http.StatusBadRequest)
 		return
 	}
 
@@ -129,12 +183,35 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Carry the state — and any native parameters — through the OIDC round trip
+	// in the kw-auth-state cookie, signed with the session signing key.
+	// SECURITY: the signature is what makes the redirect target non-forgeable.
+	// An attacker who plants an arbitrary kw-auth-state cookie cannot produce a
+	// valid signature, so they cannot make a victim's completed login redirect
+	// anywhere.
+	nativeStateValue := nativeState
+	if nativeRedirect == "" {
+		nativeStateValue = ""
+	}
+	stateValue, err := encodeAuthState(&authState{
+		State:          state,
+		NativeRedirect: nativeRedirect,
+		CodeChallenge:  codeChallenge,
+		NativeState:    nativeStateValue,
+		ExpiresAt:      time.Now().Add(authStateTTL).Unix(),
+	}, cfg.SigningKey)
+	if err != nil {
+		log.Printf(ctx, "auth: failed to encode auth state: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
 	// Store state in a cookie for verification on callback
 	http.SetCookie(w, &http.Cookie{
 		Name:     "kw-auth-state",
-		Value:    state,
+		Value:    stateValue,
 		Path:     "/auth",
-		MaxAge:   300, // 5 minutes
+		MaxAge:   int(authStateTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
@@ -169,8 +246,12 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The cookie carries the CSRF state plus any native-flow parameters. The
+	// state comparison below is unchanged in substance: the value the provider
+	// echoed back must equal the one we minted and stored.
+	authSt := parseAuthStateCookie(stateCookie.Value, cfg.SessionSigningKeys())
 	queryState := r.URL.Query().Get("state")
-	if queryState != stateCookie.Value {
+	if queryState == "" || queryState != authSt.State {
 		http.Error(w, "state mismatch", http.StatusBadRequest)
 		return
 	}
@@ -188,6 +269,9 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
 		errDesc := r.URL.Query().Get("error_description")
 		log.Printf(ctx, "auth: OIDC error: %s - %s", errParam, errDesc)
+		if redirectNativeError(w, r, authSt, errParam, errDesc) {
+			return
+		}
 		http.Error(w, fmt.Sprintf("authentication failed: %s", errDesc), http.StatusUnauthorized)
 		return
 	}
@@ -257,6 +341,9 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if !allowed {
+				if redirectNativeError(w, r, authSt, "access_denied", "email not allowed") {
+					return
+				}
 				http.Error(w, "email not allowed", http.StatusForbidden)
 				return
 			}
@@ -307,6 +394,16 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Native (RFC 8252) flow: hand the token back to the client's loopback
+	// listener via a single-use code instead of setting a browser cookie. The
+	// token belongs to the app, not to the browser the user logged in with.
+	// Everything above — claims, role resolution, provisioning, expiry — is the
+	// shared code path; only delivery differs.
+	if authSt.Native() {
+		h.completeNativeLogin(w, r, authSt, sessionToken, cfg)
+		return
+	}
+
 	// Set session cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
@@ -342,7 +439,9 @@ func (h *OIDCHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 
 // HandleMe returns the current user's information.
 // Note: The auth middleware skips /auth/* paths, so this handler must
-// validate the session cookie directly.
+// validate the session token directly. It accepts the session cookie (browser)
+// or an Authorization: Bearer header (native/API clients, which cannot read an
+// HttpOnly cookie); the cookie takes precedence.
 func (h *OIDCHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -357,9 +456,9 @@ func (h *OIDCHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate session cookie directly (middleware skips /auth/ paths)
-	cookie, err := r.Cookie(SessionCookieName)
-	if err != nil || cookie.Value == "" {
+	// Validate the session token directly (middleware skips /auth/ paths)
+	tokenStr := sessionTokenFromRequest(r)
+	if tokenStr == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -369,7 +468,7 @@ func (h *OIDCHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, authErr := validateAndGetUser(ctx, cookie.Value, cfg, h.provider)
+	user, authErr := validateAndGetUser(ctx, tokenStr, cfg, h.provider)
 	if authErr != nil {
 		log.Printf(ctx, "auth: /auth/me token validation failed: %v", authErr)
 		w.Header().Set("Content-Type", "application/json")
