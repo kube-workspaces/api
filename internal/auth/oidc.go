@@ -47,18 +47,22 @@ type IDTokenClaims struct {
 type OIDCHandler struct {
 	provider *ConfigProvider
 	// codes holds authorization codes for in-flight RFC 8252 native logins
-	// (see native.go). Empty for ordinary browser logins.
+	// (see native.go) and for browser-session grants (see browsersession.go).
+	// Empty for ordinary browser logins.
 	codes *nativeCodeStore
 	// nativeLimiter rate-limits POST /auth/native/token by client IP.
 	nativeLimiter *ipRateLimiter
+	// browserSessionLimiter rate-limits GET /auth/browser-session by client IP.
+	browserSessionLimiter *ipRateLimiter
 }
 
 // NewOIDCHandler creates a new OIDC handler.
 func NewOIDCHandler(provider *ConfigProvider) *OIDCHandler {
 	return &OIDCHandler{
-		provider:      provider,
-		codes:         newNativeCodeStore(nativeCodeTTL, nativeCodeMaxEntries),
-		nativeLimiter: newIPRateLimiter(10, time.Minute),
+		provider:              provider,
+		codes:                 newNativeCodeStore(nativeCodeTTL, nativeCodeMaxEntries),
+		nativeLimiter:         newIPRateLimiter(10, time.Minute),
+		browserSessionLimiter: newIPRateLimiter(10, time.Minute),
 	}
 }
 

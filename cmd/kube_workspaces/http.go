@@ -177,6 +177,12 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	// native_redirect + PKCE in the system browser and redeems the resulting
 	// single-use code here for a session token it can actually read.
 	mux.Handle("POST", "/auth/native/token", oidcHandler.HandleNativeToken)
+	// App-to-browser session handoff: the desktop client mints a single-use
+	// code here and opens its browser at the redeem endpoint, which sets the
+	// kw-session cookie (exactly as a login would) and redirects to the
+	// workspace's /proxy/... URL.
+	mux.Handle("POST", "/auth/browser-session/grant", oidcHandler.HandleBrowserSessionGrant)
+	mux.Handle("GET", "/auth/browser-session", oidcHandler.HandleBrowserSessionRedeem)
 	mux.Handle("POST", "/auth/change-password", localAuthHandler.HandleChangePassword)
 
 	// Platform version endpoint (public). Reports this build plus the image each

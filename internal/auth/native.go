@@ -329,14 +329,19 @@ func generateNativeCode() (string, error) {
 }
 
 // nativeAuthCode is a minted-but-unredeemed session token, held only long
-// enough for the native client to collect it.
+// enough for its single registered consumer to collect it.
 type nativeAuthCode struct {
 	token          string
 	codeChallenge  string
 	email          string
 	role           string
 	tokenExpiresAt int64
-	expiresAt      time.Time
+	// redirect is set by the browser-session grant flow (browsersession.go)
+	// and empty for the native login flow: when a browser redeems the code it
+	// is redirected to this same-origin /proxy/... target after the session
+	// cookie is set.
+	redirect  string
+	expiresAt time.Time
 }
 
 // nativeCodeStore is an in-memory, single-use, TTL-bounded store of
