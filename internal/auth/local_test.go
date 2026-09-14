@@ -147,7 +147,9 @@ func TestClientIPFromRequest(t *testing.T) {
 	}{
 		{"remote addr only", "10.0.0.1:12345", "", "10.0.0.1"},
 		{"xff single", "10.0.0.1:12345", "203.0.113.5", "203.0.113.5"},
-		{"xff list uses first", "10.0.0.1:12345", "203.0.113.5, 10.0.0.1", "203.0.113.5"},
+		{"xff list uses rightmost", "10.0.0.1:12345", "203.0.113.5, 10.0.0.1", "10.0.0.1"},
+		{"spoofed leftmost ignored", "10.0.0.1:12345", "203.0.113.5, 198.51.100.7, 10.0.0.1", "10.0.0.1"},
+		{"invalid rightmost falls back to remote addr", "10.0.0.1:12345", "203.0.113.5, bogus", "10.0.0.1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

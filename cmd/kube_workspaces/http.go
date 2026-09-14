@@ -1720,7 +1720,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		// Log query and response bodies if debug logs are enabled.
 		handler = debug.HTTP()(handler)
 	}
-	handler = log.HTTP(ctx)(handler)
+	handler = redactedRequestLog(ctx)(handler)
 
 	// Apply auth middleware (no-op when auth is disabled)
 	handler = auth.Middleware(authProvider)(handler)

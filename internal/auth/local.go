@@ -477,12 +477,27 @@ func writeJSONError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-// clientIPFromRequest extracts the client IP for rate-limiting purposes,
-// preferring X-Forwarded-For (set by the ingress/proxy) over RemoteAddr.
+// clientIPFromRequest extracts the client IP for rate-limiting purposes.
+//
+// Only the rightmost entry of X-Forwarded-For is trusted. Every trusted
+// reverse proxy in the chain appends the address of the hop it actually saw
+// to the end of X-Forwarded-For, so the rightmost value is the immediate
+// client as observed by the proxy. Anything a client places on the left
+// (e.g. "X-Forwarded-For: 203.0.113.5, ...") is attacker-controlled and must
+// never be used: honoring the first entry let a client mint an unlimited
+// number of fresh per-IP rate-limit keys and defeat the limiter.
+//
+// When the API is reached without a proxy (no X-Forwarded-For), RemoteAddr is
+// the client and is used directly. The same rule must hold for every limiter
+// that keys off this value (local login, native token exchange, browser
+// session grant).
 func clientIPFromRequest(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		parts := strings.Split(fwd, ",")
-		return strings.TrimSpace(parts[0])
+		last := strings.TrimSpace(parts[len(parts)-1])
+		if net.ParseIP(last) != nil {
+			return last
+		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
