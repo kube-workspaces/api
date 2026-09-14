@@ -198,3 +198,14 @@ func SerialConsoleInUse(namespace, name string) bool {
 func TakeOverSerialConsole(namespace, name string) bool {
 	return serialSessions.forceRelease(consoleKey(namespace, name))
 }
+
+// VNCInUse reports whether a VNC bridge is currently active for the workspace.
+func VNCInUse(namespace, name string) bool {
+	return vncSessions.held(consoleKey(namespace, name))
+}
+
+// TakeOverVNC force-ends the active VNC bridge for the workspace, if any, so
+// the caller can open a fresh session. It returns whether a session was active.
+func TakeOverVNC(namespace, name string) bool {
+	return vncSessions.forceRelease(consoleKey(namespace, name))
+}

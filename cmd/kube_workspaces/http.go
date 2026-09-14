@@ -1634,6 +1634,45 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
 		})
 
+		// VNC session status: GET /v1/workspaces/{name}/vnc/status
+		// KubeVirt's noVNC viewer is single-session and last-wins, so the UI
+		// checks status before connecting and asks for consent before taking a
+		// held display over rather than silently severing the other user.
+		mux.Handle("GET", "/v1/workspaces/{name}/vnc/status", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "VNC is only available for VM workspaces"})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"inUse": exec.VNCInUse(ns, name)})
+		})
+
+		// VNC take-over: POST /v1/workspaces/{name}/vnc/takeover
+		// Force-ends the active VNC session (if any) so the caller can open a
+		// fresh one. Only invoked after the user explicitly confirms wanting to
+		// disconnect whoever currently holds the display.
+		mux.Handle("POST", "/v1/workspaces/{name}/vnc/takeover", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "VNC is only available for VM workspaces"})
+				return
+			}
+			wasInUse := exec.TakeOverVNC(ns, name)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
+		})
+
 		// VM reboot: POST /v1/workspaces/{name}/reboot
 		// Deletes the VMI so KubeVirt recreates it from the VM spec (persistent
 		// disk preserved).
