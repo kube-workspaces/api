@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +13,52 @@ import (
 	"github.com/gorilla/websocket"
 	"k8s.io/client-go/rest"
 )
+
+// throughputLogger streams bandwidth metrics when debug logging is enabled.
+type throughputLogger struct {
+	mu          sync.Mutex
+	start       time.Time
+	bytesSent   int64
+	lastLog     time.Time
+	intervalMs  int // e.g., 5000 ms = 5 second log interval
+	debugMode   bool
+}
+
+func newThroughputLogger(intervalMs int) *throughputLogger {
+	return &throughputLogger{
+		start:       time.Now(),
+		lastLog:     time.Now(),
+		intervalMs:  intervalMs,
+		debugMode:   os.Getenv("AQC_DEBUG_THROUGHPUT") == "1",
+	}
+}
+
+func (l *throughputLogger) recordBytesSent(n int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.bytesSent += n
+	now := time.Now()
+	if now.Sub(l.lastLog) > time.Duration(l.intervalMs)*time.Millisecond {
+		l.logStats(now)
+		l.lastLog = now
+	}
+}
+
+func (l *throughputLogger) logStats(now time.Time) {
+	if !l.debugMode {
+		return
+	}
+	duration := now.Sub(l.start).Seconds()
+	avgBps := float64(l.bytesSent) / duration
+	avgKbps := avgBps / 1024.0
+
+	fmt.Fprintf(os.Stderr, "[AQC-THROUGHPUT] %s: bytes=%d duration=%.1fs avg=%.2f KB/s\n",
+		time.Now().Format(time.RFC3339), l.bytesSent, duration, avgKbps)
+
+	l.bytesSent = 0
+}
+
+var throughputLoggerInstance *throughputLogger
 
 // vncUpgrader negotiates the RFB WebSocket with the browser client. noVNC and
 // virtctl-style clients advertise one of these subprotocols; the upgrader must
@@ -44,10 +91,8 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
 
-		// Reserve this workspace's VNC slot before dialing. KubeVirt's VNC is
-		// single-session; without a guard a second client would be denied by the
-		// VMI mid-handshake, but refusing here keeps the behaviour predictable
-		// and lets the UI show a clean "another session holds the display" hint.
+		logger := newThroughputLogger(5000) // Log every 5 seconds if debug enabled
+
 		handle := &sessionHandle{cancel: cancel}
 		if _, ok := vncSessions.acquire(consoleKey(namespace, name), handle); !ok {
 			http.Error(w, "VNC display is in use for this workspace", http.StatusConflict)
@@ -137,6 +182,9 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 			defer cancel()
 			for {
 				msgType, msg, err := vmConn.ReadMessage()
+				if len(msg) > 0 && logger.debugMode {
+					logger.recordBytesSent(int64(len(msg)))
+				}
 				if err != nil {
 					return
 				}
