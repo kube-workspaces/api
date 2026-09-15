@@ -762,6 +762,26 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		json.NewEncoder(w).Encode(list)
 	})
 
+	// Admin: list instances of a core (API group "") resource, e.g. Secrets,
+	// by version/resource. The generic route above cannot express an empty
+	// group: net/http's ServeMux 301s the "//" produced by an empty segment,
+	// so callers use the literal segment "core" here, which maps back to "".
+	mux.Handle("GET", "/admin/crds/instances/core/{version}/{resource}", func(w http.ResponseWriter, r *http.Request) {
+		version := r.PathValue("version")
+		resource := r.PathValue("resource")
+		ns := r.URL.Query().Get("namespace")
+
+		list, err := crdClient.ListCRDInstances(r.Context(), "", version, resource, ns)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(list)
+	})
+
 	// Admin: list raw workspace CRDs
 	mux.Handle("GET", "/admin/crds/workspaces", func(w http.ResponseWriter, r *http.Request) {
 		ns := r.URL.Query().Get("namespace")
