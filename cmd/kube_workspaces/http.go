@@ -1673,6 +1673,61 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			json.NewEncoder(w).Encode(map[string]bool{"inUse": exec.VNCInUse(ns, name)})
 		})
 
+		// Tier 1 transport session status: GET /v1/workspaces/{name}/tier1/status
+		mux.Handle("GET", "/v1/workspaces/{name}/tier1/status", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Tier 1 is only available for VM workspaces"})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"inUse": exec.Tier1InUse(ns, name)})
+		})
+
+		// Tier 1 take-over: POST /v1/workspaces/{name}/tier1/takeover
+		mux.Handle("POST", "/v1/workspaces/{name}/tier1/takeover", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Tier 1 is only available for VM workspaces"})
+				return
+			}
+			wasInUse := exec.TakeOverTier1(ns, name)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
+		})
+
+		// Tier 1 claim (internal/trusted): POST /v1/workspaces/{name}/tier1/claim
+		// Used by the proxy to register a session. In a production deployment this
+		// endpoint should be restricted to the proxy's IP or use a shared secret.
+		mux.Handle("POST", "/v1/workspaces/{name}/tier1/claim", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			// TODO: restrict to proxy-specific trust (e.g. header or source IP).
+			// For now this only checks whether a Tier 1 slot is free; a proper
+			// claim needs persistent state (e.g. a shared registry or channel)
+			// so the API can notice when the proxy's session ends.
+			if exec.Tier1InUse(ns, name) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Tier 1 session in use"})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		})
+
 		// VNC take-over: POST /v1/workspaces/{name}/vnc/takeover
 		// Force-ends the active VNC session (if any) so the caller can open a
 		// fresh one. Only invoked after the user explicitly confirms wanting to
@@ -1754,6 +1809,27 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]bool{"inUse": exec.SSHConsoleInUse(ns, name)})
+		})
+
+		// Workspace session status (all protocols): GET /v1/workspaces/{name}/session/status
+		mux.Handle("GET", "/v1/workspaces/{name}/session/status", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Session status is only available for VM workspaces"})
+				return
+			}
+			status := map[string]bool{
+				"vnc":   exec.VNCInUse(ns, name),
+				"ssh":   exec.SSHConsoleInUse(ns, name),
+				"tier1": exec.Tier1InUse(ns, name),
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(status)
 		})
 
 		// Web SSH take-over: POST /v1/workspaces/{name}/ssh/takeover

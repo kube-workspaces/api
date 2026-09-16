@@ -75,13 +75,17 @@ paths:
                                       proxy_config:
                                         custom_request_headers:
                                             x-tenant: workspaces
-                                        inject_base_tag: true
+                                        inject_base_tag: false
                                         needs_noop_sw: true
-                                        preserve_path_prefix: false
+                                        preserve_path_prefix: true
                                         rewrite_host_absolute_paths: true
                                         tls_insecure: false
                                         websocket_paths:
                                             - /websockify
+                                      remote_desktop:
+                                        path: /
+                                        port: 8080
+                                        protocol: selkies
                                       source_url: https://github.com/coder/code-server
                                       tags:
                                         - development
@@ -124,13 +128,70 @@ paths:
                                       proxy_config:
                                         custom_request_headers:
                                             x-tenant: workspaces
-                                        inject_base_tag: true
+                                        inject_base_tag: false
                                         needs_noop_sw: true
-                                        preserve_path_prefix: false
+                                        preserve_path_prefix: true
                                         rewrite_host_absolute_paths: true
                                         tls_insecure: false
                                         websocket_paths:
                                             - /websockify
+                                      remote_desktop:
+                                        path: /
+                                        port: 8080
+                                        protocol: selkies
+                                      source_url: https://github.com/coder/code-server
+                                      tags:
+                                        - development
+                                        - vscode
+                                      workspace_types:
+                                        - container
+                                    - category: IDE
+                                      cr_name: code-server
+                                      default_args:
+                                        - --bind-addr
+                                        - 0.0.0.0:8080
+                                      default_cloud_init: false
+                                      default_credentials:
+                                        password: changeme
+                                        username: coder
+                                      default_env:
+                                        - name: PASSWORD
+                                          value: changeme
+                                      default_homedir: /home/coder
+                                      default_password: changeme
+                                      default_path: /
+                                      default_port: 8080
+                                      default_shared_memory: false
+                                      default_shell: /bin/bash
+                                      default_uid: 1000
+                                      default_user: coder
+                                      default_user_data: ""
+                                      description: Code editor in the browser
+                                      homepage_url: https://github.com/coder/code-server
+                                      icon: code
+                                      image: codercom/code-server:latest
+                                      image_homepage_url: https://hub.docker.com/r/codercom/code-server
+                                      links:
+                                        - title: GitHub
+                                          url: https://github.com/coder/code-server
+                                        - title: Docker Hub
+                                          url: https://hub.docker.com/r/codercom/code-server
+                                      name: Code Server (VS Code)
+                                      privileged: false
+                                      proxy_config:
+                                        custom_request_headers:
+                                            x-tenant: workspaces
+                                        inject_base_tag: false
+                                        needs_noop_sw: true
+                                        preserve_path_prefix: true
+                                        rewrite_host_absolute_paths: true
+                                        tls_insecure: false
+                                        websocket_paths:
+                                            - /websockify
+                                      remote_desktop:
+                                        path: /
+                                        port: 8080
+                                        protocol: selkies
                                       source_url: https://github.com/coder/code-server
                                       tags:
                                         - development
@@ -174,13 +235,17 @@ paths:
                                   proxy_config:
                                     custom_request_headers:
                                         x-tenant: workspaces
-                                    inject_base_tag: true
+                                    inject_base_tag: false
                                     needs_noop_sw: true
-                                    preserve_path_prefix: false
+                                    preserve_path_prefix: true
                                     rewrite_host_absolute_paths: true
                                     tls_insecure: false
                                     websocket_paths:
                                         - /websockify
+                                  remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                   source_url: https://github.com/coder/code-server
                                   tags:
                                     - development
@@ -223,13 +288,17 @@ paths:
                                   proxy_config:
                                     custom_request_headers:
                                         x-tenant: workspaces
-                                    inject_base_tag: true
+                                    inject_base_tag: false
                                     needs_noop_sw: true
-                                    preserve_path_prefix: false
+                                    preserve_path_prefix: true
                                     rewrite_host_absolute_paths: true
                                     tls_insecure: false
                                     websocket_paths:
                                         - /websockify
+                                  remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                   source_url: https://github.com/coder/code-server
                                   tags:
                                     - development
@@ -272,13 +341,17 @@ paths:
                                   proxy_config:
                                     custom_request_headers:
                                         x-tenant: workspaces
-                                    inject_base_tag: true
+                                    inject_base_tag: false
                                     needs_noop_sw: true
-                                    preserve_path_prefix: false
+                                    preserve_path_prefix: true
                                     rewrite_host_absolute_paths: true
                                     tls_insecure: false
                                     websocket_paths:
                                         - /websockify
+                                  remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                   source_url: https://github.com/coder/code-server
                                   tags:
                                     - development
@@ -333,13 +406,17 @@ paths:
                             proxy_config:
                                 custom_request_headers:
                                     x-tenant: workspaces
-                                inject_base_tag: true
-                                needs_noop_sw: true
-                                preserve_path_prefix: true
-                                rewrite_host_absolute_paths: false
-                                tls_insecure: false
+                                inject_base_tag: false
+                                needs_noop_sw: false
+                                preserve_path_prefix: false
+                                rewrite_host_absolute_paths: true
+                                tls_insecure: true
                                 websocket_paths:
                                     - /websockify
+                            remote_desktop:
+                                path: /
+                                port: 8080
+                                protocol: selkies
                             source_url: https://github.com/coder/code-server
                             tags:
                                 - development
@@ -393,10 +470,14 @@ paths:
                                     inject_base_tag: false
                                     needs_noop_sw: false
                                     preserve_path_prefix: false
-                                    rewrite_host_absolute_paths: true
-                                    tls_insecure: false
+                                    rewrite_host_absolute_paths: false
+                                    tls_insecure: true
                                     websocket_paths:
                                         - /websockify
+                                remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                 source_url: https://github.com/coder/code-server
                                 tags:
                                     - development
@@ -442,7 +523,16 @@ paths:
                                     - created_at: "2025-01-02T15:04:05Z"
                                       name: workspaces
                                       phase: Active
+                                    - created_at: "2025-01-02T15:04:05Z"
+                                      name: workspaces
+                                      phase: Active
+                                    - created_at: "2025-01-02T15:04:05Z"
+                                      name: workspaces
+                                      phase: Active
                             example:
+                                - created_at: "2025-01-02T15:04:05Z"
+                                  name: workspaces
+                                  phase: Active
                                 - created_at: "2025-01-02T15:04:05Z"
                                   name: workspaces
                                   phase: Active
@@ -488,13 +578,19 @@ paths:
                                       name: laptop-2025
                                       namespace: chris-at-fordham-id-au
                                       public_key: ssh-rsa AAAAB3Nza... user@example.com
-                                    - created_at: "2025-01-02T15:04:05Z"
-                                      fingerprint: SHA256:aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
-                                      key_name: Laptop 2025
-                                      name: laptop-2025
-                                      namespace: chris-at-fordham-id-au
-                                      public_key: ssh-rsa AAAAB3Nza... user@example.com
                             example:
+                                - created_at: "2025-01-02T15:04:05Z"
+                                  fingerprint: SHA256:aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+                                  key_name: Laptop 2025
+                                  name: laptop-2025
+                                  namespace: chris-at-fordham-id-au
+                                  public_key: ssh-rsa AAAAB3Nza... user@example.com
+                                - created_at: "2025-01-02T15:04:05Z"
+                                  fingerprint: SHA256:aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+                                  key_name: Laptop 2025
+                                  name: laptop-2025
+                                  namespace: chris-at-fordham-id-au
+                                  public_key: ssh-rsa AAAAB3Nza... user@example.com
                                 - created_at: "2025-01-02T15:04:05Z"
                                   fingerprint: SHA256:aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
                                   key_name: Laptop 2025
@@ -686,17 +782,27 @@ paths:
                                       phase: Bound
                                       size: 10Gi
                                       storage_class: standard
-                                    - access_mode: ReadWriteOnce
-                                      created_at: "2025-01-02T15:04:05Z"
-                                      labels:
-                                        managed-by: kube-workspaces
-                                        workspace: my-workspace
-                                      name: my-workspace-data
-                                      namespace: workspaces
-                                      phase: Bound
-                                      size: 10Gi
-                                      storage_class: standard
                             example:
+                                - access_mode: ReadWriteOnce
+                                  created_at: "2025-01-02T15:04:05Z"
+                                  labels:
+                                    managed-by: kube-workspaces
+                                    workspace: my-workspace
+                                  name: my-workspace-data
+                                  namespace: workspaces
+                                  phase: Bound
+                                  size: 10Gi
+                                  storage_class: standard
+                                - access_mode: ReadWriteOnce
+                                  created_at: "2025-01-02T15:04:05Z"
+                                  labels:
+                                    managed-by: kube-workspaces
+                                    workspace: my-workspace
+                                  name: my-workspace-data
+                                  namespace: workspaces
+                                  phase: Bound
+                                  size: 10Gi
+                                  storage_class: standard
                                 - access_mode: ReadWriteOnce
                                   created_at: "2025-01-02T15:04:05Z"
                                   labels:
@@ -908,6 +1014,10 @@ paths:
                                       namespace: workspaces
                                       port: 8080
                                       ready_replicas: 1
+                                      remote_desktop:
+                                        path: /
+                                        port: 8080
+                                        protocol: selkies
                                       stopped: false
                                       type: container
                                       volume_mounts:
@@ -934,6 +1044,10 @@ paths:
                                       namespace: workspaces
                                       port: 8080
                                       ready_replicas: 1
+                                      remote_desktop:
+                                        path: /
+                                        port: 8080
+                                        protocol: selkies
                                       stopped: false
                                       type: container
                                       volume_mounts:
@@ -960,6 +1074,10 @@ paths:
                                       namespace: workspaces
                                       port: 8080
                                       ready_replicas: 1
+                                      remote_desktop:
+                                        path: /
+                                        port: 8080
+                                        protocol: selkies
                                       stopped: false
                                       type: container
                                       volume_mounts:
@@ -987,6 +1105,10 @@ paths:
                                   namespace: workspaces
                                   port: 8080
                                   ready_replicas: 1
+                                  remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                   stopped: false
                                   type: container
                                   volume_mounts:
@@ -1013,6 +1135,10 @@ paths:
                                   namespace: workspaces
                                   port: 8080
                                   ready_replicas: 1
+                                  remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                   stopped: false
                                   type: container
                                   volume_mounts:
@@ -1039,6 +1165,10 @@ paths:
                                   namespace: workspaces
                                   port: 8080
                                   ready_replicas: 1
+                                  remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                   stopped: false
                                   type: container
                                   volume_mounts:
@@ -1114,6 +1244,10 @@ paths:
                                 namespace: workspaces
                                 port: 8080
                                 ready_replicas: 1
+                                remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                 stopped: false
                                 type: container
                                 volume_mounts:
@@ -1228,6 +1362,10 @@ paths:
                                 namespace: workspaces
                                 port: 8080
                                 ready_replicas: 1
+                                remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                 stopped: false
                                 type: container
                                 volume_mounts:
@@ -1311,6 +1449,10 @@ paths:
                                 namespace: workspaces
                                 port: 8080
                                 ready_replicas: 1
+                                remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                 stopped: false
                                 type: container
                                 volume_mounts:
@@ -1396,6 +1538,10 @@ paths:
                                 namespace: workspaces
                                 port: 8080
                                 ready_replicas: 1
+                                remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                 stopped: false
                                 type: container
                                 volume_mounts:
@@ -1473,6 +1619,10 @@ paths:
                                 namespace: workspaces
                                 port: 8080
                                 ready_replicas: 1
+                                remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                 stopped: false
                                 type: container
                                 volume_mounts:
@@ -1542,6 +1692,10 @@ paths:
                                 namespace: workspaces
                                 port: 8080
                                 ready_replicas: 1
+                                remote_desktop:
+                                    path: /
+                                    port: 8080
+                                    protocol: selkies
                                 stopped: false
                                 type: container
                                 volume_mounts:
@@ -1653,7 +1807,7 @@ components:
                     type: array
                     items:
                         type: string
-                        example: Voluptatum iusto culpa at consequatur.
+                        example: Non ab commodi dignissimos ab.
                     description: Default command-line args
                     example:
                         - --bind-addr
@@ -1751,6 +1905,8 @@ components:
                     example: false
                 proxy_config:
                     $ref: '#/components/schemas/ImageProxyConfig'
+                remote_desktop:
+                    $ref: '#/components/schemas/ImageRemoteDesktop'
                 source_url:
                     type: string
                     description: Source code repository URL
@@ -1759,7 +1915,7 @@ components:
                     type: array
                     items:
                         type: string
-                        example: Dignissimos ab.
+                        example: Neque fugiat veritatis.
                     description: Tags for filtering/searching images
                     example:
                         - development
@@ -1768,7 +1924,7 @@ components:
                     type: array
                     items:
                         type: string
-                        example: Qui quasi ad cum omnis aut.
+                        example: Voluptatum iusto culpa at consequatur.
                     description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                     example:
                         - container
@@ -1809,13 +1965,17 @@ components:
                 proxy_config:
                     custom_request_headers:
                         x-tenant: workspaces
-                    inject_base_tag: true
+                    inject_base_tag: false
                     needs_noop_sw: true
-                    preserve_path_prefix: false
+                    preserve_path_prefix: true
                     rewrite_host_absolute_paths: true
                     tls_insecure: false
                     websocket_paths:
                         - /websockify
+                remote_desktop:
+                    path: /
+                    port: 8080
+                    protocol: selkies
                 source_url: https://github.com/coder/code-server
                 tags:
                     - development
@@ -1938,7 +2098,7 @@ components:
                         nvidia.com/gpu: "true"
                     additionalProperties:
                         type: string
-                        example: Quia rerum dolores perspiciatis qui.
+                        example: Et libero perspiciatis suscipit aliquam non.
                 shared_memory:
                     type: boolean
                     description: Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML frameworks)
@@ -2037,7 +2197,7 @@ components:
                     type: array
                     items:
                         type: string
-                        example: Ipsam omnis aut atque blanditiis vel ipsum.
+                        example: Eveniet officia asperiores.
                     description: Default command-line args injected at workspace creation
                     example:
                         - --bind-addr
@@ -2134,6 +2294,8 @@ components:
                     example: false
                 proxy_config:
                     $ref: '#/components/schemas/ImageProxyConfig'
+                remote_desktop:
+                    $ref: '#/components/schemas/ImageRemoteDesktop'
                 source_url:
                     type: string
                     description: Source code repository URL
@@ -2142,7 +2304,7 @@ components:
                     type: array
                     items:
                         type: string
-                        example: Eveniet officia asperiores.
+                        example: Libero qui dicta fugiat molestiae rerum enim.
                     description: Tags for filtering/searching images
                     example:
                         - development
@@ -2151,7 +2313,7 @@ components:
                     type: array
                     items:
                         type: string
-                        example: Quia labore voluptatem aliquam qui quia architecto.
+                        example: Ipsam omnis aut atque blanditiis vel ipsum.
                     description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                     example:
                         - container
@@ -2193,13 +2355,17 @@ components:
                 proxy_config:
                     custom_request_headers:
                         x-tenant: workspaces
-                    inject_base_tag: true
+                    inject_base_tag: false
                     needs_noop_sw: true
-                    preserve_path_prefix: false
+                    preserve_path_prefix: true
                     rewrite_host_absolute_paths: true
                     tls_insecure: false
                     websocket_paths:
                         - /websockify
+                remote_desktop:
+                    path: /
+                    port: 8080
+                    protocol: selkies
                 source_url: https://github.com/coder/code-server
                 tags:
                     - development
@@ -2272,12 +2438,12 @@ components:
                         x-tenant: workspaces
                     additionalProperties:
                         type: string
-                        example: Voluptas minima illum aut sed.
+                        example: Iste saepe quo ut.
                 inject_base_tag:
                     type: boolean
                     description: Inject a <base> tag into HTML responses to fix relative path resolution
                     default: false
-                    example: false
+                    example: true
                 needs_noop_sw:
                     type: boolean
                     description: Serve a no-op ServiceWorker at /sw.js to prevent SW registration errors
@@ -2287,22 +2453,22 @@ components:
                     type: boolean
                     description: Forward the full proxy path (including /proxy/{ns}/{name}) to the pod instead of stripping it. Required for apps configured with a base URL matching the proxy prefix.
                     default: false
-                    example: false
+                    example: true
                 rewrite_host_absolute_paths:
                     type: boolean
                     description: Rewrite requests with absolute paths that escape the proxy prefix using Referer header
                     default: false
-                    example: true
+                    example: false
                 tls_insecure:
                     type: boolean
                     description: Connect to backend over HTTPS with skip-verify (for self-signed certs)
                     default: false
-                    example: false
+                    example: true
                 websocket_paths:
                     type: array
                     items:
                         type: string
-                        example: Iste saepe quo ut.
+                        example: Perspiciatis qui.
                     description: Paths that use WebSocket (informational, all paths support WS transparently)
                     example:
                         - /websockify
@@ -2311,12 +2477,39 @@ components:
                 custom_request_headers:
                     x-tenant: workspaces
                 inject_base_tag: true
-                needs_noop_sw: false
-                preserve_path_prefix: true
+                needs_noop_sw: true
+                preserve_path_prefix: false
                 rewrite_host_absolute_paths: true
-                tls_insecure: false
+                tls_insecure: true
                 websocket_paths:
                     - /websockify
+        ImageRemoteDesktop:
+            type: object
+            properties:
+                path:
+                    type: string
+                    description: Path relative to the agent's base URL
+                    default: /
+                    example: /
+                port:
+                    type: integer
+                    description: Guest port the agent listens on
+                    example: 8080
+                    format: int64
+                protocol:
+                    type: string
+                    description: Protocol name (e.g. "selkies")
+                    example: selkies
+                    enum:
+                        - selkies
+            description: In-guest remote desktop agent configuration
+            example:
+                path: /
+                port: 8080
+                protocol: selkies
+            required:
+                - protocol
+                - port
         Namespace:
             type: object
             properties:
@@ -2434,7 +2627,7 @@ components:
                         workspace: my-workspace
                     additionalProperties:
                         type: string
-                        example: Libero qui dicta fugiat molestiae rerum enim.
+                        example: Qui quasi ad cum omnis aut.
                 name:
                     type: string
                     description: PVC name
@@ -2548,6 +2741,8 @@ components:
                     description: Number of ready replicas
                     example: 1
                     format: int64
+                remote_desktop:
+                    $ref: '#/components/schemas/ImageRemoteDesktop'
                 stopped:
                     type: boolean
                     description: Whether the workspace is stopped
@@ -2592,6 +2787,10 @@ components:
                 namespace: workspaces
                 port: 8080
                 ready_replicas: 1
+                remote_desktop:
+                    path: /
+                    port: 8080
+                    protocol: selkies
                 stopped: false
                 type: container
                 volume_mounts:

@@ -66,6 +66,8 @@ type CreateRequestBody struct {
 	DefaultCredentials *ImageCredentialsRequestBody `form:"default_credentials,omitempty" json:"default_credentials,omitempty" xml:"default_credentials,omitempty"`
 	// Proxy behavior configuration
 	ProxyConfig *ImageProxyConfigRequestBody `form:"proxy_config,omitempty" json:"proxy_config,omitempty" xml:"proxy_config,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopRequestBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
 	// UID that the main container runs as (sets runAsUser and fsGroup)
 	DefaultUID *int64 `form:"default_uid,omitempty" json:"default_uid,omitempty" xml:"default_uid,omitempty"`
 	// Automatically mount /dev/shm as emptyDir with medium=Memory (required for
@@ -140,6 +142,8 @@ type CreateResponseBody struct {
 	Links []*ImageLinkResponseBody `form:"links,omitempty" json:"links,omitempty" xml:"links,omitempty"`
 	// Default login credentials for this image
 	DefaultCredentials *ImageCredentialsResponseBody `form:"default_credentials,omitempty" json:"default_credentials,omitempty" xml:"default_credentials,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
@@ -204,6 +208,8 @@ type ImageResponse struct {
 	Links []*ImageLinkResponse `form:"links,omitempty" json:"links,omitempty" xml:"links,omitempty"`
 	// Default login credentials for this image
 	DefaultCredentials *ImageCredentialsResponse `form:"default_credentials,omitempty" json:"default_credentials,omitempty" xml:"default_credentials,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponse `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
@@ -254,6 +260,16 @@ type ImageCredentialsResponse struct {
 	Password *string `form:"password,omitempty" json:"password,omitempty" xml:"password,omitempty"`
 }
 
+// ImageRemoteDesktopResponse is used to define fields on response body types.
+type ImageRemoteDesktopResponse struct {
+	// Protocol name (e.g. "selkies")
+	Protocol string `form:"protocol" json:"protocol" xml:"protocol"`
+	// Guest port the agent listens on
+	Port int `form:"port" json:"port" xml:"port"`
+	// Path relative to the agent's base URL
+	Path string `form:"path" json:"path" xml:"path"`
+}
+
 // ImageProxyConfigResponseBody is used to define fields on response body types.
 type ImageProxyConfigResponseBody struct {
 	// Serve a no-op ServiceWorker at /sw.js to prevent SW registration errors
@@ -299,6 +315,17 @@ type ImageCredentialsResponseBody struct {
 	Password *string `form:"password,omitempty" json:"password,omitempty" xml:"password,omitempty"`
 }
 
+// ImageRemoteDesktopResponseBody is used to define fields on response body
+// types.
+type ImageRemoteDesktopResponseBody struct {
+	// Protocol name (e.g. "selkies")
+	Protocol string `form:"protocol" json:"protocol" xml:"protocol"`
+	// Guest port the agent listens on
+	Port int `form:"port" json:"port" xml:"port"`
+	// Path relative to the agent's base URL
+	Path string `form:"path" json:"path" xml:"path"`
+}
+
 // ImageEnvVarRequestBody is used to define fields on request body types.
 type ImageEnvVarRequestBody struct {
 	// Name of the environment variable
@@ -342,6 +369,16 @@ type ImageProxyConfigRequestBody struct {
 	// instead of stripping it. Required for apps configured with a base URL
 	// matching the proxy prefix.
 	PreservePathPrefix *bool `form:"preserve_path_prefix,omitempty" json:"preserve_path_prefix,omitempty" xml:"preserve_path_prefix,omitempty"`
+}
+
+// ImageRemoteDesktopRequestBody is used to define fields on request body types.
+type ImageRemoteDesktopRequestBody struct {
+	// Protocol name (e.g. "selkies")
+	Protocol *string `form:"protocol,omitempty" json:"protocol,omitempty" xml:"protocol,omitempty"`
+	// Guest port the agent listens on
+	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
+	// Path relative to the agent's base URL
+	Path *string `form:"path,omitempty" json:"path,omitempty" xml:"path,omitempty"`
 }
 
 // NewListResponseBody builds the HTTP response body from the result of the
@@ -421,6 +458,9 @@ func NewCreateResponseBody(res *imagesviews.ImageView) *CreateResponseBody {
 	if res.DefaultCredentials != nil {
 		body.DefaultCredentials = marshalImagesviewsImageCredentialsViewToImageCredentialsResponseBody(res.DefaultCredentials)
 	}
+	if res.RemoteDesktop != nil {
+		body.RemoteDesktop = marshalImagesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
+	}
 	if res.WorkspaceTypes != nil {
 		body.WorkspaceTypes = make([]string, len(res.WorkspaceTypes))
 		for i, val := range res.WorkspaceTypes {
@@ -496,6 +536,9 @@ func NewCreateImagePayload(body *CreateRequestBody) *images.CreateImagePayload {
 	if body.ProxyConfig != nil {
 		v.ProxyConfig = unmarshalImageProxyConfigRequestBodyToImagesImageProxyConfig(body.ProxyConfig)
 	}
+	if body.RemoteDesktop != nil {
+		v.RemoteDesktop = unmarshalImageRemoteDesktopRequestBodyToImagesImageRemoteDesktop(body.RemoteDesktop)
+	}
 	if body.WorkspaceTypes != nil {
 		v.WorkspaceTypes = make([]string, len(body.WorkspaceTypes))
 		for i, val := range body.WorkspaceTypes {
@@ -531,6 +574,11 @@ func ValidateCreateRequestBody(body *CreateRequestBody) (err error) {
 			}
 		}
 	}
+	if body.RemoteDesktop != nil {
+		if err2 := ValidateImageRemoteDesktopRequestBody(body.RemoteDesktop); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return
 }
 
@@ -554,6 +602,23 @@ func ValidateImageLinkRequestBody(body *ImageLinkRequestBody) (err error) {
 	}
 	if body.URL == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("url", "body"))
+	}
+	return
+}
+
+// ValidateImageRemoteDesktopRequestBody runs the validations defined on
+// ImageRemoteDesktopRequestBody
+func ValidateImageRemoteDesktopRequestBody(body *ImageRemoteDesktopRequestBody) (err error) {
+	if body.Protocol == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("protocol", "body"))
+	}
+	if body.Port == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("port", "body"))
+	}
+	if body.Protocol != nil {
+		if !(*body.Protocol == "selkies") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.protocol", *body.Protocol, []any{"selkies"}))
+		}
 	}
 	return
 }

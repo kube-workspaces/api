@@ -184,6 +184,7 @@ var (
 	serialSessions = newSessionRegistry()
 	vncSessions    = newSessionRegistry()
 	sshSessions    = newSessionRegistry()
+	tier1Sessions  = newSessionRegistry()
 )
 
 // SerialConsoleInUse reports whether a serial console bridge is currently
@@ -208,4 +209,28 @@ func VNCInUse(namespace, name string) bool {
 // the caller can open a fresh session. It returns whether a session was active.
 func TakeOverVNC(namespace, name string) bool {
 	return vncSessions.forceRelease(consoleKey(namespace, name))
+}
+
+// Tier1InUse reports whether a Tier 1 transport session is currently active
+// for the workspace.
+func Tier1InUse(namespace, name string) bool {
+	return tier1Sessions.held(consoleKey(namespace, name))
+}
+
+// TakeOverTier1 force-ends the active Tier 1 transport session for the
+// workspace, if any, so the caller can open a fresh session. It returns
+// whether a session was active.
+func TakeOverTier1(namespace, name string) bool {
+	return tier1Sessions.forceRelease(consoleKey(namespace, name))
+}
+
+// ClaimTier1Session registers a new Tier 1 transport session for the workspace.
+// It returns a release function and true on success, or nil and false if the
+// slot is already taken.
+func ClaimTier1Session(namespace, name string, cancel func()) (func(), bool) {
+	handle := &sessionHandle{cancel: cancel}
+	if _, ok := tier1Sessions.acquire(consoleKey(namespace, name), handle); !ok {
+		return nil, false
+	}
+	return func() { tier1Sessions.release(consoleKey(namespace, name), handle) }, true
 }

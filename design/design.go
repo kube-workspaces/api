@@ -228,6 +228,7 @@ var WorkspaceResult = ResultType("application/vnd.workspace+json", func() {
 		Attribute("volume_mounts", ArrayOf(VolumeMount), "Attached volumes", func() {
 			Example([]map[string]interface{}{{"name": "my-workspace-data", "mount_path": "/home/coder"}})
 		})
+		Attribute("remote_desktop", ImageRemoteDesktop, "Remote desktop agent configuration (Tier 1)")
 	})
 	Required("name", "namespace", "image", "type", "ready_replicas", "stopped")
 })
@@ -361,6 +362,7 @@ var CreateImagePayload = Type("CreateImagePayload", func() {
 	})
 	Attribute("default_credentials", ImageCredentials, "Default login credentials for this image")
 	Attribute("proxy_config", ImageProxyConfig, "Proxy behavior configuration")
+	Attribute("remote_desktop", ImageRemoteDesktop, "Remote desktop agent configuration (Tier 1)")
 	Attribute("default_uid", Int64, "UID that the main container runs as (sets runAsUser and fsGroup)", func() {
 		Example(1000)
 	})
@@ -403,6 +405,21 @@ var ImageCredentials = Type("ImageCredentials", func() {
 	Attribute("password", String, "Default password", func() {
 		Example("changeme")
 	})
+})
+
+var ImageRemoteDesktop = Type("ImageRemoteDesktop", func() {
+	Description("In-guest remote desktop agent configuration")
+	Attribute("protocol", String, "Protocol name (e.g. \"selkies\")", func() {
+		Enum("selkies")
+	})
+	Attribute("port", Int, "Guest port the agent listens on", func() {
+		Example(8080)
+	})
+	Attribute("path", String, "Path relative to the agent's base URL", func() {
+		Default("/")
+		Example("/")
+	})
+	Required("protocol", "port")
 })
 
 var ImageProxyConfig = Type("ImageProxyConfig", func() {
@@ -507,6 +524,7 @@ var ImageResult = ResultType("application/vnd.image+json", func() {
 			Example([]map[string]interface{}{{"title": "GitHub", "url": "https://github.com/coder/code-server"}, {"title": "Docker Hub", "url": "https://hub.docker.com/r/codercom/code-server"}})
 		})
 		Attribute("default_credentials", ImageCredentials, "Default login credentials for this image")
+		Attribute("remote_desktop", ImageRemoteDesktop, "Remote desktop agent configuration (Tier 1)")
 		Attribute("workspace_types", ArrayOf(String), "Workspace types this image supports (container, vm, scratch). Empty means container-only", func() {
 			Example([]string{"container"})
 		})

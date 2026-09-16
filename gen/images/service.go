@@ -89,6 +89,8 @@ type CreateImagePayload struct {
 	DefaultCredentials *ImageCredentials
 	// Proxy behavior configuration
 	ProxyConfig *ImageProxyConfig
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktop
 	// UID that the main container runs as (sets runAsUser and fsGroup)
 	DefaultUID *int64
 	// Automatically mount /dev/shm as emptyDir with medium=Memory (required for
@@ -158,6 +160,8 @@ type Image struct {
 	Links []*ImageLink
 	// Default login credentials for this image
 	DefaultCredentials *ImageCredentials
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktop
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string
@@ -206,6 +210,16 @@ type ImageProxyConfig struct {
 	// instead of stripping it. Required for apps configured with a base URL
 	// matching the proxy prefix.
 	PreservePathPrefix bool
+}
+
+// In-guest remote desktop agent configuration
+type ImageRemoteDesktop struct {
+	// Protocol name (e.g. "selkies")
+	Protocol string
+	// Guest port the agent listens on
+	Port int
+	// Path relative to the agent's base URL
+	Path string
 }
 
 // Image already exists
@@ -330,6 +344,9 @@ func newImage(vres *imagesviews.ImageView) *Image {
 	if vres.DefaultCredentials != nil {
 		res.DefaultCredentials = transformImagesviewsImageCredentialsViewToImageCredentials(vres.DefaultCredentials)
 	}
+	if vres.RemoteDesktop != nil {
+		res.RemoteDesktop = transformImagesviewsImageRemoteDesktopViewToImageRemoteDesktop(vres.RemoteDesktop)
+	}
 	if vres.WorkspaceTypes != nil {
 		res.WorkspaceTypes = make([]string, len(vres.WorkspaceTypes))
 		for i, val := range vres.WorkspaceTypes {
@@ -401,6 +418,9 @@ func newImageView(res *Image) *imagesviews.ImageView {
 	}
 	if res.DefaultCredentials != nil {
 		vres.DefaultCredentials = transformImageCredentialsToImagesviewsImageCredentialsView(res.DefaultCredentials)
+	}
+	if res.RemoteDesktop != nil {
+		vres.RemoteDesktop = transformImageRemoteDesktopToImagesviewsImageRemoteDesktopView(res.RemoteDesktop)
 	}
 	if res.WorkspaceTypes != nil {
 		vres.WorkspaceTypes = make([]string, len(res.WorkspaceTypes))
@@ -510,6 +530,27 @@ func transformImagesviewsImageCredentialsViewToImageCredentials(v *imagesviews.I
 	return res
 }
 
+// transformImagesviewsImageRemoteDesktopViewToImageRemoteDesktop builds a
+// value of type *ImageRemoteDesktop from a value of type
+// *imagesviews.ImageRemoteDesktopView.
+func transformImagesviewsImageRemoteDesktopViewToImageRemoteDesktop(v *imagesviews.ImageRemoteDesktopView) *ImageRemoteDesktop {
+	if v == nil {
+		return nil
+	}
+	res := &ImageRemoteDesktop{
+		Protocol: *v.Protocol,
+		Port:     *v.Port,
+	}
+	if v.Path != nil {
+		res.Path = *v.Path
+	}
+	if v.Path == nil {
+		res.Path = "/"
+	}
+
+	return res
+}
+
 // transformImageProxyConfigToImagesviewsImageProxyConfigView builds a value of
 // type *imagesviews.ImageProxyConfigView from a value of type
 // *ImageProxyConfig.
@@ -580,6 +621,22 @@ func transformImageCredentialsToImagesviewsImageCredentialsView(v *ImageCredenti
 	res := &imagesviews.ImageCredentialsView{
 		Username: v.Username,
 		Password: v.Password,
+	}
+
+	return res
+}
+
+// transformImageRemoteDesktopToImagesviewsImageRemoteDesktopView builds a
+// value of type *imagesviews.ImageRemoteDesktopView from a value of type
+// *ImageRemoteDesktop.
+func transformImageRemoteDesktopToImagesviewsImageRemoteDesktopView(v *ImageRemoteDesktop) *imagesviews.ImageRemoteDesktopView {
+	if v == nil {
+		return nil
+	}
+	res := &imagesviews.ImageRemoteDesktopView{
+		Protocol: &v.Protocol,
+		Port:     &v.Port,
+		Path:     &v.Path,
 	}
 
 	return res

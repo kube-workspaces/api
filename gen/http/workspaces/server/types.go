@@ -99,6 +99,8 @@ type GetResponseBody struct {
 	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 	// Attached volumes
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
 }
 
 // CreateResponseBody is the type of the "workspaces" service "create" endpoint
@@ -134,6 +136,8 @@ type CreateResponseBody struct {
 	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 	// Attached volumes
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
 }
 
 // StartResponseBody is the type of the "workspaces" service "start" endpoint
@@ -169,6 +173,8 @@ type StartResponseBody struct {
 	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 	// Attached volumes
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
 }
 
 // StopResponseBody is the type of the "workspaces" service "stop" endpoint
@@ -204,6 +210,8 @@ type StopResponseBody struct {
 	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 	// Attached volumes
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
 }
 
 // ResetResponseBody is the type of the "workspaces" service "reset" endpoint
@@ -239,6 +247,8 @@ type ResetResponseBody struct {
 	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 	// Attached volumes
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
 }
 
 // CloneResponseBody is the type of the "workspaces" service "clone" endpoint
@@ -274,6 +284,8 @@ type CloneResponseBody struct {
 	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 	// Attached volumes
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
 }
 
 // WorkspaceResponse is used to define fields on response body types.
@@ -308,6 +320,8 @@ type WorkspaceResponse struct {
 	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 	// Attached volumes
 	VolumeMounts []*VolumeMountResponse `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponse `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
 }
 
 // ContainerStateResponse is used to define fields on response body types.
@@ -344,6 +358,16 @@ type VolumeMountResponse struct {
 	MountPath string `form:"mount_path" json:"mount_path" xml:"mount_path"`
 }
 
+// ImageRemoteDesktopResponse is used to define fields on response body types.
+type ImageRemoteDesktopResponse struct {
+	// Protocol name (e.g. "selkies")
+	Protocol string `form:"protocol" json:"protocol" xml:"protocol"`
+	// Guest port the agent listens on
+	Port int `form:"port" json:"port" xml:"port"`
+	// Path relative to the agent's base URL
+	Path string `form:"path" json:"path" xml:"path"`
+}
+
 // ContainerStateResponseBody is used to define fields on response body types.
 type ContainerStateResponseBody struct {
 	// Current state: running, waiting, terminated
@@ -377,6 +401,17 @@ type VolumeMountResponseBody struct {
 	Name string `form:"name" json:"name" xml:"name"`
 	// Mount path in container
 	MountPath string `form:"mount_path" json:"mount_path" xml:"mount_path"`
+}
+
+// ImageRemoteDesktopResponseBody is used to define fields on response body
+// types.
+type ImageRemoteDesktopResponseBody struct {
+	// Protocol name (e.g. "selkies")
+	Protocol string `form:"protocol" json:"protocol" xml:"protocol"`
+	// Guest port the agent listens on
+	Port int `form:"port" json:"port" xml:"port"`
+	// Path relative to the agent's base URL
+	Path string `form:"path" json:"path" xml:"path"`
 }
 
 // WorkspaceContainerRequestBody is used to define fields on request body types.
@@ -483,6 +518,9 @@ func NewGetResponseBody(res *workspacesviews.WorkspaceView) *GetResponseBody {
 			body.VolumeMounts[i] = marshalWorkspacesviewsVolumeMountViewToVolumeMountResponseBody(val)
 		}
 	}
+	if res.RemoteDesktop != nil {
+		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
+	}
 	return body
 }
 
@@ -525,6 +563,9 @@ func NewCreateResponseBody(res *workspacesviews.WorkspaceView) *CreateResponseBo
 			}
 			body.VolumeMounts[i] = marshalWorkspacesviewsVolumeMountViewToVolumeMountResponseBody(val)
 		}
+	}
+	if res.RemoteDesktop != nil {
+		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
 	}
 	return body
 }
@@ -569,6 +610,9 @@ func NewStartResponseBody(res *workspacesviews.WorkspaceView) *StartResponseBody
 			body.VolumeMounts[i] = marshalWorkspacesviewsVolumeMountViewToVolumeMountResponseBody(val)
 		}
 	}
+	if res.RemoteDesktop != nil {
+		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
+	}
 	return body
 }
 
@@ -611,6 +655,9 @@ func NewStopResponseBody(res *workspacesviews.WorkspaceView) *StopResponseBody {
 			}
 			body.VolumeMounts[i] = marshalWorkspacesviewsVolumeMountViewToVolumeMountResponseBody(val)
 		}
+	}
+	if res.RemoteDesktop != nil {
+		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
 	}
 	return body
 }
@@ -655,6 +702,9 @@ func NewResetResponseBody(res *workspacesviews.WorkspaceView) *ResetResponseBody
 			body.VolumeMounts[i] = marshalWorkspacesviewsVolumeMountViewToVolumeMountResponseBody(val)
 		}
 	}
+	if res.RemoteDesktop != nil {
+		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
+	}
 	return body
 }
 
@@ -697,6 +747,9 @@ func NewCloneResponseBody(res *workspacesviews.WorkspaceView) *CloneResponseBody
 			}
 			body.VolumeMounts[i] = marshalWorkspacesviewsVolumeMountViewToVolumeMountResponseBody(val)
 		}
+	}
+	if res.RemoteDesktop != nil {
+		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
 	}
 	return body
 }

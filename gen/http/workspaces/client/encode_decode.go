@@ -825,6 +825,9 @@ func unmarshalWorkspaceResponseToWorkspacesWorkspace(v *WorkspaceResponse) *work
 			res.VolumeMounts[i] = unmarshalVolumeMountResponseToWorkspacesVolumeMount(val)
 		}
 	}
+	if v.RemoteDesktop != nil {
+		res.RemoteDesktop = unmarshalImageRemoteDesktopResponseToWorkspacesImageRemoteDesktop(v.RemoteDesktop)
+	}
 
 	return res
 }
@@ -877,6 +880,27 @@ func unmarshalVolumeMountResponseToWorkspacesVolumeMount(v *VolumeMountResponse)
 	return res
 }
 
+// unmarshalImageRemoteDesktopResponseToWorkspacesImageRemoteDesktop builds a
+// value of type *workspaces.ImageRemoteDesktop from a value of type
+// *ImageRemoteDesktopResponse.
+func unmarshalImageRemoteDesktopResponseToWorkspacesImageRemoteDesktop(v *ImageRemoteDesktopResponse) *workspaces.ImageRemoteDesktop {
+	if v == nil {
+		return nil
+	}
+	res := &workspaces.ImageRemoteDesktop{
+		Protocol: *v.Protocol,
+		Port:     *v.Port,
+	}
+	if v.Path != nil {
+		res.Path = *v.Path
+	}
+	if v.Path == nil {
+		res.Path = "/"
+	}
+
+	return res
+}
+
 // unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView
 // builds a value of type *workspacesviews.ContainerStateView from a value of
 // type *ContainerStateResponseBody.
@@ -922,6 +946,22 @@ func unmarshalVolumeMountResponseBodyToWorkspacesviewsVolumeMountView(v *VolumeM
 	res := &workspacesviews.VolumeMountView{
 		Name:      v.Name,
 		MountPath: v.MountPath,
+	}
+
+	return res
+}
+
+// unmarshalImageRemoteDesktopResponseBodyToWorkspacesviewsImageRemoteDesktopView
+// builds a value of type *workspacesviews.ImageRemoteDesktopView from a value
+// of type *ImageRemoteDesktopResponseBody.
+func unmarshalImageRemoteDesktopResponseBodyToWorkspacesviewsImageRemoteDesktopView(v *ImageRemoteDesktopResponseBody) *workspacesviews.ImageRemoteDesktopView {
+	if v == nil {
+		return nil
+	}
+	res := &workspacesviews.ImageRemoteDesktopView{
+		Protocol: v.Protocol,
+		Port:     v.Port,
+		Path:     v.Path,
 	}
 
 	return res

@@ -50,6 +50,15 @@ type Image struct {
 	// WorkspaceTypes lists the workspace types this image supports
 	// (container, vm, scratch). Empty means container-only.
 	WorkspaceTypes []string
+	// RemoteDesktop configuration for this image (Tier 1 transport).
+	RemoteDesktop *ImageRemoteDesktop
+}
+
+// ImageRemoteDesktop describes an in-guest remote desktop agent.
+type ImageRemoteDesktop struct {
+	Protocol string
+	Port     int32
+	Path     string
 }
 
 // ImageCredentials represents default login credentials for a workspace image.
@@ -393,6 +402,15 @@ func parseImage(obj *unstructured.Unstructured) (*Image, error) {
 			if s, ok := t.(string); ok {
 				img.WorkspaceTypes = append(img.WorkspaceTypes, s)
 			}
+		}
+	}
+
+	// Parse remoteDesktop
+	if rd, ok := spec["remoteDesktop"].(map[string]interface{}); ok {
+		img.RemoteDesktop = &ImageRemoteDesktop{
+			Protocol: strField(rd, "protocol"),
+			Port:     int32Field(rd, "port"),
+			Path:     strField(rd, "path"),
 		}
 	}
 

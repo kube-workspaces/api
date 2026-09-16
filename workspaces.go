@@ -49,9 +49,22 @@ func (s *workspacessrvc) List(ctx context.Context, p *workspaces.ListPayload) (r
 		return nil, fmt.Errorf("failed to list workspaces: %w", err)
 	}
 
+	// Fetch images to populate remote desktop info
+	crImages, _ := s.imageClient.ListImages(ctx)
+	imageMap := make(map[string]*k8s.ImageRemoteDesktop)
+	for _, img := range crImages {
+		if img.RemoteDesktop != nil {
+			imageMap[img.Image] = img.RemoteDesktop
+		}
+	}
+
 	res = make([]*workspaces.Workspace, 0, len(list.Items))
 	for i := range list.Items {
-		ws := unstructuredToWorkspace(&list.Items[i])
+		var rd *k8s.ImageRemoteDesktop
+		if image, ok := workspaceImage(&list.Items[i]); ok {
+			rd = imageMap[image]
+		}
+		ws := unstructuredToWorkspace(&list.Items[i], rd)
 		res = append(res, ws)
 	}
 
@@ -124,7 +137,14 @@ func (s *workspacessrvc) Get(ctx context.Context, p *workspaces.GetPayload) (res
 		return nil, workspaces.NotFound(fmt.Sprintf("workspace %s/%s not found", p.Namespace, p.Name))
 	}
 
-	return unstructuredToWorkspace(obj), nil
+	var rd *k8s.ImageRemoteDesktop
+	if image, ok := workspaceImage(obj); ok {
+		if img, err := s.imageClient.GetImageByRef(ctx, image); err == nil {
+			rd = img.RemoteDesktop
+		}
+	}
+
+	return unstructuredToWorkspace(obj, rd), nil
 }
 
 // Create a new workspace
@@ -186,7 +206,12 @@ func (s *workspacessrvc) Create(ctx context.Context, p *workspaces.CreateWorkspa
 		}
 	}
 
-	return unstructuredToWorkspace(created), nil
+	var rd *k8s.ImageRemoteDesktop
+	if img, err := s.imageClient.GetImageByRef(ctx, p.Container.Image); err == nil {
+		rd = img.RemoteDesktop
+	}
+
+	return unstructuredToWorkspace(created, rd), nil
 }
 
 // Delete a workspace
@@ -239,7 +264,14 @@ func (s *workspacessrvc) Start(ctx context.Context, p *workspaces.StartPayload) 
 		}
 	}
 
-	return unstructuredToWorkspace(updated), nil
+	var rd *k8s.ImageRemoteDesktop
+	if image, ok := workspaceImage(updated); ok {
+		if img, err := s.imageClient.GetImageByRef(ctx, image); err == nil {
+			rd = img.RemoteDesktop
+		}
+	}
+
+	return unstructuredToWorkspace(updated, rd), nil
 }
 
 // Stop a running workspace (adds the stopped annotation)
@@ -281,7 +313,14 @@ func (s *workspacessrvc) Stop(ctx context.Context, p *workspaces.StopPayload) (r
 		}
 	}
 
-	return unstructuredToWorkspace(updated), nil
+	var rd *k8s.ImageRemoteDesktop
+	if image, ok := workspaceImage(updated); ok {
+		if img, err := s.imageClient.GetImageByRef(ctx, image); err == nil {
+			rd = img.RemoteDesktop
+		}
+	}
+
+	return unstructuredToWorkspace(updated, rd), nil
 }
 
 // Reset a workspace by re-provisioning it from its image. For vm workspaces the
@@ -334,7 +373,14 @@ func (s *workspacessrvc) Reset(ctx context.Context, p *workspaces.ResetPayload) 
 		}
 	}
 
-	return unstructuredToWorkspace(updated), nil
+	var rd *k8s.ImageRemoteDesktop
+	if image, ok := workspaceImage(updated); ok {
+		if img, err := s.imageClient.GetImageByRef(ctx, image); err == nil {
+			rd = img.RemoteDesktop
+		}
+	}
+
+	return unstructuredToWorkspace(updated, rd), nil
 }
 
 // Clone copies an existing workspace under a new name in the same namespace.
@@ -467,7 +513,14 @@ func (s *workspacessrvc) Clone(ctx context.Context, p *workspaces.ClonePayload) 
 		}
 	}
 
-	return unstructuredToWorkspace(created), nil
+	var rd *k8s.ImageRemoteDesktop
+	if image, ok := workspaceImage(created); ok {
+		if img, err := s.imageClient.GetImageByRef(ctx, image); err == nil {
+			rd = img.RemoteDesktop
+		}
+	}
+
+	return unstructuredToWorkspace(created, rd), nil
 }
 
 // buildWorkspaceCR builds an unstructured Workspace CR from the create payload.
@@ -812,6 +865,20 @@ func buildWorkspaceCR(p *workspaces.CreateWorkspacePayload, imageClient *k8s.Ima
 	return ws
 }
 
+// workspaceImage extracts the container image from an unstructured Workspace CR.
+func workspaceImage(obj *unstructured.Unstructured) (string, bool) {
+	containers, found, _ := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "containers")
+	if !found || len(containers) == 0 {
+		return "", false
+	}
+	container, ok := containers[0].(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+	image, ok := container["image"].(string)
+	return image, ok
+}
+
 // applyPodDefaults looks up PodDefaults in the target namespace and injects their
 // configuration (env, volumes, volumeMounts, annotations, labels) into the workspace CR.
 func applyPodDefaults(ctx context.Context, ws *unstructured.Unstructured, pdClient *k8s.PodDefaultClient, namespace string) {
@@ -941,7 +1008,7 @@ func applyPodDefaults(ctx context.Context, ws *unstructured.Unstructured, pdClie
 }
 
 // unstructuredToWorkspace converts an unstructured Workspace CR to the API result type.
-func unstructuredToWorkspace(obj *unstructured.Unstructured) *workspaces.Workspace {
+func unstructuredToWorkspace(obj *unstructured.Unstructured, rd *k8s.ImageRemoteDesktop) *workspaces.Workspace {
 	ws := &workspaces.Workspace{
 		Name:      obj.GetName(),
 		Namespace: obj.GetNamespace(),
@@ -1024,6 +1091,14 @@ func unstructuredToWorkspace(obj *unstructured.Unstructured) *workspaces.Workspa
 	// Extract status
 	readyReplicas, _, _ := unstructured.NestedInt64(obj.Object, "status", "readyReplicas")
 	ws.ReadyReplicas = int(readyReplicas)
+
+	if rd != nil {
+		ws.RemoteDesktop = &workspaces.ImageRemoteDesktop{
+			Protocol: rd.Protocol,
+			Port:     int(rd.Port),
+			Path:     rd.Path,
+		}
+	}
 
 	// Container state
 	containerState, found, _ := unstructured.NestedMap(obj.Object, "status", "containerState")

@@ -78,6 +78,8 @@ type ImageView struct {
 	Links []*ImageLinkView
 	// Default login credentials for this image
 	DefaultCredentials *ImageCredentialsView
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopView
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string
@@ -128,6 +130,16 @@ type ImageCredentialsView struct {
 	Password *string
 }
 
+// ImageRemoteDesktopView is a type that runs validations on a projected type.
+type ImageRemoteDesktopView struct {
+	// Protocol name (e.g. "selkies")
+	Protocol *string
+	// Guest port the agent listens on
+	Port *int
+	// Path relative to the agent's base URL
+	Path *string
+}
+
 var (
 	// ImageMap is a map indexing the attribute names of Image by view name.
 	ImageMap = map[string][]string{
@@ -158,6 +170,7 @@ var (
 			"default_shell",
 			"links",
 			"default_credentials",
+			"remote_desktop",
 			"workspace_types",
 		},
 	}
@@ -203,6 +216,11 @@ func ValidateImageView(result *ImageView) (err error) {
 			}
 		}
 	}
+	if result.RemoteDesktop != nil {
+		if err2 := ValidateImageRemoteDesktopView(result.RemoteDesktop); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return
 }
 
@@ -239,5 +257,22 @@ func ValidateImageLinkView(result *ImageLinkView) (err error) {
 // ImageCredentialsView.
 func ValidateImageCredentialsView(result *ImageCredentialsView) (err error) {
 
+	return
+}
+
+// ValidateImageRemoteDesktopView runs the validations defined on
+// ImageRemoteDesktopView.
+func ValidateImageRemoteDesktopView(result *ImageRemoteDesktopView) (err error) {
+	if result.Protocol == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("protocol", "result"))
+	}
+	if result.Port == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("port", "result"))
+	}
+	if result.Protocol != nil {
+		if !(*result.Protocol == "selkies") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.protocol", *result.Protocol, []any{"selkies"}))
+		}
+	}
 	return
 }

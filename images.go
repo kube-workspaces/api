@@ -182,6 +182,14 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 		}
 		spec["workspaceTypes"] = types
 	}
+	if p.RemoteDesktop != nil {
+		rd := map[string]interface{}{
+			"protocol": p.RemoteDesktop.Protocol,
+			"port":     int64(p.RemoteDesktop.Port),
+			"path":     p.RemoteDesktop.Path,
+		}
+		spec["remoteDesktop"] = rd
+	}
 
 	_, err = s.imageClient.CreateImage(ctx, crName, spec)
 	if err != nil {
@@ -261,6 +269,13 @@ func imageToResult(img *k8s.Image) *images.Image {
 			InjectBaseTag:            img.ProxyConfig.InjectBaseTag,
 			TLSInsecure:              img.ProxyConfig.TLSInsecure,
 			PreservePathPrefix:       img.ProxyConfig.PreservePathPrefix,
+		}
+	}
+	if img.RemoteDesktop != nil {
+		result.RemoteDesktop = &images.ImageRemoteDesktop{
+			Protocol: img.RemoteDesktop.Protocol,
+			Port:     int(img.RemoteDesktop.Port),
+			Path:     img.RemoteDesktop.Path,
 		}
 	}
 	return result

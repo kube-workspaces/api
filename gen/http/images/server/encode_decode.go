@@ -168,6 +168,9 @@ func marshalImagesImageToImageResponse(v *images.Image) *ImageResponse {
 	if v.DefaultCredentials != nil {
 		res.DefaultCredentials = marshalImagesImageCredentialsToImageCredentialsResponse(v.DefaultCredentials)
 	}
+	if v.RemoteDesktop != nil {
+		res.RemoteDesktop = marshalImagesImageRemoteDesktopToImageRemoteDesktopResponse(v.RemoteDesktop)
+	}
 	if v.WorkspaceTypes != nil {
 		res.WorkspaceTypes = make([]string, len(v.WorkspaceTypes))
 		for i, val := range v.WorkspaceTypes {
@@ -281,6 +284,28 @@ func marshalImagesImageCredentialsToImageCredentialsResponse(v *images.ImageCred
 	return res
 }
 
+// marshalImagesImageRemoteDesktopToImageRemoteDesktopResponse builds a value
+// of type *ImageRemoteDesktopResponse from a value of type
+// *images.ImageRemoteDesktop.
+func marshalImagesImageRemoteDesktopToImageRemoteDesktopResponse(v *images.ImageRemoteDesktop) *ImageRemoteDesktopResponse {
+	if v == nil {
+		return nil
+	}
+	res := &ImageRemoteDesktopResponse{
+		Protocol: v.Protocol,
+		Port:     v.Port,
+		Path:     v.Path,
+	}
+	{
+		var zero string
+		if res.Path == zero {
+			res.Path = "/"
+		}
+	}
+
+	return res
+}
+
 // unmarshalImageEnvVarRequestBodyToImagesImageEnvVar builds a value of type
 // *images.ImageEnvVar from a value of type *ImageEnvVarRequestBody.
 func unmarshalImageEnvVarRequestBodyToImagesImageEnvVar(v *ImageEnvVarRequestBody) *images.ImageEnvVar {
@@ -375,6 +400,27 @@ func unmarshalImageProxyConfigRequestBodyToImagesImageProxyConfig(v *ImageProxyC
 	}
 	if v.PreservePathPrefix == nil {
 		res.PreservePathPrefix = false
+	}
+
+	return res
+}
+
+// unmarshalImageRemoteDesktopRequestBodyToImagesImageRemoteDesktop builds a
+// value of type *images.ImageRemoteDesktop from a value of type
+// *ImageRemoteDesktopRequestBody.
+func unmarshalImageRemoteDesktopRequestBodyToImagesImageRemoteDesktop(v *ImageRemoteDesktopRequestBody) *images.ImageRemoteDesktop {
+	if v == nil {
+		return nil
+	}
+	res := &images.ImageRemoteDesktop{
+		Protocol: *v.Protocol,
+		Port:     *v.Port,
+	}
+	if v.Path != nil {
+		res.Path = *v.Path
+	}
+	if v.Path == nil {
+		res.Path = "/"
 	}
 
 	return res
@@ -475,6 +521,27 @@ func marshalImagesviewsImageCredentialsViewToImageCredentialsResponseBody(v *ima
 	res := &ImageCredentialsResponseBody{
 		Username: v.Username,
 		Password: v.Password,
+	}
+
+	return res
+}
+
+// marshalImagesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody
+// builds a value of type *ImageRemoteDesktopResponseBody from a value of type
+// *imagesviews.ImageRemoteDesktopView.
+func marshalImagesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(v *imagesviews.ImageRemoteDesktopView) *ImageRemoteDesktopResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &ImageRemoteDesktopResponseBody{
+		Protocol: *v.Protocol,
+		Port:     *v.Port,
+	}
+	if v.Path != nil {
+		res.Path = *v.Path
+	}
+	if v.Path == nil {
+		res.Path = "/"
 	}
 
 	return res

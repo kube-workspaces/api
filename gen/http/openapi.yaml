@@ -602,7 +602,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Ea nobis doloremque maiores molestias totam.
+                    example: Aut repudiandae neque.
                 description: Default command-line args
                 example:
                     - --bind-addr
@@ -700,6 +700,8 @@ definitions:
                 example: false
             proxy_config:
                 $ref: '#/definitions/ImageProxyConfig'
+            remote_desktop:
+                $ref: '#/definitions/ImageRemoteDesktop'
             source_url:
                 type: string
                 description: Source code repository URL
@@ -708,7 +710,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Aut repudiandae neque.
+                    example: Dicta tenetur perferendis eius.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -717,7 +719,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Et libero perspiciatis suscipit aliquam non.
+                    example: Ea nobis doloremque maiores molestias totam.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -757,13 +759,17 @@ definitions:
             proxy_config:
                 custom_request_headers:
                     x-tenant: workspaces
-                inject_base_tag: true
-                needs_noop_sw: true
-                preserve_path_prefix: true
-                rewrite_host_absolute_paths: false
-                tls_insecure: false
+                inject_base_tag: false
+                needs_noop_sw: false
+                preserve_path_prefix: false
+                rewrite_host_absolute_paths: true
+                tls_insecure: true
                 websocket_paths:
                     - /websockify
+            remote_desktop:
+                path: /
+                port: 8080
+                protocol: selkies
             source_url: https://github.com/coder/code-server
             tags:
                 - development
@@ -887,7 +893,7 @@ definitions:
                     nvidia.com/gpu: "true"
                 additionalProperties:
                     type: string
-                    example: Ad doloremque id tenetur modi at magnam.
+                    example: Magnam fuga non et.
             shared_memory:
                 type: boolean
                 description: Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML frameworks)
@@ -999,7 +1005,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Assumenda illum quia cum.
+                    example: Laborum assumenda illum quia.
                 description: Default command-line args injected at workspace creation
                 example:
                     - --bind-addr
@@ -1096,6 +1102,8 @@ definitions:
                 example: false
             proxy_config:
                 $ref: '#/definitions/ImageProxyConfig'
+            remote_desktop:
+                $ref: '#/definitions/ImageRemoteDesktop'
             source_url:
                 type: string
                 description: Source code repository URL
@@ -1104,7 +1112,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Praesentium ipsum delectus.
+                    example: Delectus quas.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -1113,7 +1121,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Voluptatem inventore dicta tenetur perferendis eius.
+                    example: Corrupti voluptatem.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -1155,13 +1163,17 @@ definitions:
             proxy_config:
                 custom_request_headers:
                     x-tenant: workspaces
-                inject_base_tag: true
+                inject_base_tag: false
                 needs_noop_sw: false
                 preserve_path_prefix: true
                 rewrite_host_absolute_paths: true
-                tls_insecure: false
+                tls_insecure: true
                 websocket_paths:
                     - /websockify
+            remote_desktop:
+                path: /
+                port: 8080
+                protocol: selkies
             source_url: https://github.com/coder/code-server
             tags:
                 - development
@@ -1238,17 +1250,17 @@ definitions:
                     x-tenant: workspaces
                 additionalProperties:
                     type: string
-                    example: Repudiandae molestiae voluptatem nemo dolor id nemo.
+                    example: Voluptatem nemo dolor id.
             inject_base_tag:
                 type: boolean
                 description: Inject a <base> tag into HTML responses to fix relative path resolution
                 default: false
-                example: false
+                example: true
             needs_noop_sw:
                 type: boolean
                 description: Serve a no-op ServiceWorker at /sw.js to prevent SW registration errors
                 default: false
-                example: false
+                example: true
             preserve_path_prefix:
                 type: boolean
                 description: Forward the full proxy path (including /proxy/{ns}/{name}) to the pod instead of stripping it. Required for apps configured with a base URL matching the proxy prefix.
@@ -1263,12 +1275,12 @@ definitions:
                 type: boolean
                 description: Connect to backend over HTTPS with skip-verify (for self-signed certs)
                 default: false
-                example: true
+                example: false
             websocket_paths:
                 type: array
                 items:
                     type: string
-                    example: Corporis saepe magni alias.
+                    example: Saepe magni alias delectus quam.
                 description: Paths that use WebSocket (informational, all paths support WS transparently)
                 example:
                     - /websockify
@@ -1278,11 +1290,39 @@ definitions:
                 x-tenant: workspaces
             inject_base_tag: true
             needs_noop_sw: true
-            preserve_path_prefix: true
+            preserve_path_prefix: false
             rewrite_host_absolute_paths: true
-            tls_insecure: false
+            tls_insecure: true
             websocket_paths:
                 - /websockify
+    ImageRemoteDesktop:
+        title: ImageRemoteDesktop
+        type: object
+        properties:
+            path:
+                type: string
+                description: Path relative to the agent's base URL
+                default: /
+                example: /
+            port:
+                type: integer
+                description: Guest port the agent listens on
+                example: 8080
+                format: int64
+            protocol:
+                type: string
+                description: Protocol name (e.g. "selkies")
+                example: selkies
+                enum:
+                    - selkies
+        description: In-guest remote desktop agent configuration
+        example:
+            path: /
+            port: 8080
+            protocol: selkies
+        required:
+            - protocol
+            - port
     Namespace:
         title: 'Mediatype identifier: application/vnd.namespace+json; view=default'
         type: object
@@ -1404,7 +1444,7 @@ definitions:
                     workspace: my-workspace
                 additionalProperties:
                     type: string
-                    example: Non et consequatur et aut dicta alias.
+                    example: Et aut dicta alias dolore praesentium.
             name:
                 type: string
                 description: PVC name
@@ -1520,6 +1560,8 @@ definitions:
                 description: Number of ready replicas
                 example: 1
                 format: int64
+            remote_desktop:
+                $ref: '#/definitions/ImageRemoteDesktop'
             stopped:
                 type: boolean
                 description: Whether the workspace is stopped
@@ -1564,6 +1606,10 @@ definitions:
             namespace: workspaces
             port: 8080
             ready_replicas: 1
+            remote_desktop:
+                path: /
+                port: 8080
+                protocol: selkies
             stopped: false
             type: container
             volume_mounts:

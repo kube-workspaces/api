@@ -136,6 +136,16 @@ type GetPayload struct {
 	Name string
 }
 
+// In-guest remote desktop agent configuration
+type ImageRemoteDesktop struct {
+	// Protocol name (e.g. "selkies")
+	Protocol string
+	// Guest port the agent listens on
+	Port int
+	// Path relative to the agent's base URL
+	Path string
+}
+
 // ListPayload is the payload type of the workspaces service list method.
 type ListPayload struct {
 	// Filter by namespace
@@ -218,6 +228,8 @@ type Workspace struct {
 	CreatedAt *string
 	// Attached volumes
 	VolumeMounts []*VolumeMount
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktop
 }
 
 // Condition of a workspace
@@ -383,6 +395,9 @@ func newWorkspace(vres *workspacesviews.WorkspaceView) *Workspace {
 			res.VolumeMounts[i] = transformWorkspacesviewsVolumeMountViewToVolumeMount(val)
 		}
 	}
+	if vres.RemoteDesktop != nil {
+		res.RemoteDesktop = transformWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktop(vres.RemoteDesktop)
+	}
 	return res
 }
 
@@ -425,6 +440,9 @@ func newWorkspaceView(res *Workspace) *workspacesviews.WorkspaceView {
 			}
 			vres.VolumeMounts[i] = transformVolumeMountToWorkspacesviewsVolumeMountView(val)
 		}
+	}
+	if res.RemoteDesktop != nil {
+		vres.RemoteDesktop = transformImageRemoteDesktopToWorkspacesviewsImageRemoteDesktopView(res.RemoteDesktop)
 	}
 	return vres
 }
@@ -478,6 +496,27 @@ func transformWorkspacesviewsVolumeMountViewToVolumeMount(v *workspacesviews.Vol
 	return res
 }
 
+// transformWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktop builds a
+// value of type *ImageRemoteDesktop from a value of type
+// *workspacesviews.ImageRemoteDesktopView.
+func transformWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktop(v *workspacesviews.ImageRemoteDesktopView) *ImageRemoteDesktop {
+	if v == nil {
+		return nil
+	}
+	res := &ImageRemoteDesktop{
+		Protocol: *v.Protocol,
+		Port:     *v.Port,
+	}
+	if v.Path != nil {
+		res.Path = *v.Path
+	}
+	if v.Path == nil {
+		res.Path = "/"
+	}
+
+	return res
+}
+
 // transformContainerStateToWorkspacesviewsContainerStateView builds a value of
 // type *workspacesviews.ContainerStateView from a value of type
 // *ContainerState.
@@ -522,6 +561,22 @@ func transformVolumeMountToWorkspacesviewsVolumeMountView(v *VolumeMount) *works
 	res := &workspacesviews.VolumeMountView{
 		Name:      &v.Name,
 		MountPath: &v.MountPath,
+	}
+
+	return res
+}
+
+// transformImageRemoteDesktopToWorkspacesviewsImageRemoteDesktopView builds a
+// value of type *workspacesviews.ImageRemoteDesktopView from a value of type
+// *ImageRemoteDesktop.
+func transformImageRemoteDesktopToWorkspacesviewsImageRemoteDesktopView(v *ImageRemoteDesktop) *workspacesviews.ImageRemoteDesktopView {
+	if v == nil {
+		return nil
+	}
+	res := &workspacesviews.ImageRemoteDesktopView{
+		Protocol: &v.Protocol,
+		Port:     &v.Port,
+		Path:     &v.Path,
 	}
 
 	return res
