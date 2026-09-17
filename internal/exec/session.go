@@ -19,9 +19,12 @@ const sessionSweepInterval = 30 * time.Second
 // take-over or shutdown ends the session promptly rather than waiting on
 // blocked socket reads.
 type sessionHandle struct {
-	id     uint64
-	cancel func()
-	close  func()
+	mu       sync.Mutex
+	stopped  bool
+	stopOnce sync.Once
+	id       uint64
+	cancel   func()
+	close    func()
 	// touch refreshes the session's idle deadline while the handle still owns
 	// the slot. Assigned by the registry at acquire time.
 	touch func()
@@ -117,9 +120,9 @@ func (s *sessionRegistry) forceRelease(key string) bool {
 		s.mu.Unlock()
 		return false
 	}
-	s.removeLocked(key)
 	s.mu.Unlock()
 	cur.closeAndCancel()
+	s.release(key, cur)
 	return true
 }
 
@@ -141,19 +144,19 @@ func (s *sessionRegistry) sweep() {
 	defer ticker.Stop()
 	for range ticker.C {
 		s.mu.Lock()
-		var expired []*sessionHandle
+		expired := make(map[string]*sessionHandle)
 		now := time.Now()
 		for key, deadline := range s.expires {
 			if now.After(deadline) {
 				if handle, ok := s.active[key]; ok {
-					s.removeLocked(key)
-					expired = append(expired, handle)
+					expired[key] = handle
 				}
 			}
 		}
 		s.mu.Unlock()
-		for _, handle := range expired {
+		for key, handle := range expired {
 			handle.closeAndCancel()
+			s.release(key, handle)
 		}
 	}
 }
@@ -168,11 +171,31 @@ func (h *sessionHandle) closeAndCancel() {
 	if h == nil {
 		return
 	}
-	if h.close != nil {
-		h.close()
+	h.stopOnce.Do(func() {
+		h.mu.Lock()
+		h.stopped = true
+		closeConn := h.close
+		h.mu.Unlock()
+		if closeConn != nil {
+			closeConn()
+		}
+		if h.cancel != nil {
+			h.cancel()
+		}
+	})
+}
+
+// setClose also closes sockets established after a takeover during setup.
+// Publishing a close callback directly races with registry revocation.
+func (h *sessionHandle) setClose(closeConn func()) {
+	h.mu.Lock()
+	stopped := h.stopped
+	if !stopped {
+		h.close = closeConn
 	}
-	if h.cancel != nil {
-		h.cancel()
+	h.mu.Unlock()
+	if stopped {
+		closeConn()
 	}
 }
 
@@ -182,9 +205,11 @@ func consoleKey(namespace, name string) string {
 
 var (
 	serialSessions = newSessionRegistry()
-	vncSessions    = newSessionRegistry()
-	sshSessions    = newSessionRegistry()
-	tier1Sessions  = newSessionRegistry()
+	// Both transports control the same guest display. Keep a single atomic
+	// acquisition point; checking two independent registries races on connect.
+	vncSessions   = newSessionRegistry()
+	sshSessions   = newSessionRegistry()
+	tier1Sessions = vncSessions
 )
 
 // SerialConsoleInUse reports whether a serial console bridge is currently
@@ -200,7 +225,7 @@ func TakeOverSerialConsole(namespace, name string) bool {
 	return serialSessions.forceRelease(consoleKey(namespace, name))
 }
 
-// VNCInUse reports whether a VNC bridge is currently active for the workspace.
+// VNCInUse reports whether either interactive display transport is in use.
 func VNCInUse(namespace, name string) bool {
 	return vncSessions.held(consoleKey(namespace, name))
 }
@@ -211,8 +236,7 @@ func TakeOverVNC(namespace, name string) bool {
 	return vncSessions.forceRelease(consoleKey(namespace, name))
 }
 
-// Tier1InUse reports whether a Tier 1 transport session is currently active
-// for the workspace.
+// Tier1InUse reports whether either interactive display transport is in use.
 func Tier1InUse(namespace, name string) bool {
 	return tier1Sessions.held(consoleKey(namespace, name))
 }

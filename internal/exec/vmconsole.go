@@ -95,13 +95,13 @@ func VMConsoleHandler(opts *Options) http.HandlerFunc {
 		// When a take-over evicts this session, send a clean close with an
 		// explicit reason so the browser treats it as intentional rather than
 		// starting an auto-reconnect war against the new owner.
-		handle.close = func() {
+		handle.setClose(func() {
 			_ = clientConn.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "taken over by another user"),
 				time.Now().Add(time.Second))
 			clientConn.Close()
 			vmConn.Close()
-		}
+		})
 
 		// If a take-over superseded us while dialing/upgrading, abandon this
 		// half-built bridge so it doesn't straddle the slot the new owner holds.

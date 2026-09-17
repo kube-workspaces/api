@@ -16,20 +16,20 @@ import (
 
 // throughputLogger streams bandwidth metrics when debug logging is enabled.
 type throughputLogger struct {
-	mu          sync.Mutex
-	start       time.Time
-	bytesSent   int64
-	lastLog     time.Time
-	intervalMs  int // e.g., 5000 ms = 5 second log interval
-	debugMode   bool
+	mu         sync.Mutex
+	start      time.Time
+	bytesSent  int64
+	lastLog    time.Time
+	intervalMs int // e.g., 5000 ms = 5 second log interval
+	debugMode  bool
 }
 
 func newThroughputLogger(intervalMs int) *throughputLogger {
 	return &throughputLogger{
-		start:       time.Now(),
-		lastLog:     time.Now(),
-		intervalMs:  intervalMs,
-		debugMode:   os.Getenv("AQC_DEBUG_THROUGHPUT") == "1",
+		start:      time.Now(),
+		lastLog:    time.Now(),
+		intervalMs: intervalMs,
+		debugMode:  os.Getenv("AQC_DEBUG_THROUGHPUT") == "1",
 	}
 }
 
@@ -125,7 +125,7 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 			headers.Set("Authorization", "Bearer "+tok)
 		}
 
-		vmConn, resp, err := dialer.Dial(vncURL, headers)
+		vmConn, resp, err := dialer.DialContext(ctx, vncURL, headers)
 		if err != nil {
 			status := http.StatusBadGateway
 			if resp != nil {
@@ -143,9 +143,12 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 		}
 		defer clientConn.Close()
 
-		handle.close = func() {
+		handle.setClose(func() {
 			clientConn.Close()
 			vmConn.Close()
+		})
+		if !vncSessions.stillCurrent(consoleKey(namespace, name), handle) || ctx.Err() != nil {
+			return
 		}
 
 		// Force-close both sockets when the session is cancelled (TTL expiry or

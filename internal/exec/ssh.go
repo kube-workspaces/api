@@ -164,12 +164,12 @@ func SSHHandler(opts *SSHOptions) http.HandlerFunc {
 		}
 
 		// Let the registry break the session cleanly on take-over/TTL expiry.
-		handle.close = func() {
+		handle.setClose(func() {
 			_ = clientConn.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "taken over by another user"),
 				time.Now().Add(time.Second))
 			forceClose()
-		}
+		})
 		if !sshSessions.stillCurrent(consoleKey(namespace, name), handle) {
 			forceClose()
 			return

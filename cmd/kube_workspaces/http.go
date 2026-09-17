@@ -1706,26 +1706,18 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
 		})
 
-		// Tier 1 claim (internal/trusted): POST /v1/workspaces/{name}/tier1/claim
-		// Used by the proxy to register a session. In a production deployment this
-		// endpoint should be restricted to the proxy's IP or use a shared secret.
+		// Tier 1 claim: the proxy coordination channel is not implemented yet.
+		// Never report a successful claim without acquiring a revocable owner.
 		mux.Handle("POST", "/v1/workspaces/{name}/tier1/claim", func(w http.ResponseWriter, r *http.Request) {
 			ns, name, ok := requireEditorAccess(w, r)
 			if !ok {
 				return
 			}
-			// TODO: restrict to proxy-specific trust (e.g. header or source IP).
-			// For now this only checks whether a Tier 1 slot is free; a proper
-			// claim needs persistent state (e.g. a shared registry or channel)
-			// so the API can notice when the proxy's session ends.
-			if exec.Tier1InUse(ns, name) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusConflict)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Tier 1 session in use"})
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				http.Error(w, "Tier 1 is only available for VM workspaces", http.StatusBadRequest)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+			http.Error(w, "Tier 1 ownership coordination is not available", http.StatusNotImplemented)
 		})
 
 		// VNC take-over: POST /v1/workspaces/{name}/vnc/takeover
