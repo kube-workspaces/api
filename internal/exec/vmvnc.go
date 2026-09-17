@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kube-workspaces/api/internal/display"
 	"k8s.io/client-go/rest"
 )
 
@@ -90,6 +92,18 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
+		if opts.Display == nil {
+			http.Error(w, "display ownership unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		guard, err := display.Acquire(ctx, opts.Display, namespace, name)
+		if err != nil {
+			status := http.StatusServiceUnavailable
+			if errors.Is(err, display.ErrBusy) { status = http.StatusConflict }
+			http.Error(w, "interactive display unavailable", status)
+			return
+		}
+		defer guard.Close()
 
 		logger := newThroughputLogger(5000) // Log every 5 seconds if debug enabled
 
@@ -154,7 +168,7 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 		// Force-close both sockets when the session is cancelled (TTL expiry or
 		// API shutdown) so blocked ReadMessage pumps unwind and the slot frees.
 		go func() {
-			<-ctx.Done()
+			select { case <-ctx.Done(): case <-guard.Done(): cancel() }
 			vmConn.Close()
 			clientConn.Close()
 		}()
@@ -172,6 +186,9 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 					return
 				}
 				handle.touch()
+				deadline, valid := guard.Deadline()
+				if !valid { return }
+				_ = vmConn.SetWriteDeadline(deadline)
 				if err := vmConn.WriteMessage(msgType, msg); err != nil {
 					return
 				}
@@ -208,7 +225,7 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if err := clientConn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					if err := clientConn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second)); err != nil {
 						return
 					}
 				}

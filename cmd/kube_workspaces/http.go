@@ -28,6 +28,7 @@ import (
 	volumes "github.com/kube-workspaces/api/gen/volumes"
 	workspaces "github.com/kube-workspaces/api/gen/workspaces"
 	"github.com/kube-workspaces/api/internal/auth"
+	"github.com/kube-workspaces/api/internal/display"
 	"github.com/kube-workspaces/api/internal/exec"
 	"github.com/kube-workspaces/api/internal/k8s"
 	"github.com/kube-workspaces/api/internal/platform"
@@ -1504,9 +1505,11 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		log.Printf(ctx, "WARNING: exec endpoint unavailable: %v", err)
 	}
 	if restConfig != nil && execClientset != nil {
+		displayStore := display.NewStore(execClientset)
 		execOpts := &exec.Options{
 			RESTConfig: restConfig,
 			Clientset:  execClientset,
+			Display: displayStore,
 		}
 		execHandler := exec.Handler(execOpts)
 		vmConsoleHandler := exec.VMConsoleHandler(execOpts)
@@ -1669,8 +1672,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				json.NewEncoder(w).Encode(map[string]string{"error": "VNC is only available for VM workspaces"})
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]bool{"inUse": exec.VNCInUse(ns, name)})
+			displayStore.ServeHTTP(w, r, ns, name, "status")
 		})
 
 		// Tier 1 transport session status: GET /v1/workspaces/{name}/tier1/status
@@ -1685,8 +1687,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				json.NewEncoder(w).Encode(map[string]string{"error": "Tier 1 is only available for VM workspaces"})
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]bool{"inUse": exec.Tier1InUse(ns, name)})
+			displayStore.ServeHTTP(w, r, ns, name, "status")
 		})
 
 		// Tier 1 take-over: POST /v1/workspaces/{name}/tier1/takeover
@@ -1701,13 +1702,10 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				json.NewEncoder(w).Encode(map[string]string{"error": "Tier 1 is only available for VM workspaces"})
 				return
 			}
-			wasInUse := exec.TakeOverTier1(ns, name)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
+			displayStore.ServeHTTP(w, r, ns, name, "takeover")
 		})
 
-		// Tier 1 claim: the proxy coordination channel is not implemented yet.
-		// Never report a successful claim without acquiring a revocable owner.
+		// The proxy authenticates each claim/renew/release as its connecting user.
 		mux.Handle("POST", "/v1/workspaces/{name}/tier1/claim", func(w http.ResponseWriter, r *http.Request) {
 			ns, name, ok := requireEditorAccess(w, r)
 			if !ok {
@@ -1717,8 +1715,15 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				http.Error(w, "Tier 1 is only available for VM workspaces", http.StatusBadRequest)
 				return
 			}
-			http.Error(w, "Tier 1 ownership coordination is not available", http.StatusNotImplemented)
+			displayStore.ServeHTTP(w, r, ns, name, "claim")
 		})
+		for _, action := range []string{"renew", "release"} {
+			mux.Handle("POST", "/v1/workspaces/{name}/tier1/"+action, func(w http.ResponseWriter, r *http.Request) {
+				ns, name, ok := requireEditorAccess(w, r)
+				if !ok { return }
+				displayStore.ServeHTTP(w, r, ns, name, action)
+			})
+		}
 
 		// VNC take-over: POST /v1/workspaces/{name}/vnc/takeover
 		// Force-ends the active VNC session (if any) so the caller can open a
@@ -1735,9 +1740,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				json.NewEncoder(w).Encode(map[string]string{"error": "VNC is only available for VM workspaces"})
 				return
 			}
-			wasInUse := exec.TakeOverVNC(ns, name)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
+			displayStore.ServeHTTP(w, r, ns, name, "takeover")
 		})
 
 		// VM reboot: POST /v1/workspaces/{name}/reboot
