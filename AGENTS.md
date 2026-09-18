@@ -13,6 +13,7 @@ REST API service for the kube-workspaces platform. Built with Goa v3.
 | `gen/` | Generated Goa code (types, endpoints, HTTP transport, OpenAPI) |
 | `internal/auth/` | Auth middleware (OIDC, local auth, session cookies, Bearer tokens, RFC 8252 native-app flow) |
 | `internal/exec/` | WebSocket bridges: exec, VM serial console, VM noVNC display, web SSH + session registry |
+| `internal/rfb/` | Shared-display broker groundwork: bounded post-handshake client-message framing and mutation classification; not wired into the VNC route yet |
 | `internal/k8s/` | Kubernetes client utilities |
 | `internal/platform/` | PlatformConfig reading |
 | `internal/proxy/` | Legacy proxy support |
