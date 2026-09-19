@@ -64,6 +64,48 @@ func TestJoinControllerConflict(t *testing.T) {
 	}
 }
 
+// While a Tier 1 session holds the interactive seat, the registry must refuse
+// controller joins and acquires (the shared display is observer-only), and
+// accept them again once the lock clears.
+func TestControlLockedRefusesControllerPaths(t *testing.T) {
+	s := NewSessions()
+	obs, err := s.Join("workspaces", "vm-a", RoleObserver)
+	if err != nil {
+		t.Fatalf("join observer: %v", err)
+	}
+
+	s.SetControlLocked("workspaces", "vm-a", true)
+	if _, err := s.Join("workspaces", "vm-a", RoleController); !errors.Is(err, ErrControllerPresent) {
+		t.Fatalf("controller join while locked: %v", err)
+	}
+	if _, _, err := s.Acquire("workspaces", "vm-a", obs.ID, true); !errors.Is(err, ErrControllerPresent) {
+		t.Fatalf("force acquire while locked: %v", err)
+	}
+	// Observing is unaffected.
+	if _, err := s.Join("workspaces", "vm-a", RoleObserver); err != nil {
+		t.Fatalf("observer join while locked: %v", err)
+	}
+
+	s.SetControlLocked("workspaces", "vm-a", false)
+	if _, _, err := s.Acquire("workspaces", "vm-a", obs.ID, false); err != nil {
+		t.Fatalf("acquire after unlock: %v", err)
+	}
+	if got := s.mustParticipant(t, "workspaces", "vm-a", obs.ID); got.Role != RoleController {
+		t.Fatalf("role after unlock = %q, want controller", got.Role)
+	}
+
+	// The lock lives apart from membership: it also gates the first
+	// participant of a workspace that has no session entry yet.
+	s.SetControlLocked("workspaces", "vm-b", true)
+	if _, err := s.Join("workspaces", "vm-b", RoleController); !errors.Is(err, ErrControllerPresent) {
+		t.Fatalf("controller join on a locked workspace with no members: %v", err)
+	}
+	s.SetControlLocked("workspaces", "vm-b", false)
+	if _, err := s.Join("workspaces", "vm-b", RoleController); err != nil {
+		t.Fatalf("controller join after unlock: %v", err)
+	}
+}
+
 func TestAcquireReleaseTransfer(t *testing.T) {
 	base, setNow := fixedClock()
 	s := NewSessions()

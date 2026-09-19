@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -23,6 +24,11 @@ type sharedRuntime struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	count  int
+	// full reports whether this generation holds the interactive seat, so
+	// participants may attach as controller. An observer-only generation
+	// (capture held, seat held by a Tier 1 session) serves view-only
+	// participants until its seat upgrade lands.
+	full atomic.Bool
 }
 
 // SharedDisplay serves the shared-display WebSocket route
@@ -182,6 +188,14 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.detach(namespace, name, rt)
 
+	// 2b. A controller stream needs the interactive seat held by this
+	// generation. While a Tier 1 session owns the seat the generation is
+	// observer-only: watching is fine, driving is not.
+	if role == display.RoleController && !rt.full.Load() {
+		http.Error(w, "display is driven by a Tier 1 session; join as an observer", http.StatusConflict)
+		return
+	}
+
 	// 3. Upgrade the client.
 	clientConn, err := vncUpgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -245,9 +259,12 @@ func (s *SharedDisplay) joinError(w http.ResponseWriter, err error) {
 	}
 }
 
-// attach returns the live broker generation for ns/name, creating one (seat
-// lease + upstream dial + broker run) when none is live. The seat lease is the
-// capture-side claim: exactly one generation may own a VM's VNC console.
+// attach returns the live broker generation for ns/name, creating one when
+// none is live. The capture lease is the console-side claim every generation
+// holds: exactly one generation may dial a VM's VNC console. The interactive
+// seat decides the generation's mode: free (or held by an expired claimant)
+// means a full shared display, while a tier1-held seat means an observer-only
+// generation that watches the desktop the Tier 1 session drives.
 func (s *SharedDisplay) attach(ctx context.Context, ns, name string) (*sharedRuntime, error) {
 	key := s.key(ns, name)
 	s.mu.Lock()
@@ -258,7 +275,18 @@ func (s *SharedDisplay) attach(ctx context.Context, ns, name string) (*sharedRun
 	}
 	s.mu.Unlock()
 
-	guard, err := display.Acquire(ctx, s.opts.Display, ns, name)
+	tier, seatHeld, err := s.opts.Display.SeatTier(ctx, ns, name)
+	if err != nil {
+		return nil, err
+	}
+	observerOnly := seatHeld && tier == "tier1"
+
+	var guard *display.Guard
+	if observerOnly {
+		guard, err = display.AcquireCapture(ctx, s.opts.Display, ns, name)
+	} else {
+		guard, err = display.Acquire(ctx, s.opts.Display, ns, name)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -268,17 +296,21 @@ func (s *SharedDisplay) attach(ctx context.Context, ns, name string) (*sharedRun
 		return nil, err
 	}
 	bro := broker.New(upstream)
-	rtCtx, cancel := context.WithCancel(ctx)
+	// The generation outlives any one participant's request: it ends on the
+	// last detach, on the guard losing its claims, or on process shutdown —
+	// not when the participant that happened to create it disconnects.
+	rtCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		_ = bro.Run(rtCtx)
 		close(done)
 	}()
 	rt := &sharedRuntime{guard: guard, broker: bro, cancel: cancel, done: done, count: 1}
+	rt.full.Store(!observerOnly)
 
 	s.mu.Lock()
 	if prev := s.live[key]; prev != nil {
-		// Lost a creation race; the other generation wins the seat lease.
+		// Lost a creation race; the other generation wins the capture lease.
 		s.mu.Unlock()
 		cancel()
 		<-done
@@ -288,11 +320,55 @@ func (s *SharedDisplay) attach(ctx context.Context, ns, name string) (*sharedRun
 	}
 	s.live[key] = rt
 	s.mu.Unlock()
+
+	// Losing the claims behind the generation (takeover, expiry, lost
+	// capture) ends it: nobody may keep a console they cannot renew, and the
+	// fenced successor needs the console free to dial.
+	go func() {
+		<-guard.Done()
+		rt.cancel()
+	}()
+
+	if observerOnly {
+		if s.opts.Sessions != nil {
+			s.opts.Sessions.SetControlLocked(ns, name, true)
+		}
+		go s.watchSeat(rtCtx, ns, name, rt)
+	}
 	return rt, nil
 }
 
+// watchSeat upgrades an observer-only generation once the interactive seat
+// frees: the Tier 1 session ended (or its claim fenced out), so this
+// generation claims the seat and becomes the full shared display, letting
+// participants drive again. A legacy exclusive client racing for the same
+// seat wins the claim and the generation keeps watching.
+func (s *SharedDisplay) watchSeat(ctx context.Context, ns, name string, rt *sharedRuntime) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			tier, held, err := s.opts.Display.SeatTier(ctx, ns, name)
+			if err != nil || (held && tier == "tier1") {
+				continue
+			}
+			if err := rt.guard.EnsureSeat(ctx); err != nil {
+				continue
+			}
+			rt.full.Store(true)
+			if s.opts.Sessions != nil {
+				s.opts.Sessions.SetControlLocked(ns, name, false)
+			}
+			return
+		}
+	}
+}
+
 // detach drops one participant reference. The last reference cancels the broker
-// generation and releases the seat lease (after capture has stopped).
+// generation and releases the seat/capture leases (after capture has stopped).
 func (s *SharedDisplay) detach(ns, name string, rt *sharedRuntime) {
 	key := s.key(ns, name)
 	s.mu.Lock()
@@ -302,6 +378,10 @@ func (s *SharedDisplay) detach(ns, name string, rt *sharedRuntime) {
 		rt.cancel()
 		<-rt.done
 		rt.guard.Close()
+		if s.opts.Sessions != nil {
+			// A generation that never upgraded leaves no lock behind.
+			s.opts.Sessions.SetControlLocked(ns, name, false)
+		}
 		return
 	}
 	rt.count--

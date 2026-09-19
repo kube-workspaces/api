@@ -12,8 +12,8 @@ REST API service for the kube-workspaces platform. Built with Goa v3.
 | `design/design.go` | Goa DSL design (source of truth for API routes) |
 | `gen/` | Generated Goa code (types, endpoints, HTTP transport, OpenAPI) |
 | `internal/auth/` | Auth middleware (OIDC, local auth, session cookies, Bearer tokens, RFC 8252 native-app flow) |
-| `internal/exec/` | WebSocket bridges: exec, VM serial console, VM noVNC display, web SSH + session registry, and the shared-display WS route (`shareddisplay.go`, `/v1/workspaces/{name}/display/ws`) that runs a broker generation per workspace (seat lease + one upstream dial) shared by all participants |
-| `internal/display/` | Display ownership: Lease-backed `Store`/`Guard` for the legacy capture seat, a **separate control-role lease** (`ClaimControl`/`RenewControl`/`RevokeControl`/`ReleaseControl`, own coordination object) and `Fence.DispatchInput` gating input writes at the fencing bound, plus the in-memory `Sessions` registry (one controller + view-only observers) backing the Goa `display` service |
+| `internal/exec/` | WebSocket bridges: exec, VM serial console, VM noVNC display, web SSH + session registry, and the shared-display WS route (`shareddisplay.go`, `/v1/workspaces/{name}/display/ws`) that runs a broker generation per workspace (capture lease + one upstream dial, plus the interactive seat when free) shared by all participants |
+| `internal/display/` | Display ownership: Lease-backed `Store`/`Guard` for the interactive seat and the **VNC-console capture lease** (`ClaimCapture`, own coordination object — `Acquire` takes seat+capture, `AcquireCapture` takes the console alone for observer-only coexistence with a Tier 1 seat holder), a **separate control-role lease** (`ClaimControl`/`RenewControl`/`RevokeControl`/`ReleaseControl`) and `Fence.DispatchInput` gating input writes at the fencing bound, plus the in-memory `Sessions` registry (one controller + view-only observers, `SetControlLocked` while a Tier 1 session owns the seat) backing the Goa `display` service |
 | `internal/rfb/` | Shared-display broker groundwork: bounded post-handshake client-message framing and mutation classification; not wired into the VNC route yet |
 | `internal/broker/` | Shared-display RFB broker: one capture upstream, up to eight participants, immutable snapshot fan-out with slow-reader isolation. `ServeParticipant` serves observers read-only and forwards a controller's guest-mutating messages upstream **only through an `InputGate`** (the display control `Fence`), with upstream writes serialized against capture. Wired publicly via exec's shared-display route (`internal/exec/shareddisplay.go`). |
 | `internal/k8s/` | Kubernetes client utilities |
@@ -49,16 +49,26 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
   workspace; the controller's RFB input only reaches the VM through the display
   control `Fence` (control lease + local role gate). The legacy single-session
   `/v1/workspaces/{name}/vnc` bridge is unchanged and competes for the VM's VNC
-  console through the same seat lease. Handwritten `display.go` mirrors the
+  console through the same claims. Handwritten `display.go` mirrors the
   exec/vnc console gate (editor/admin + namespace access) with Goa
   `unauthorized`/`forbidden`/`not_found`/`capacity`(429)/`conflict`(409) errors.
-- Replica owner routing: every claim (`claimLease`, used by both the seat
-  `Acquire` and `ClaimControl`) records this pod's identity (hostname) in the
-  `kubeworkspaces.io/display-owner` lease annotation. A replica that loses the
-  seat-lease race gets a typed `display.OwnershipError` (unwraps to `ErrBusy`);
-  the stream route answers 409 with `{"error": ..., "owner": "<replica>"}`
-  instead of dialing a second VNC console, so a routing layer can re-issue the
-  request against the owner. See `Store.SeatOwner`/`Store.ControlOwner`.
+- Lease model: three coordination leases per workspace. The **interactive
+  seat** (`kw-display-*`, tier `vnc`/`tier1`) is the cross-tier controller
+  mutex; the **capture lease** (`kw-display-capture-*`) coordinates the single
+  KubeVirt VNC console connection — every console dialer holds it (`Acquire`
+  takes seat+capture; a shared-display generation whose seat is tier1-held
+  takes the capture alone via `AcquireCapture` and serves observer-only until
+  its watcher claims the freed seat with `EnsureSeat`); the **control lease**
+  (`kw-display-control-*`) gates participant input. Losing any held claim
+  stops the guard and ends the broker generation.
+- Replica owner routing: every claim (`claimLease`, used by the seat
+  `Acquire`, `ClaimCapture` and `ClaimControl`) records this pod's identity
+  (hostname) in the `kubeworkspaces.io/display-owner` lease annotation. A
+  replica that loses the race gets a typed `display.OwnershipError` (unwraps
+  to `ErrBusy`); the stream route answers 409 with
+  `{"error": ..., "owner": "<replica>"}` instead of dialing a second VNC
+  console, so a routing layer can re-issue the request against the owner. See
+  `Store.SeatOwner`/`Store.CaptureOwner`/`Store.ControlOwner`.
 - Stream/participant binding: the WS route accepts `?participant=<id>` to attach
   a stream to a participant registered via `POST .../display/join` (so a client
   learns its `participant_id` and drives `control/acquire|release|transfer` with

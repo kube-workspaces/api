@@ -110,12 +110,20 @@ func (s *session) activeParticipant() *Participant {
 type Sessions struct {
 	mu       sync.Mutex
 	sessions map[string]*session // key: ns + "/" + name
-	now      func() time.Time
+	// controlLocked marks workspaces whose interactive seat is held outside
+	// the shared-display session (a Tier 1 client): participants may observe
+	// but nobody may join or acquire as controller. It lives apart from the
+	// member entries because an observer-only display can exist before any
+	// participant joins, and must outlive membership churn. The broker
+	// generation that evaluated the seat sets and clears it; see
+	// exec.SharedDisplay.
+	controlLocked map[string]bool
+	now           func() time.Time
 }
 
 // NewSessions returns an empty registry.
 func NewSessions() *Sessions {
-	return &Sessions{sessions: make(map[string]*session), now: time.Now}
+	return &Sessions{sessions: make(map[string]*session), controlLocked: make(map[string]bool), now: time.Now}
 }
 
 func (s *Sessions) key(ns, name string) string { return ns + "/" + name }
@@ -229,7 +237,7 @@ func (s *Sessions) Join(ns, name, role string) (*Participant, error) {
 	now := s.now()
 	m := &Participant{ID: id, Role: role, JoinedAt: now}
 	if role == RoleController {
-		if sess.controller != "" {
+		if sess.controller != "" || s.controlLocked[key] {
 			return nil, ErrControllerPresent
 		}
 		sess.controller = id
@@ -275,6 +283,22 @@ func (s *Sessions) Leave(ns, name, id string) error {
 	return nil
 }
 
+// SetControlLocked marks whether controller joins/acquires are refused for
+// the workspace. The shared-display broker sets it while it serves an
+// observer-only generation (a Tier 1 session holds the interactive seat) and
+// clears it when the seat is claimed or the generation ends. It is a
+// UX-honest gate on top of the stream route's own controller check.
+func (s *Sessions) SetControlLocked(ns, name string, locked bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := s.key(ns, name)
+	if locked {
+		s.controlLocked[key] = true
+	} else {
+		delete(s.controlLocked, key)
+	}
+}
+
 // Touch refreshes a participant's idle deadline.
 func (s *Sessions) Touch(ns, name, id string) error {
 	s.mu.Lock()
@@ -302,6 +326,9 @@ func (s *Sessions) Acquire(ns, name, id string, force bool) (*Participant, bool,
 	wasHeld := sess.controller != ""
 	if sess.controller == id {
 		return nil, wasHeld, ErrAlreadyController
+	}
+	if s.controlLocked[key] {
+		return nil, wasHeld, ErrControllerPresent
 	}
 	if wasHeld && !force {
 		return nil, true, ErrControllerPresent

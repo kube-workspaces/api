@@ -357,3 +357,215 @@ func TestCrossReplicaOwnershipRouting(t *testing.T) {
 }
 
 var leaseGR = schema.GroupResource{Group: "coordination.k8s.io", Resource: "leases"}
+
+// The capture lease coordinates the VNC console independently of the
+// interactive seat: exactly one console dialer at a time, whatever tier owns
+// the desktop's input.
+func TestCaptureLeaseLifecycle(t *testing.T) {
+	s := NewStore(fake.NewClientset())
+	ctx := context.Background()
+
+	capture, err := s.ClaimCapture(ctx, "alice", "desktop")
+	if err != nil {
+		t.Fatalf("capture claim: %v", err)
+	}
+	if _, err := s.ClaimCapture(ctx, "alice", "desktop"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("second capture claim: %v", err)
+	}
+	// The seat is untouched by the capture claim and vice versa.
+	if inUse, _ := s.InUse(ctx, "alice", "desktop"); inUse {
+		t.Fatal("capture claim showed up as a held seat")
+	}
+	seat, err := s.Claim(ctx, "alice", "desktop", "tier1")
+	if err != nil {
+		t.Fatalf("seat claim while capture held: %v", err)
+	}
+	if err := s.RenewCapture(ctx, "alice", "desktop", capture); err != nil {
+		t.Fatalf("capture renew: %v", err)
+	}
+	if err := s.RenewCapture(ctx, "alice", "desktop", "stale-id"); !errors.Is(err, ErrRevoked) {
+		t.Fatalf("stale capture renew: %v", err)
+	}
+	if err := s.ReleaseCapture(ctx, "alice", "desktop", capture); err != nil {
+		t.Fatalf("capture release: %v", err)
+	}
+	if _, err := s.ClaimCapture(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("capture reclaim after release: %v", err)
+	}
+	if err := s.Release(ctx, "alice", "desktop", seat); err != nil {
+		t.Fatalf("seat release: %v", err)
+	}
+}
+
+// The capture lease carries the owning replica's identity, so a shared-display
+// generation losing the cross-replica claim learns where to route observers.
+func TestCaptureLeaseOwnerRouting(t *testing.T) {
+	cs := fake.NewClientset()
+	ctx := context.Background()
+	replicaA := NewStoreWithOwner(cs, "replica-a")
+	replicaB := NewStoreWithOwner(cs, "replica-b")
+
+	captureA, err := replicaA.ClaimCapture(ctx, "alice", "desktop")
+	if err != nil {
+		t.Fatalf("replica A capture claim: %v", err)
+	}
+	if got, _ := replicaB.CaptureOwner(ctx, "alice", "desktop"); got != "replica-a" {
+		t.Fatalf("CaptureOwner from B: %q", got)
+	}
+	_, err = replicaB.ClaimCapture(ctx, "alice", "desktop")
+	var oe *OwnershipError
+	if !errors.As(err, &oe) || oe.Owner != "replica-a" || oe.Kind != "display-capture" {
+		t.Fatalf("B's capture claim: %v", err)
+	}
+	if err := replicaA.ReleaseCapture(ctx, "alice", "desktop", captureA); err != nil {
+		t.Fatalf("replica A capture release: %v", err)
+	}
+	if got, _ := replicaB.CaptureOwner(ctx, "alice", "desktop"); got != "" {
+		t.Fatalf("CaptureOwner after release: %q", got)
+	}
+	if _, err := replicaB.ClaimCapture(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("replica B capture reclaim: %v", err)
+	}
+}
+
+// SeatTier is how the shared-display route tells a Tier 1-owned desktop
+// (observe only) from every other seat state.
+func TestSeatTier(t *testing.T) {
+	s := NewStore(fake.NewClientset())
+	ctx := context.Background()
+
+	if tier, held, err := s.SeatTier(ctx, "alice", "desktop"); err != nil || held || tier != "" {
+		t.Fatalf("free seat: tier=%q held=%v err=%v", tier, held, err)
+	}
+	if _, err := s.Claim(ctx, "alice", "desktop", "tier1"); err != nil {
+		t.Fatalf("tier1 claim: %v", err)
+	}
+	if tier, held, err := s.SeatTier(ctx, "alice", "desktop"); err != nil || !held || tier != "tier1" {
+		t.Fatalf("tier1 seat: tier=%q held=%v err=%v", tier, held, err)
+	}
+	// A capture claim on its own never reads as a held seat.
+	if _, err := s.ClaimCapture(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("capture claim: %v", err)
+	}
+	if tier, held, err := s.SeatTier(ctx, "alice", "desktop"); err != nil || !held || tier != "tier1" {
+		t.Fatalf("tier1 seat with capture: tier=%q held=%v err=%v", tier, held, err)
+	}
+	if _, err := s.Revoke(ctx, "alice", "desktop"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Claim(ctx, "alice", "desktop", "vnc"); err == nil {
+		// The revoked seat is still held until the fence; tier must still read.
+		if tier, held, _ := s.SeatTier(ctx, "alice", "desktop"); !held || tier != "tier1" {
+			t.Fatalf("revoked tier1 seat: tier=%q held=%v", tier, held)
+		}
+	}
+}
+
+// A guard's capture claim blocks a legacy exclusive dial only through the
+// same store: legacy Acquire must claim both seat and capture.
+func TestLegacyAcquireClaimsSeatAndCapture(t *testing.T) {
+	s := NewStore(fake.NewClientset())
+	ctx := context.Background()
+
+	g, err := Acquire(ctx, s, "alice", "desktop")
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	if inUse, _ := s.InUse(ctx, "alice", "desktop"); !inUse {
+		t.Fatal("seat not held after Acquire")
+	}
+	if _, err := s.ClaimCapture(ctx, "alice", "desktop"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("capture claim under a live guard: %v", err)
+	}
+	if !g.HasSeat() {
+		t.Fatal("guard does not hold the seat")
+	}
+	g.Close()
+	if _, err := s.ClaimCapture(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("capture claim after guard close: %v", err)
+	}
+}
+
+// An observer-only guard claims the console without the seat, and upgrades
+// once the Tier 1 holder lets go.
+func TestGuardCaptureOnlyAndSeatUpgrade(t *testing.T) {
+	s := NewStore(fake.NewClientset())
+	ctx := context.Background()
+
+	tier1, err := s.Claim(ctx, "alice", "desktop", "tier1")
+	if err != nil {
+		t.Fatalf("tier1 claim: %v", err)
+	}
+	g, err := AcquireCapture(ctx, s, "alice", "desktop")
+	if err != nil {
+		t.Fatalf("observer-only acquire: %v", err)
+	}
+	if g.HasSeat() {
+		t.Fatal("capture-only guard claims a seat")
+	}
+	if tier, held, _ := s.SeatTier(ctx, "alice", "desktop"); !held || tier != "tier1" {
+		t.Fatalf("capture claim disturbed the tier1 seat: tier=%q held=%v", tier, held)
+	}
+	if err := g.EnsureSeat(ctx); !errors.Is(err, ErrBusy) {
+		t.Fatalf("seat upgrade while tier1 holds: %v", err)
+	}
+
+	// Tier 1 ends: the upgrade claims the freed seat.
+	if err := s.Release(ctx, "alice", "desktop", tier1); err != nil {
+		t.Fatalf("tier1 release: %v", err)
+	}
+	if err := g.EnsureSeat(ctx); err != nil {
+		t.Fatalf("seat upgrade after tier1 release: %v", err)
+	}
+	if !g.HasSeat() {
+		t.Fatal("guard did not take the freed seat")
+	}
+	if tier, held, _ := s.SeatTier(ctx, "alice", "desktop"); !held || tier != "vnc" {
+		t.Fatalf("upgraded seat: tier=%q held=%v", tier, held)
+	}
+	// Idempotent.
+	if err := g.EnsureSeat(ctx); err != nil {
+		t.Fatalf("repeat seat upgrade: %v", err)
+	}
+	g.Close()
+	if inUse, _ := s.InUse(ctx, "alice", "desktop"); inUse {
+		t.Fatal("seat still held after guard close")
+	}
+	if _, err := s.ClaimCapture(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("capture claim after guard close: %v", err)
+	}
+}
+
+// Losing the capture lease kills the guard even while the seat is fine: the
+// console it guarded belongs to someone else's session now.
+func TestGuardDiesWhenCaptureVanishes(t *testing.T) {
+	s := NewStore(fake.NewClientset())
+	g, err := Acquire(context.Background(), s, "alice", "desktop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.client.CoordinationV1().Leases("alice").Delete(context.Background(), captureLeaseName("desktop"), metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-g.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("guard kept renewing against a vanished capture lease")
+	}
+}
+
+// A capture failure at Acquire releases the freshly claimed seat: the pair is
+// atomic, so a partial claim never lingers to block the next dialer.
+func TestAcquireReleasesSeatWhenCaptureBusy(t *testing.T) {
+	s := NewStore(fake.NewClientset())
+	ctx := context.Background()
+	if _, err := s.ClaimCapture(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("capture pre-claim: %v", err)
+	}
+	if _, err := Acquire(ctx, s, "alice", "desktop"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("acquire with busy capture: %v", err)
+	}
+	if inUse, _ := s.InUse(ctx, "alice", "desktop"); inUse {
+		t.Fatal("seat leaked by a failed Acquire")
+	}
+}

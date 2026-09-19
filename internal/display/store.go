@@ -99,6 +99,17 @@ func controlLeaseName(name string) string {
 	return "kw-display-control-" + hex.EncodeToString(h[:20])
 }
 
+// captureLeaseName derives the VNC-console capture lease for a workspace. It
+// coordinates the one resource the seat lease does not model on its own: the
+// single KubeVirt VNC console connection. Every console dialer holds it —
+// the legacy bridge and a full shared-display generation via their seat
+// claim, and an observer-only broker generation on its own, which is how
+// observers can watch a desktop while a Tier 1 session holds the seat.
+func captureLeaseName(name string) string {
+	h := sha256.Sum256([]byte(name))
+	return "kw-display-capture-" + hex.EncodeToString(h[:20])
+}
+
 // expired requires this replica to have observed the SAME resourceVersion for
 // the fencing interval. We never compare clocks across pods or trust a remote
 // wall-clock timestamp for expiry. A CAS update fences renewals racing acquire.
@@ -324,6 +335,68 @@ func (s *Store) InUse(ctx context.Context, ns, name string) (bool, error) {
 		return false, err
 	}
 	return held(l) && !s.expired(ns, l), nil
+}
+
+// SeatTier reports the transport tier recorded on a held seat lease: "vnc",
+// "tier1", or "" when the seat is free (or held by a build that records no
+// tier). A shared-display broker uses it to tell "a Tier 1 controller owns
+// this desktop — observers may watch but nobody here may drive" from every
+// other hold state.
+func (s *Store) SeatTier(ctx context.Context, ns, name string) (string, bool, error) {
+	l, err := s.client.CoordinationV1().Leases(ns).Get(ctx, leaseName(name), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if !held(l) || s.expired(ns, l) {
+		return "", false, nil
+	}
+	return l.Annotations[tierKey], true, nil
+}
+
+// ClaimCapture takes the VNC-console capture lease for a workspace. See
+// captureLeaseName for who claims it and why.
+func (s *Store) ClaimCapture(ctx context.Context, ns, name string) (string, error) {
+	return s.claimLease(ctx, captureLeaseName(name), ns, map[string]string{revokedKey: "false"}, "display-capture")
+}
+
+// RenewCapture keeps the capture lease alive, with the same fencing semantics
+// as Renew.
+func (s *Store) RenewCapture(ctx context.Context, ns, name, id string) error {
+	return s.modifyNamed(ctx, captureLeaseName(name), ns, func(l *coordination.Lease) error {
+		if !held(l) || id == "" || *l.Spec.HolderIdentity != id || l.Annotations[revokedKey] == "true" {
+			return ErrRevoked
+		}
+		now := metav1.NewMicroTime(s.now())
+		l.Spec.RenewTime = &now
+		return nil
+	})
+}
+
+// ReleaseCapture frees the capture lease held by id, called only after the
+// console connection it guarded is closed. A stale id can never release a
+// successor.
+func (s *Store) ReleaseCapture(ctx context.Context, ns, name, id string) error {
+	return s.modifyNamed(ctx, captureLeaseName(name), ns, func(l *coordination.Lease) error {
+		if !held(l) || id == "" || *l.Spec.HolderIdentity != id {
+			return ErrRevoked
+		}
+		l.Spec.HolderIdentity = nil
+		if l.Annotations != nil {
+			delete(l.Annotations, ownerKey)
+		}
+		return nil
+	})
+}
+
+// CaptureOwner reports the replica that currently holds the capture lease for
+// ns/name, or "" when it is free or absent. It is the cross-replica routing
+// key for shared-display traffic: a replica that cannot claim the capture
+// must send observers to the owner instead of dialing a second console.
+func (s *Store) CaptureOwner(ctx context.Context, ns, name string) (string, error) {
+	return s.leaseOwner(ctx, captureLeaseName(name), ns)
 }
 
 // SeatOwner reports the replica that currently holds the capture/seat lease for
