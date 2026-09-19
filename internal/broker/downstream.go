@@ -11,9 +11,22 @@ import (
 
 // ServeObserver owns c until disconnect, cancellation or broker shutdown.
 // It blocks; callers run separate observers in separate goroutines. All input
-// mutations are discarded. There is intentionally no control-claim stub that
-// could accidentally turn this prototype into an unfenced interactive bridge.
+// mutations are discarded.
 func (b *Broker) ServeObserver(ctx context.Context, c Stream) error {
+	return b.serve(ctx, c, false, nil)
+}
+
+// ServeParticipant serves c like ServeObserver but, when controller and gate
+// are set, forwards guest-mutating RFB messages (keys, pointer, clipboard,
+// desktop resize, extended keys) upstream through gate. Dropped writes and the
+// gate's fencing errors surface to the caller. Observer-local messages
+// (framebuffer requests, pixel format, encodings for the participant's own
+// view) never reach the upstream.
+func (b *Broker) ServeParticipant(ctx context.Context, c Stream, controller bool, gate InputGate) error {
+	return b.serve(ctx, c, controller, gate)
+}
+
+func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate InputGate) error {
 	defer c.Close()
 	b.mu.Lock()
 	if b.closed {
@@ -124,6 +137,16 @@ func (b *Broker) ServeObserver(ctx context.Context, c Stream) error {
 		case <-changed:
 		case m := <-messages:
 			if m.Scope() != rfb.ParticipantLocal {
+				if controller && gate != nil {
+					p := m.Bytes()
+					var fwdErr error
+					if err := gate.DispatchInput(func() { fwdErr = b.forward(p) }); err != nil {
+						return err
+					}
+					if fwdErr != nil {
+						return fwdErr
+					}
+				}
 				continue
 			}
 			p := m.Bytes()

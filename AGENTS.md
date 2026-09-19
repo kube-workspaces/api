@@ -12,10 +12,10 @@ REST API service for the kube-workspaces platform. Built with Goa v3.
 | `design/design.go` | Goa DSL design (source of truth for API routes) |
 | `gen/` | Generated Goa code (types, endpoints, HTTP transport, OpenAPI) |
 | `internal/auth/` | Auth middleware (OIDC, local auth, session cookies, Bearer tokens, RFC 8252 native-app flow) |
-| `internal/exec/` | WebSocket bridges: exec, VM serial console, VM noVNC display, web SSH + session registry |
+| `internal/exec/` | WebSocket bridges: exec, VM serial console, VM noVNC display, web SSH + session registry, and the shared-display WS route (`shareddisplay.go`, `/v1/workspaces/{name}/display/ws`) that runs a broker generation per workspace (seat lease + one upstream dial) shared by all participants |
 | `internal/display/` | Display ownership: Lease-backed `Store`/`Guard` for the legacy capture seat, a **separate control-role lease** (`ClaimControl`/`RenewControl`/`RevokeControl`/`ReleaseControl`, own coordination object) and `Fence.DispatchInput` gating input writes at the fencing bound, plus the in-memory `Sessions` registry (one controller + view-only observers) backing the Goa `display` service |
 | `internal/rfb/` | Shared-display broker groundwork: bounded post-handshake client-message framing and mutation classification; not wired into the VNC route yet |
-| `internal/broker/` | Read-only multi-viewer RFB feasibility prototype, independent observer sessions and bounded capture; not routed publicly. See its README for native/noVNC integration checks. |
+| `internal/broker/` | Shared-display RFB broker: one capture upstream, up to eight participants, immutable snapshot fan-out with slow-reader isolation. `ServeParticipant` serves observers read-only and forwards a controller's guest-mutating messages upstream **only through an `InputGate`** (the display control `Fence`), with upstream writes serialized against capture. Wired publicly via exec's shared-display route (`internal/exec/shareddisplay.go`). |
 | `internal/k8s/` | Kubernetes client utilities |
 | `internal/platform/` | PlatformConfig reading |
 | `internal/proxy/` | Legacy proxy support |
@@ -43,10 +43,14 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
   workspace updates and `shared_memory`/`volume_mounts` are rejected for `vm`.
 - Shared display sessions (`display.go` service, routes
   `/v1/workspaces/{name}/display*`): Goa-designed membership/control API backed
-  by `internal/display.Sessions`. It is NOT yet wired to a viewer WebSocket or
-  the RFB broker, so participant membership/control is exercised by the API
-  only; there is no live multi-session media path. Handwritten `display.go`
-  mirrors the exec/vnc console gate (editor/admin + namespace access) with Goa
+  by `internal/display.Sessions`. The stream route
+  `/v1/workspaces/{name}/display/ws` (`internal/exec/shareddisplay.go`) serves
+  one controller + view-only observers against a single broker generation per
+  workspace; the controller's RFB input only reaches the VM through the display
+  control `Fence` (control lease + local role gate). The legacy single-session
+  `/v1/workspaces/{name}/vnc` bridge is unchanged and competes for the VM's VNC
+  console through the same seat lease. Handwritten `display.go` mirrors the
+  exec/vnc console gate (editor/admin + namespace access) with Goa
   `unauthorized`/`forbidden`/`not_found`/`capacity`(429)/`conflict`(409) errors.
 - SshKey CRUD is implemented in `sshkeys.go` (`/v1/sshkeys*`) backed by
   `internal/k8s/sshkey.go`; keys live in the user's personal namespace.

@@ -161,9 +161,14 @@ func awaitVersion(t *testing.T, b *Broker, version uint64) *frame {
 
 func observer(t *testing.T, b *Broker) (net.Conn, <-chan error) {
 	t.Helper()
+	return participant(t, b, false, nil)
+}
+
+func participant(t *testing.T, b *Broker, controller bool, gate InputGate) (net.Conn, <-chan error) {
+	t.Helper()
 	client, server := net.Pipe()
 	done := make(chan error, 1)
-	go func() { done <- b.ServeObserver(context.Background(), server) }()
+	go func() { done <- b.ServeParticipant(context.Background(), server, controller, gate) }()
 	t.Cleanup(func() { _ = client.Close() })
 	if string(readTest(t, client, 12)) != protocolVersion {
 		t.Fatal("missing server version")
@@ -453,5 +458,264 @@ func TestClosedBeforeRunAndUpstreamCancellation(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("upstream handshake ignored cancellation")
+	}
+}
+
+type stubGate struct {
+	err error
+}
+
+func (g *stubGate) DispatchInput(fn func()) error {
+	if g.err != nil {
+		return g.err
+	}
+	fn()
+	return nil
+}
+
+// readForwarded parses one RFB client message arriving from the capture side.
+// It mirrors runFixture's update serving while recording forwarded input.
+func readForwarded(c net.Conn) ([]byte, error) {
+	kind, err := readBytes(c, 1)
+	if err != nil {
+		return nil, err
+	}
+	switch kind[0] {
+	case 3:
+		rest, err := readBytes(c, 9)
+		if err != nil {
+			return nil, err
+		}
+		return append(kind, rest...), nil
+	case 4:
+		rest, err := readBytes(c, 7)
+		if err != nil {
+			return nil, err
+		}
+		return append(kind, rest...), nil
+	case 5:
+		rest, err := readBytes(c, 5)
+		if err != nil {
+			return nil, err
+		}
+		return append(kind, rest...), nil
+	case 6:
+		hdr, err := readBytes(c, 7)
+		if err != nil {
+			return nil, err
+		}
+		n := binary.BigEndian.Uint32(hdr[3:])
+		if n > 1<<20 {
+			return nil, errors.New("clipboard exceeds bounds")
+		}
+		msg := append(append(kind, hdr...), make([]byte, 0, int(n))...)
+		rest, err := readBytes(c, int(n))
+		if err != nil {
+			return nil, err
+		}
+		return append(msg, rest...), nil
+	case 251: // SetDesktopSize
+		hdr, err := readBytes(c, 11)
+		if err != nil {
+			return nil, err
+		}
+		n := int(hdr[4])
+		if n < 1 || n > 256 {
+			return nil, errors.New("invalid screen count")
+		}
+		msg := append(append(kind, hdr...), make([]byte, 0, 16*n)...)
+		rest, err := readBytes(c, 16*n)
+		if err != nil {
+			return nil, err
+		}
+		return append(msg, rest...), nil
+	default:
+		return nil, fmt.Errorf("unexpected upstream read %d", kind[0])
+	}
+}
+
+func runInputFixture(c net.Conn, updates <-chan []byte, input chan<- []byte) error {
+	defer c.Close()
+	if err := writeAll(c, []byte(protocolVersion)); err != nil {
+		return err
+	}
+	p, err := readBytes(c, 12)
+	if err != nil {
+		return err
+	}
+	if string(p) != protocolVersion {
+		return errors.New("incorrect client protocol")
+	}
+	if err := writeAll(c, []byte{1, 1}); err != nil {
+		return err
+	}
+	p, err = readBytes(c, 1)
+	if err != nil {
+		return err
+	}
+	if p[0] != 1 {
+		return errors.New("incorrect security selection")
+	}
+	if err := writeAll(c, []byte{0, 0, 0, 0}); err != nil {
+		return err
+	}
+	p, err = readBytes(c, 1)
+	if err != nil {
+		return err
+	}
+	if p[0] != 1 {
+		return errors.New("upstream must be shared")
+	}
+	header := make([]byte, 24)
+	header[1], header[3] = 2, 1
+	copy(header[4:], canonicalFormat())
+	if err := writeAll(c, header); err != nil {
+		return err
+	}
+	p, err = readBytes(c, 20)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(p, append([]byte{0, 0, 0, 0}, canonicalFormat()...)) {
+		return errors.New("incorrect capture pixel format")
+	}
+	p, err = readBytes(c, 12)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(p, []byte{2, 0, 0, 2, 0, 0, 0, 0, 255, 255, 255, 33}) {
+		return errors.New("incorrect capture encodings")
+	}
+	for {
+		msg, err := readForwarded(c)
+		if err != nil {
+			return err
+		}
+		if msg[0] != 3 {
+			// A forwarded mutating message: record it and continue serving.
+			select {
+			case input <- append([]byte(nil), msg...):
+			default:
+			}
+			continue
+		}
+		var update []byte
+		select {
+		case update = <-updates:
+		default:
+			update = []byte{0, 0, 0, 0} // no new damage; capture simply re-requests
+		}
+		if err := writeAll(c, update); err != nil {
+			return err
+		}
+	}
+}
+
+func startInputFixture(t *testing.T) (*Broker, chan<- []byte, <-chan []byte) {
+	t.Helper()
+	client, server := net.Pipe()
+	b := New(client)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	serverDone := make(chan error, 1)
+	updates := make(chan []byte, 8)
+	input := make(chan []byte, 8)
+	go func() { done <- b.Run(ctx) }()
+	go func() { serverDone <- runInputFixture(server, updates, input) }()
+	t.Cleanup(func() {
+		cancel()
+		b.Close()
+		close(updates)
+		for _, ch := range []<-chan error{done, serverDone} {
+			select {
+			case err := <-ch:
+				if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
+					t.Error(err)
+				}
+			case <-time.After(3 * time.Second):
+				t.Error("input fixture did not stop")
+			}
+		}
+	})
+	return b, updates, input
+}
+
+func TestControllerInputIsForwardedThroughGate(t *testing.T) {
+	b, updates, input := startInputFixture(t)
+	updates <- rawUpdate(0, 0, 2, 1, make([]byte, 8))
+	awaitVersion(t, b, 1)
+	ctrl, ctrlDone := participant(t, b, true, &stubGate{})
+	request(t, ctrl, 2, 1, false)
+	receive(t, ctrl, 4)
+	// A controller's keys must reach the upstream untouched.
+	key := []byte{4, 1, 0, 0, 0, 0, 0, 97}
+	writeTest(t, ctrl, key)
+	select {
+	case got := <-input:
+		if !bytes.Equal(got, key) {
+			t.Fatalf("forwarded key: %x", got)
+		}
+	case <-time.After(writeTimeout + time.Second):
+		t.Fatal("controller key was not forwarded")
+	}
+	// The controller's view still works after forwarding.
+	updates <- rawUpdate(0, 0, 1, 1, []byte{7, 0, 0, 0})
+	awaitVersion(t, b, 2)
+	request(t, ctrl, 2, 1, true)
+	if p, _ := receive(t, ctrl, 4); p[0] != 7 {
+		t.Fatal("controller view broke after forwarding")
+	}
+	// An observer alongside never forwards: same key is dropped.
+	obs, _ := observer(t, b)
+	writeTest(t, obs, key)
+	request(t, obs, 2, 1, false)
+	receive(t, obs, 4)
+	updates <- rawUpdate(0, 0, 1, 1, []byte{8, 0, 0, 0})
+	awaitVersion(t, b, 3)
+	select {
+	case got := <-input:
+		if bytes.Equal(got, key) {
+			t.Fatalf("observer key leaked upstream: %x", got)
+		}
+		t.Fatalf("unexpected forwarded message: %x", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+	// Capture still healthy.
+	request(t, obs, 2, 1, true)
+	if p, _ := receive(t, obs, 4); p[0] != 8 {
+		t.Fatal("capture broke after observer input")
+	}
+	_ = ctrl.Close()
+	select {
+	case <-ctrlDone:
+	case <-time.After(time.Second):
+		t.Fatal("controller did not stop")
+	}
+}
+
+func TestControllerInputIsFenced(t *testing.T) {
+	b, updates, input := startInputFixture(t)
+	updates <- rawUpdate(0, 0, 2, 1, make([]byte, 8))
+	awaitVersion(t, b, 1)
+	fenced := errors.New("input fencing lost")
+	ctrl, ctrlDone := participant(t, b, true, &stubGate{err: fenced})
+	request(t, ctrl, 2, 1, false)
+	receive(t, ctrl, 4)
+	key := []byte{4, 1, 0, 0, 0, 0, 0, 97}
+	writeTest(t, ctrl, key)
+	// The gate drops the write and the participant loop surfaces the fencing
+	// error; nothing reaches the upstream.
+	select {
+	case err := <-ctrlDone:
+		if !errors.Is(err, fenced) {
+			t.Fatalf("fencing error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fenced controller kept running")
+	}
+	select {
+	case got := <-input:
+		t.Fatalf("fenced input reached upstream: %x", got)
+	case <-time.After(200 * time.Millisecond):
 	}
 }

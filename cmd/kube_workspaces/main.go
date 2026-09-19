@@ -142,6 +142,10 @@ func main() {
 		healthSvc     health.Service
 		displaySvc    display.Service
 	)
+	// The sessions registry is shared by the Goa display service (REST
+	// membership/control) and the shared-display WebSocket route so both see
+	// the same one-controller-plus-observers state per workspace.
+	displaySessions := dispstore.NewSessions()
 	{
 		workspacesSvc = kubeworkspaces.NewWorkspaces(wsClient, imageClient, coreClient, authProvider, podDefaultClient)
 		volumesSvc = kubeworkspaces.NewVolumes(authProvider)
@@ -149,7 +153,7 @@ func main() {
 		namespacesSvc = kubeworkspaces.NewNamespaces(authProvider)
 		sshkeysSvc = kubeworkspaces.NewSSHKeys(authProvider)
 		healthSvc = kubeworkspaces.NewHealth()
-		displaySvc = kubeworkspaces.NewDisplay(wsClient, dispstore.NewSessions())
+		displaySvc = kubeworkspaces.NewDisplay(wsClient, displaySessions)
 	}
 
 	// Wrap the services in endpoints that can be invoked from other services
@@ -226,7 +230,7 @@ func main() {
 			} else if u.Port() == "" {
 				u.Host = net.JoinHostPort(u.Host, "80")
 			}
-			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, &wg, errc, *dbgF)
+			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, displaySessions, &wg, errc, *dbgF)
 		}
 
 	default:

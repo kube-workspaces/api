@@ -35,7 +35,11 @@ type Options struct {
 	RESTConfig *rest.Config
 	// Clientset is the Kubernetes clientset for pod exec requests.
 	Clientset kubernetes.Interface
-	Display *display.Store
+	Display   *display.Store
+	// Sessions is the shared-display membership registry. When set, the shared
+	// display route registers/unregisters participants here; it must be the same
+	// instance backing the Goa display service.
+	Sessions *display.Sessions
 }
 
 // resizeMessage is sent by the client to resize the terminal.

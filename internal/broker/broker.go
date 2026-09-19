@@ -25,17 +25,27 @@ var (
 
 // Stream is a deadline-capable byte stream (net.Conn or a binary WebSocket
 // adapter). Close must unblock concurrent reads/writes. A WebSocket message is
-// not an RFB message; its adapter must flatten message boundaries.
+// not an RFB message; its adapter must flatten message boundaries. Streams must
+// tolerate one concurrent reader and one concurrent writer.
 type Stream interface {
 	io.ReadWriteCloser
 	SetDeadline(time.Time) error
 	SetWriteDeadline(time.Time) error
 }
 
+// InputGate admits controller input writes. display.Fence satisfies it: writes
+// only land while the caller still holds the registry controller role and the
+// control lease is renewable, and stop at the fencing bound otherwise.
+type InputGate interface {
+	DispatchInput(fn func()) error
+}
+
 // Broker owns a single upstream and up to MaxParticipants observers. Frames
 // are immutable snapshots: each observer holds at most one in-flight snapshot,
 // while intervening updates coalesce into the current snapshot. No socket I/O
-// runs under mu. Create a new Broker for each upstream connection generation.
+// runs under mu. A controller participant forwards guest-mutating RFB messages
+// upstream through an InputGate, serialized against capture's own write side.
+// Create a new Broker for each upstream connection generation.
 type Broker struct {
 	mu       sync.Mutex
 	upstream Stream
@@ -44,6 +54,9 @@ type Broker struct {
 	frame    *frame
 	changed  chan struct{}
 	peers    map[Stream]struct{}
+	// writeMu serializes upstream writes so a controller's forwarded input can
+	// never interleave with capture's own client messages.
+	writeMu sync.Mutex
 }
 
 func New(upstream Stream) *Broker {
@@ -129,4 +142,18 @@ func writeAll(w io.Writer, data []byte) error {
 		data = data[n:]
 	}
 	return nil
+}
+
+// forward writes a controller's guest-mutating RFB message to the upstream.
+// It shares capture's write lock so upstream messages never interleave.
+func (b *Broker) forward(p []byte) error {
+	if b.upstream == nil {
+		return ErrClosed
+	}
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+	if err := b.upstream.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		return err
+	}
+	return writeAll(b.upstream, p)
 }

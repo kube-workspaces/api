@@ -56,7 +56,7 @@ var godocFS embed.FS
 
 // handleHTTPServer starts configures and starts a HTTP server on the given
 // URL. It shuts down the server if any error is received in the error channel.
-func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, displayEndpoints *gendisplay.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, wg *sync.WaitGroup, errc chan error, dbg bool) {
+func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, displayEndpoints *gendisplay.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, displaySessions *display.Sessions, wg *sync.WaitGroup, errc chan error, dbg bool) {
 
 	// Provide the transport specific request decoder and response encoder.
 	// The goa http package has built-in support for JSON, XML and gob.
@@ -1515,11 +1515,13 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			RESTConfig: restConfig,
 			Clientset:  execClientset,
 			Display:    displayStore,
+			Sessions:   displaySessions,
 		}
 		execHandler := exec.Handler(execOpts)
 		vmConsoleHandler := exec.VMConsoleHandler(execOpts)
 		vmVNCHandler := exec.VMVNCHandler(execOpts)
 		sshHandler := exec.SSHHandler(&exec.SSHOptions{Clientset: execClientset})
+		sharedDisplay := exec.NewSharedDisplay(execOpts)
 
 		// requireEditorAccess enforces editor/admin access plus namespace scoping
 		// for the console endpoints and returns the resolved workspace name and
@@ -1621,6 +1623,30 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			}
 
 			vmVNCHandler(w, r)
+		})
+
+		// Workspace shared display: GET /v1/workspaces/{name}/display/ws
+		// Upgrades to a WebSocket serving an RFB shared-display stream: one
+		// controller (whose input is fenced via the display control lease) plus
+		// view-only observers against a single upstream capture. Go downstream
+		// contract routes for the same session live at the Goa display service.
+		// VM workspaces only; the existing /{name}/vnc single-session bridge is
+		// unaffected. Requires editor or admin role when auth is enabled.
+		mux.Handle("GET", "/v1/workspaces/{name}/display/ws", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+
+			// Only VM workspaces expose a graphical display.
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "display console is only available for VM workspaces"})
+				return
+			}
+
+			sharedDisplay.Handle(w, r)
 		})
 
 		// Serial console session status: GET /v1/workspaces/{name}/console/status

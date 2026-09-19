@@ -88,7 +88,7 @@ func (b *Broker) capture() error {
 		return err
 	}
 	s := newCapture(w, h)
-	if err = requestUpdate(c, w, h, false); err != nil {
+	if err = b.requestUpdate(w, h, false); err != nil {
 		return err
 	}
 	for {
@@ -105,7 +105,7 @@ func (b *Broker) capture() error {
 			if changed && s.missing == 0 {
 				b.publish(s.width, s.height, s.pixels)
 			}
-			if err = requestUpdate(c, s.width, s.height, s.missing == 0); err != nil {
+			if err = b.requestUpdate(s.width, s.height, s.missing == 0); err != nil {
 				return err
 			}
 		case 2: // Bell has no payload; not forwarded in this observer-only spike.
@@ -127,7 +127,10 @@ func (b *Broker) capture() error {
 	}
 }
 
-func requestUpdate(c Stream, w, h int, incremental bool) error {
+// requestUpdate asks the upstream for the next frame. It shares the upstream
+// write lock with controller input forwarding so client messages never
+// interleave with capture's own requests.
+func (b *Broker) requestUpdate(w, h int, incremental bool) error {
 	p := make([]byte, 10)
 	p[0] = 3
 	if incremental {
@@ -135,8 +138,10 @@ func requestUpdate(c Stream, w, h int, incremental bool) error {
 	}
 	binary.BigEndian.PutUint16(p[6:], uint16(w))
 	binary.BigEndian.PutUint16(p[8:], uint16(h))
-	if err := c.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+	if err := b.upstream.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 		return err
 	}
-	return writeAll(c, p)
+	return writeAll(b.upstream, p)
 }
