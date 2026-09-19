@@ -30,6 +30,10 @@ const (
 	FenceInterval = 12 * time.Second
 	revokedKey    = "kubeworkspaces.io/display-revoked"
 	tierKey       = "kubeworkspaces.io/display-tier"
+	// controlKey records which session participant holds the control lease.
+	// It is written only by the local claimer; readers treat it as advisory to
+	// the registry, never as an authorization boundary on its own.
+	controlKey = "kubeworkspaces.io/control-participant"
 )
 
 var ErrBusy = errors.New("interactive display in use")
@@ -56,6 +60,14 @@ func leaseName(name string) string {
 	return "kw-display-" + hex.EncodeToString(h[:20])
 }
 
+// controlLeaseName derives the control-role lease for a workspace. It is a
+// separate coordination object from the capture/seat lease so a controller's
+// input claim can die independently of the broker's framebuffer ownership.
+func controlLeaseName(name string) string {
+	h := sha256.Sum256([]byte(name))
+	return "kw-display-control-" + hex.EncodeToString(h[:20])
+}
+
 // expired requires this replica to have observed the SAME resourceVersion for
 // the fencing interval. We never compare clocks across pods or trust a remote
 // wall-clock timestamp for expiry. A CAS update fences renewals racing acquire.
@@ -79,20 +91,27 @@ func (s *Store) Claim(ctx context.Context, ns, name, tier string) (string, error
 	if tier != "vnc" && tier != "tier1" {
 		return "", errors.New("invalid display tier")
 	}
+	return s.claimLease(ctx, leaseName(name), ns, map[string]string{tierKey: tier, revokedKey: "false"}, "display-ownership")
+}
+
+// claimLease creates or takes over a coordination lease after the fencing
+// interval when its holder went quiet. A fresh claim restarts fencing
+// observation so the next contender must watch this holder go quiet again.
+func (s *Store) claimLease(ctx context.Context, lease string, ns string, annotations map[string]string, component string) (string, error) {
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return "", err
 	}
 	id := hex.EncodeToString(secret[:])
 	leases := s.client.CoordinationV1().Leases(ns)
-	l, err := leases.Get(ctx, leaseName(name), metav1.GetOptions{})
+	l, err := leases.Get(ctx, lease, metav1.GetOptions{})
 	create := apierrors.IsNotFound(err)
 	if err != nil && !create {
 		return "", err
 	}
 	if create {
-		l = &coordination.Lease{ObjectMeta: metav1.ObjectMeta{Name: leaseName(name), Namespace: ns,
-			Labels: map[string]string{"app.kubernetes.io/component": "display-ownership"}}}
+		l = &coordination.Lease{ObjectMeta: metav1.ObjectMeta{Name: lease, Namespace: ns,
+			Labels: map[string]string{"app.kubernetes.io/component": component}}}
 	} else if held(l) && !s.expired(ns, l) {
 		return "", ErrBusy
 	}
@@ -101,7 +120,7 @@ func (s *Store) Claim(ctx context.Context, ns, name, tier string) (string, error
 	l.Spec.LeaseDurationSeconds = &seconds
 	now := metav1.NewMicroTime(s.now())
 	l.Spec.RenewTime = &now
-	l.Annotations = map[string]string{tierKey: tier, revokedKey: "false"}
+	l.Annotations = annotations
 	if create {
 		_, err = leases.Create(ctx, l, metav1.CreateOptions{})
 	} else {
@@ -116,7 +135,7 @@ func (s *Store) Claim(ctx context.Context, ns, name, tier string) (string, error
 	// A fresh claim restarts fencing observation: the next contender must
 	// watch this holder's lease go quiet for the full interval.
 	s.mu.Lock()
-	delete(s.observed, ns+"/"+leaseName(name))
+	delete(s.observed, ns+"/"+lease)
 	s.mu.Unlock()
 	return id, nil
 }
@@ -151,7 +170,7 @@ func (s *Store) Release(ctx context.Context, ns, name, id string) error {
 // proxy/API must stop input before Release, or the full fence interval elapses.
 func (s *Store) Revoke(ctx context.Context, ns, name string) (bool, error) {
 	wasHeld := false
-	err := s.modify(ctx, ns, name, func(l *coordination.Lease) error {
+	err := s.modifyNamed(ctx, leaseName(name), ns, func(l *coordination.Lease) error {
 		wasHeld = held(l)
 		if l.Annotations == nil {
 			l.Annotations = make(map[string]string)
@@ -163,6 +182,91 @@ func (s *Store) Revoke(ctx context.Context, ns, name string) (bool, error) {
 		return false, nil
 	}
 	return wasHeld, err
+}
+
+// ClaimControl takes the control-role lease for a workspace, associated with a
+// session participant id. It lives in a separate coordination object from the
+// capture/seat lease so input ownership can be split from framebuffer capture
+// (and revoked/transferred independently).
+func (s *Store) ClaimControl(ctx context.Context, ns, name, participant string) (string, error) {
+	if participant == "" {
+		return "", errors.New("control participant required")
+	}
+	return s.claimLease(ctx, controlLeaseName(name), ns, map[string]string{controlKey: participant, revokedKey: "false"}, "display-control")
+}
+
+// RenewControl keeps the control lease alive. Once revoked it only fails; a
+// stripped controller loses the lease at the developer-controlled fence bound.
+func (s *Store) RenewControl(ctx context.Context, ns, name, token string) error {
+	return s.modifyNamed(ctx, controlLeaseName(name), ns, func(l *coordination.Lease) error {
+		if !held(l) || token == "" || *l.Spec.HolderIdentity != token || l.Annotations[revokedKey] == "true" {
+			return ErrRevoked
+		}
+		now := metav1.NewMicroTime(s.now())
+		l.Spec.RenewTime = &now
+		return nil
+	})
+}
+
+// ReleaseControl frees the control lease held by token. A stale token can never
+// release a successor.
+func (s *Store) ReleaseControl(ctx context.Context, ns, name, token string) error {
+	return s.modifyNamed(ctx, controlLeaseName(name), ns, func(l *coordination.Lease) error {
+		if !held(l) || token == "" || *l.Spec.HolderIdentity != token {
+			return ErrRevoked
+		}
+		l.Spec.HolderIdentity = nil
+		if l.Annotations == nil {
+			l.Annotations = make(map[string]string)
+		}
+		delete(l.Annotations, controlKey)
+		return nil
+	})
+}
+
+// RevokeControl strips the current control holder without freeing the slot,
+// mirroring Revoke for the capture seat. Renewal fails immediately; input stops
+// within ClientTTL of the holder observing the revoke.
+func (s *Store) RevokeControl(ctx context.Context, ns, name string) (bool, error) {
+	wasHeld := false
+	err := s.modifyNamed(ctx, controlLeaseName(name), ns, func(l *coordination.Lease) error {
+		wasHeld = held(l)
+		if l.Annotations == nil {
+			l.Annotations = make(map[string]string)
+		}
+		l.Annotations[revokedKey] = "true"
+		return nil
+	})
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	return wasHeld, err
+}
+
+// ControlInUse reports whether the control lease is currently held (not fenced).
+func (s *Store) ControlInUse(ctx context.Context, ns, name string) (bool, error) {
+	l, err := s.client.CoordinationV1().Leases(ns).Get(ctx, controlLeaseName(name), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return held(l) && !s.expired(ns, l), nil
+}
+
+// ControlHolder reports the control lease's recorded participant, whether the
+// lease is held, and the holder token. The participant id is advisory to the
+// registry and is not an authorization boundary on its own.
+func (s *Store) ControlHolder(ctx context.Context, ns, name string) (string, bool, error) {
+	l, err := s.client.CoordinationV1().Leases(ns).Get(ctx, controlLeaseName(name), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return l.Annotations[controlKey], held(l) && !s.expired(ns, l), nil
 }
 
 func (s *Store) InUse(ctx context.Context, ns, name string) (bool, error) {
@@ -177,8 +281,12 @@ func (s *Store) InUse(ctx context.Context, ns, name string) (bool, error) {
 }
 
 func (s *Store) modify(ctx context.Context, ns, name string, change func(*coordination.Lease) error) error {
+	return s.modifyNamed(ctx, leaseName(name), ns, change)
+}
+
+func (s *Store) modifyNamed(ctx context.Context, lease string, ns string, change func(*coordination.Lease) error) error {
 	leases := s.client.CoordinationV1().Leases(ns)
-	l, err := leases.Get(ctx, leaseName(name), metav1.GetOptions{})
+	l, err := leases.Get(ctx, lease, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}

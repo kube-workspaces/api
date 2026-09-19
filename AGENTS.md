@@ -13,7 +13,7 @@ REST API service for the kube-workspaces platform. Built with Goa v3.
 | `gen/` | Generated Goa code (types, endpoints, HTTP transport, OpenAPI) |
 | `internal/auth/` | Auth middleware (OIDC, local auth, session cookies, Bearer tokens, RFC 8252 native-app flow) |
 | `internal/exec/` | WebSocket bridges: exec, VM serial console, VM noVNC display, web SSH + session registry |
-| `internal/display/` | Display ownership (Lease-backed `Store`/`Guard`) plus the in-memory `Sessions` registry (one controller + view-only observers, per-workspace participant bounds) backing the Goa `display` service |
+| `internal/display/` | Display ownership: Lease-backed `Store`/`Guard` for the legacy capture seat, a **separate control-role lease** (`ClaimControl`/`RenewControl`/`RevokeControl`/`ReleaseControl`, own coordination object) and `Fence.DispatchInput` gating input writes at the fencing bound, plus the in-memory `Sessions` registry (one controller + view-only observers) backing the Goa `display` service |
 | `internal/rfb/` | Shared-display broker groundwork: bounded post-handshake client-message framing and mutation classification; not wired into the VNC route yet |
 | `internal/broker/` | Read-only multi-viewer RFB feasibility prototype, independent observer sessions and bounded capture; not routed publicly. See its README for native/noVNC integration checks. |
 | `internal/k8s/` | Kubernetes client utilities |

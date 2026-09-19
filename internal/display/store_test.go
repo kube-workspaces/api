@@ -167,4 +167,118 @@ func TestInvalidTierRejected(t *testing.T) {
 	}
 }
 
+// The capture/seat lease and the control lease are independent coordination
+// objects: a broker can hold capture while a controller's input claim is held
+// by a different participant, and one can die without the other.
+func TestControlLeaseSplitFromSeat(t *testing.T) {
+	s := NewStore(fake.NewClientset())
+	ctx := context.Background()
+	seat, err := s.Claim(ctx, "alice", "desktop", "vnc")
+	if err != nil {
+		t.Fatalf("seat claim: %v", err)
+	}
+	ctrl, err := s.ClaimControl(ctx, "alice", "desktop", "p1")
+	if err != nil {
+		t.Fatalf("control claim: %v", err)
+	}
+	if inUse, _ := s.ControlInUse(ctx, "alice", "desktop"); !inUse {
+		t.Fatal("control lease missing")
+	}
+	if p, held, _ := s.ControlHolder(ctx, "alice", "desktop"); !held || p != "p1" {
+		t.Fatalf("control holder: participant=%q held=%v", p, held)
+	}
+	if _, err := s.ClaimControl(ctx, "alice", "desktop", "p2"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("second control claim: %v", err)
+	}
+	if inUse, _ := s.InUse(ctx, "alice", "desktop"); !inUse {
+		t.Fatal("seat claim lost while control held")
+	}
+	if err := s.Renew(ctx, "alice", "desktop", seat); err != nil {
+		t.Fatalf("seat renew while control held: %v", err)
+	}
+	if err := s.RenewControl(ctx, "alice", "desktop", ctrl); err != nil {
+		t.Fatalf("control renew: %v", err)
+	}
+	if err := s.ReleaseControl(ctx, "alice", "desktop", ctrl); err != nil {
+		t.Fatalf("control release: %v", err)
+	}
+	if inUse, _ := s.ControlInUse(ctx, "alice", "desktop"); inUse {
+		t.Fatal("control release left the slot held")
+	}
+	if p, held, _ := s.ControlHolder(ctx, "alice", "desktop"); held || p != "" {
+		t.Fatalf("released control slot: participant=%q held=%v", p, held)
+	}
+	// The seat must be untouched by control operations throughout.
+	if inUse, _ := s.InUse(ctx, "alice", "desktop"); !inUse {
+		t.Fatal("seat claim should be independent of control lifecycle")
+	}
+}
+
+func TestControlLeaseTokenFencing(t *testing.T) {
+	s := NewStore(fake.NewClientset())
+	ctx := context.Background()
+	ctrl, err := s.ClaimControl(ctx, "alice", "desktop", "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RenewControl(ctx, "alice", "desktop", "stale"); !errors.Is(err, ErrRevoked) {
+		t.Fatalf("stale token renew: %v", err)
+	}
+	wasHeld, err := s.RevokeControl(ctx, "alice", "desktop")
+	if err != nil || !wasHeld {
+		t.Fatalf("revoke control: held=%v err=%v", wasHeld, err)
+	}
+	if err := s.RenewControl(ctx, "alice", "desktop", ctrl); !errors.Is(err, ErrRevoked) {
+		t.Fatalf("renew after revoke must fail: %v", err)
+	}
+	// Revocation alone leaves the slot held until release or the fence elapses.
+	if _, err := s.ClaimControl(ctx, "alice", "desktop", "p2"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("claim while old holder remains: %v", err)
+	}
+	if p, held, _ := s.ControlHolder(ctx, "alice", "desktop"); !held || p != "p1" {
+		t.Fatalf("revoked holder: participant=%q held=%v", p, held)
+	}
+	if err := s.ReleaseControl(ctx, "alice", "desktop", ctrl); err != nil {
+		t.Fatalf("old holder release after revoke: %v", err)
+	}
+	if _, err := s.ClaimControl(ctx, "alice", "desktop", "p2"); err != nil {
+		t.Fatalf("claim after old holder released: %v", err)
+	}
+}
+
+// A partitioned controller stops renewing, so a contender may take over the
+// control lease only after observing the same resourceVersion for the full
+// fence interval, by which time the victim's local input deadline has passed.
+func TestControlFencingTakeover(t *testing.T) {
+	cs := fake.NewClientset()
+	now := time.Now()
+	s := NewStore(cs)
+	s.now = func() time.Time { return now }
+	ctx := context.Background()
+	if _, err := s.ClaimControl(ctx, "alice", "desktop", "p1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimControl(ctx, "alice", "desktop", "p2"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("immediate control takeover: %v", err)
+	}
+	now = now.Add(FenceInterval - time.Second)
+	if _, err := s.ClaimControl(ctx, "alice", "desktop", "p2"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("takeover before control fence interval: %v", err)
+	}
+	now = now.Add(2 * time.Second)
+	token, err := s.ClaimControl(ctx, "alice", "desktop", "p2")
+	if err != nil {
+		t.Fatalf("takeover after control fence interval: %v", err)
+	}
+	if p, held, _ := s.ControlHolder(ctx, "alice", "desktop"); !held || p != "p2" {
+		t.Fatalf("takeover holder: participant=%q held=%v", p, held)
+	}
+	if err := s.RenewControl(ctx, "alice", "desktop", token); err != nil {
+		t.Fatalf("new controller renew: %v", err)
+	}
+	if err := s.RenewControl(ctx, "alice", "desktop", "old-stale-token"); !errors.Is(err, ErrRevoked) {
+		t.Fatalf("partition victim renew must be fenced: %v", err)
+	}
+}
+
 var leaseGR = schema.GroupResource{Group: "coordination.k8s.io", Resource: "leases"}
