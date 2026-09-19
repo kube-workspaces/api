@@ -73,6 +73,10 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 	initial = nil // don't retain an extra generation while serving
 	format, _ := parseFormat(canonicalFormat())
 	desktopSize := false
+	// zrle is negotiated by the participant's own SetEncodings; the encoder
+	// (and its connection-scoped zlib dictionary) is created on first use.
+	zrle := false
+	var enc *zrleEncoder
 	var lastVersion uint64
 	// One bounded message in flight; the reader can notice disconnect while
 	// the writer waits for a new incremental frame. No unbounded input queue.
@@ -115,7 +119,10 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 			if resized {
 				x, y, w, h = 0, 0, f.width, f.height
 			}
-			if err = sendFrame(c, f, format, x, y, w, h, resized); err != nil {
+			if zrle && enc == nil {
+				enc = newZRLEEncoder()
+			}
+			if err = sendFrame(c, f, format, x, y, w, h, resized, enc); err != nil {
 				return err
 			}
 			width, height = f.width, f.height
@@ -160,9 +167,13 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 				lastVersion = 0
 			case rfb.SetEncodings:
 				desktopSize = false
+				zrle = false
 				for i := 4; i < len(p); i += 4 {
-					if int32(binary.BigEndian.Uint32(p[i:])) == -223 {
+					switch int32(binary.BigEndian.Uint32(p[i:])) {
+					case -223:
 						desktopSize = true
+					case 16:
+						zrle = true
 					}
 				}
 				// Raw is mandatory in RFB, even if absent from SetEncodings.
@@ -233,7 +244,7 @@ func downstreamHandshake(c Stream, f *frame) error {
 	return c.SetDeadline(time.Time{})
 }
 
-func sendFrame(c Stream, f *frame, format pixelFormat, x, y, w, h int, resized bool) error {
+func sendFrame(c Stream, f *frame, format pixelFormat, x, y, w, h int, resized bool, enc *zrleEncoder) error {
 	if err := c.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 		return err
 	}
@@ -256,6 +267,14 @@ func sendFrame(c Stream, f *frame, format pixelFormat, x, y, w, h int, resized b
 		if err := writeAll(c, p); err != nil {
 			return err
 		}
+	}
+	// ZRLE when the participant negotiated it, Raw otherwise (mandatory in
+	// RFB, and the baseline every client decodes).
+	if enc != nil {
+		if err := writeAll(c, rectangleHeader(x, y, w, h, 16)); err != nil {
+			return err
+		}
+		return writeAll(c, enc.rect(f, format, x, y, w, h))
 	}
 	if err := writeAll(c, rectangleHeader(x, y, w, h, 0)); err != nil {
 		return err

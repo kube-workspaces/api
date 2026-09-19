@@ -20,6 +20,10 @@ existing `VMVNCHandler` remains the active exclusive bridge.
   fully initialized new frame before publishing it.
 - Independent downstream handshake, 8/16/32-bit true-colour format conversion,
   region requests, incremental waits, Raw output and DesktopSize notification.
+- ZRLE output (`zrle.go`) when a participant's SetEncodings advertises it:
+  64x64 tiles coded as solid / packed palette (2–16 colours) / plain RLE / raw,
+  smallest per tile, one connection-scoped zlib stream sync-flushed per
+  rectangle. Raw remains the mandatory fallback.
 - All key/pointer/clipboard/resize/extended-key mutations from observers are
   consumed and discarded. No control-claim placeholder or input forwarding.
 - At most eight attached observers including stalled handshakes. An observer
@@ -34,8 +38,8 @@ existing `VMVNCHandler` remains the active exclusive bridge.
 
 Maximum dimensions are 4096 on either axis and at most 4096×2160 pixels.
 Snapshot publication copies the whole framebuffer, irrespective of damage.
-Each viewer converts one row at a time and writes full requested regions.
-There is no Tight/JPEG/ZRLE encoding, controller role, audio, cursor extension,
+Each viewer converts one tile at a time and writes full requested regions.
+There is no Tight/JPEG encoding, controller role, audio, cursor extension,
 observer clipboard delivery, public membership API, owner routing or fencing.
 Unsupported upstream encodings and downstream extensions terminate the stream.
 Idle membership expiry is a future membership-layer responsibility.
@@ -43,9 +47,13 @@ Idle membership expiry is a future membership-layer responsibility.
 At 1080p a snapshot is 8,294,400 bytes. Retained pixel storage is bounded by the
 capture working buffer, the current snapshot, and up to eight in-flight old
 snapshots, plus initial-coverage bytes, per-client bounded RFB messages and row
-buffers. Go GC slack and transport buffers add to process RSS. Raw full-frame
-output is approximately 8.3 MB per requested frame **per observer**: this is a
-correctness baseline, not the default production transport.
+buffers. Full-frame wire cost per observer is now encoding-dependent: Raw stays
+~8.3 MB per 1080p frame; ZRLE measured locally (Linux/amd64, i7-13700K,
+2026-09-19) at ~24 B for a solid frame, ~111 KB for desktop-like content
+(~75× smaller than Raw) and ~6.2 MB for pure noise, at ~5/16/71 ms encode
+time respectively — enough for typical desktops, with noisy video content the
+expensive remainder. Live-VM throughput is still unmeasured; see the encoding
+decision note in the tracking plan.
 
 Local Linux/amd64 publication microbenchmark (2026-09-18, i7-13700K): about
 0.84 ms and 8.30 MB allocated per 1080p publication (3 allocations). This is
