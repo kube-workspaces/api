@@ -190,9 +190,12 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 
 	// 4. A controller holds the control lease: its input delivery is fenced
 	// against that lease + the local registry (see internal/display.Fence).
+	// force=1 revokes any existing holder; a takeover reconnect pairs with the
+	// REST acquire(force=true) role change the client made first.
 	var fence *display.Fence
 	if role == display.RoleController {
-		fence, err = display.AcquireControl(ctx, s.opts.Display, s.opts.Sessions, namespace, name, p.ID, false)
+		force := r.URL.Query().Get("force") != "" && r.URL.Query().Get("force") != "0" && r.URL.Query().Get("force") != "false"
+		fence, err = display.AcquireControl(ctx, s.opts.Display, s.opts.Sessions, namespace, name, p.ID, force)
 		if err != nil {
 			if errors.Is(err, display.ErrBusy) || errors.Is(err, display.ErrControllerPresent) {
 				clientConn.WriteControl(websocket.CloseMessage,
