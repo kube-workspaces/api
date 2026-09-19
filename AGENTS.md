@@ -65,7 +65,10 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
   it). A bound participant's membership survives a disconnect (reconnect keeps
   the id, REST `leave` removes it); a fresh-join (`no participant`) stream still
   removes its member on disconnect. Role and attachment state are validated
-  before the upgrade. `Sessions.Lookup` refreshes the idle deadline.
+  before the upgrade. `Sessions.Lookup` refreshes the idle deadline. The route
+  also accepts `&force=1` (a takeover reconnect after the peer's REST
+  `control/acquire(force=true)`): revokes and claims the control lease rather
+  than failing busy until the old fence releases.
 - SshKey CRUD is implemented in `sshkeys.go` (`/v1/sshkeys*`) backed by
   `internal/k8s/sshkey.go`; keys live in the user's personal namespace.
 - Native (desktop) auth: `internal/auth/native.go` implements the RFC 8252
