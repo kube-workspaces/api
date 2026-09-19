@@ -2,7 +2,6 @@ package exec
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"sync"
@@ -44,6 +43,10 @@ type SharedDisplay struct {
 	// field so tests can inject a synthetic upstream without a live cluster.
 	dial func(ctx context.Context, ns, name string) (broker.Stream, error)
 
+	// hop forwards a request to the replica that owns the display generation
+	// when this one does not. Nil answers the 409/owner contract instead.
+	hop *OwnerHop
+
 	mu   sync.Mutex
 	live map[string]*sharedRuntime
 }
@@ -59,6 +62,7 @@ func NewSharedDisplay(opts *Options) *SharedDisplay {
 			}
 			return broker.NewWebSocketStream(conn), nil
 		},
+		hop:  NewOwnerHop(opts.Clientset),
 		live: make(map[string]*sharedRuntime),
 	}
 }
@@ -168,15 +172,14 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 	rt, err := s.attach(ctx, namespace, name)
 	if err != nil {
 		if owner, ok := ownedElsewhere(err, s.instance()); ok {
-			// Another API replica generates this display. Tell the caller which
-			// one instead of dialing a second VNC console; a routing layer can
-			// re-issue this request against the owner.
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "interactive display is owned by another replica",
-				"owner": owner,
-			})
+			// Another API replica generates this display: forward the request
+			// to it rather than dialing a second VNC console. When the hop is
+			// not configured (tests), fall back to the 409/owner contract.
+			if s.hop != nil {
+				s.hop.Forward(w, r, owner)
+				return
+			}
+			writeOwnerConflict(w, owner)
 			return
 		}
 		if errors.Is(err, display.ErrBusy) {

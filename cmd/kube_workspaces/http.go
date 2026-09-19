@@ -1498,6 +1498,11 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		json.NewEncoder(w).Encode(resp)
 	})
 
+	// displayOwnerForward, set when the display store exists, routes Goa
+	// display membership/control calls to the pod owning the workspace's
+	// generation (see the comment where it is assigned).
+	var displayOwnerForward func(http.Handler) http.Handler
+
 	// Workspace exec (terminal): GET /v1/workspaces/{name}/exec
 	// Upgrades to WebSocket and bridges to pod exec via SPDY.
 	// Requires editor or admin role when auth is enabled.
@@ -1526,6 +1531,14 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		vmVNCHandler := exec.VMVNCHandler(execOpts)
 		sshHandler := exec.SSHHandler(&exec.SSHOptions{Clientset: execClientset})
 		sharedDisplay := exec.NewSharedDisplay(execOpts)
+
+		// The display membership registry is in-memory per replica, so the
+		// Goa display REST routes and the shared-display stream must be
+		// answered by the pod that owns the workspace's generation. Route
+		// them there through the lease-recorded owner (see B.4).
+		displayOwnerForward = func(next http.Handler) http.Handler {
+			return exec.DisplayOwnerMiddleware(displayStore, replicaID, exec.NewOwnerHop(execClientset), next)
+		}
 
 		// requireEditorAccess enforces editor/admin access plus namespace scoping
 		// for the console endpoints and returns the resolved workspace name and
@@ -1894,6 +1907,14 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 
 	// Apply maintenance mode middleware (returns 503 for non-admin, non-exempt paths)
 	handler = maintenanceMiddleware(platformProvider, handler)
+
+	// Route display membership/control calls to the owning replica when one
+	// is known, so the in-memory session registry shared with the stream
+	// route stays coherent across pods. No owner known means any replica may
+	// answer: the stream attach that follows creates the generation locally.
+	if displayOwnerForward != nil {
+		handler = displayOwnerForward(handler)
+	}
 
 	// Root handler: routes requests to the appropriate handler.
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
