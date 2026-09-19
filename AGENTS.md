@@ -52,6 +52,13 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
   console through the same seat lease. Handwritten `display.go` mirrors the
   exec/vnc console gate (editor/admin + namespace access) with Goa
   `unauthorized`/`forbidden`/`not_found`/`capacity`(429)/`conflict`(409) errors.
+- Replica owner routing: every claim (`claimLease`, used by both the seat
+  `Acquire` and `ClaimControl`) records this pod's identity (hostname) in the
+  `kubeworkspaces.io/display-owner` lease annotation. A replica that loses the
+  seat-lease race gets a typed `display.OwnershipError` (unwraps to `ErrBusy`);
+  the stream route answers 409 with `{"error": ..., "owner": "<replica>"}`
+  instead of dialing a second VNC console, so a routing layer can re-issue the
+  request against the owner. See `Store.SeatOwner`/`Store.ControlOwner`.
 - SshKey CRUD is implemented in `sshkeys.go` (`/v1/sshkeys*`) backed by
   `internal/k8s/sshkey.go`; keys live in the user's personal namespace.
 - Native (desktop) auth: `internal/auth/native.go` implements the RFC 8252

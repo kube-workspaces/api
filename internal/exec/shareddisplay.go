@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sync"
@@ -56,6 +57,26 @@ func NewSharedDisplay(opts *Options) *SharedDisplay {
 	}
 }
 
+// instance returns this replica's identity: the same value the display store
+// records on leases it claims, so an OwnershipError for our own id is a local
+// race rather than a cross-replica routing case.
+func (s *SharedDisplay) instance() string {
+	if s.opts.Display != nil {
+		return s.opts.Display.Owner()
+	}
+	return ""
+}
+
+// ownedElsewhere reports whether err says the display is generated on another
+// API replica, returning that replica's identity.
+func ownedElsewhere(err error, instance string) (string, bool) {
+	var oe *display.OwnershipError
+	if errors.As(err, &oe) && oe.Owner != "" && oe.Owner != instance {
+		return oe.Owner, true
+	}
+	return "", false
+}
+
 func (s *SharedDisplay) key(ns, name string) string { return ns + "/" + name }
 
 // Handle upgrades the client to a WebSocket and serves it an RFB shared-display
@@ -103,6 +124,18 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 	// then bind this participant's stream to it.
 	rt, err := s.attach(ctx, namespace, name)
 	if err != nil {
+		if owner, ok := ownedElsewhere(err, s.instance()); ok {
+			// Another API replica generates this display. Tell the caller which
+			// one instead of dialing a second VNC console; a routing layer can
+			// re-issue this request against the owner.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "interactive display is owned by another replica",
+				"owner": owner,
+			})
+			return
+		}
 		if errors.Is(err, display.ErrBusy) {
 			http.Error(w, "interactive display unavailable", http.StatusConflict)
 		} else {

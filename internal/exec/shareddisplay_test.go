@@ -2,7 +2,11 @@ package exec
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -79,4 +83,57 @@ func TestSharedDisplayAttachDetachLifecycle(t *testing.T) {
 		t.Fatalf("reattach after teardown: %v", err)
 	}
 	sd.detach("ws", "vm-a", d)
+}
+
+// TestSharedDisplayHandleCrossReplicaOwner proves the two-owner guarantee at
+// the route: when replica A has generated the display, replica B's stream route
+// must answer 409 with A's identity and must never dial the VM console.
+func TestSharedDisplayHandleCrossReplicaOwner(t *testing.T) {
+	cs := fake.NewClientset()
+	storeA := display.NewStoreWithOwner(cs, "replica-a")
+	storeB := display.NewStoreWithOwner(cs, "replica-b")
+	ctx := context.Background()
+
+	sdA := &SharedDisplay{
+		opts: &Options{Display: storeA},
+		live: make(map[string]*sharedRuntime),
+		dial: func(context.Context, string, string) (broker.Stream, error) {
+			client, server := net.Pipe()
+			_ = client.Close()
+			return server, nil
+		},
+	}
+	rt, err := sdA.attach(ctx, "workspaces", "vm-a")
+	if err != nil {
+		t.Fatalf("replica A attach: %v", err)
+	}
+	defer sdA.detach("workspaces", "vm-a", rt)
+
+	sdB := &SharedDisplay{
+		opts: &Options{Display: storeB, Sessions: display.NewSessions()},
+		live: make(map[string]*sharedRuntime),
+		dial: func(context.Context, string, string) (broker.Stream, error) {
+			t.Fatal("replica B must not dial a second VNC console")
+			return nil, errors.New("unreachable")
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/v1/workspaces/vm-a/display/ws", nil)
+	req.SetPathValue("name", "vm-a")
+	rec := httptest.NewRecorder()
+	sdB.Handle(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("non-owner replica status: got %d want %d", rec.Code, http.StatusConflict)
+	}
+	var body struct {
+		Error string `json:"error"`
+		Owner string `json:"owner"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("non-owner response is not JSON: %v (body %q)", err, rec.Body.String())
+	}
+	if body.Owner != "replica-a" {
+		t.Fatalf("non-owner response identifies owner %q, want %q", body.Owner, "replica-a")
+	}
 }

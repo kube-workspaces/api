@@ -1510,7 +1510,11 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		log.Printf(ctx, "WARNING: exec endpoint unavailable: %v", err)
 	}
 	if restConfig != nil && execClientset != nil {
-		displayStore := display.NewStore(execClientset)
+		// replicaID is this API pod's identity (hostname == pod name under
+		// Kubernetes). The display store writes it onto seat/control leases so
+		// sibling replicas can route display participants to this pod.
+		replicaID, _ := os.Hostname()
+		displayStore := display.NewStoreWithOwner(execClientset, replicaID)
 		execOpts := &exec.Options{
 			RESTConfig: restConfig,
 			Clientset:  execClientset,

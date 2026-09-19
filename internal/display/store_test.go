@@ -281,4 +281,79 @@ func TestControlFencingTakeover(t *testing.T) {
 	}
 }
 
+// Two API replicas share one cluster: the replica that wins the seat lease must
+// record its identity on it, and the loser must learn who owns the display via
+// an OwnershipError carrying the owner — never by dialing a second console.
+func TestCrossReplicaOwnershipRouting(t *testing.T) {
+	cs := fake.NewClientset()
+	ctx := context.Background()
+	replicaA := NewStoreWithOwner(cs, "replica-a")
+	replicaB := NewStoreWithOwner(cs, "replica-b")
+
+	seatA, err := replicaA.Claim(ctx, "alice", "desktop", "vnc")
+	if err != nil {
+		t.Fatalf("replica A seat claim: %v", err)
+	}
+	l, err := cs.CoordinationV1().Leases("alice").Get(ctx, leaseName("desktop"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := l.Annotations[ownerKey]; got != "replica-a" {
+		t.Fatalf("seat lease owner annotation: %q", got)
+	}
+	if got, err := replicaA.SeatOwner(ctx, "alice", "desktop"); err != nil || got != "replica-a" {
+		t.Fatalf("SeatOwner from A: %q err=%v", got, err)
+	}
+	if got, err := replicaB.SeatOwner(ctx, "alice", "desktop"); err != nil || got != "replica-a" {
+		t.Fatalf("SeatOwner from B: %q err=%v", got, err)
+	}
+
+	// B must not steal the seat from A: fencing, a busy response, and a routing
+	// hint all in one typed error.
+	_, err = replicaB.Claim(ctx, "alice", "desktop", "vnc")
+	var oe *OwnershipError
+	if !errors.As(err, &oe) {
+		t.Fatalf("B's claim must be an OwnershipError, got: %v", err)
+	}
+	if oe.Owner != "replica-a" || oe.Kind != "display-ownership" {
+		t.Fatalf("ownership error: owner=%q kind=%q", oe.Owner, oe.Kind)
+	}
+	if !errors.Is(err, ErrBusy) {
+		t.Fatalf("ownership error must unwrap to busy: %v", err)
+	}
+
+	// A is stripped (crash), so after the fence the seat must be claimable by B.
+	if err := replicaA.Release(ctx, "alice", "desktop", seatA); err != nil {
+		t.Fatalf("replica A release: %v", err)
+	}
+	seatB, err := replicaB.Claim(ctx, "alice", "desktop", "vnc")
+	if err != nil {
+		t.Fatalf("replica B reclaim after release: %v", err)
+	}
+	if got, _ := replicaB.SeatOwner(ctx, "alice", "desktop"); got != "replica-b" {
+		t.Fatalf("SeatOwner after B takeover: %q", got)
+	}
+
+	// The control lease carries an owner too: a controller served by B cannot
+	// mint a control claim that says A owns it.
+	ctrlA, err := replicaA.ClaimControl(ctx, "alice", "desktop", "p1")
+	if err != nil {
+		t.Fatalf("A control claim: %v", err)
+	}
+	_, err = replicaB.ClaimControl(ctx, "alice", "desktop", "p2")
+	if !errors.As(err, &oe) || oe.Owner != "replica-a" {
+		t.Fatalf("B's control claim: owner=%q err=%v", oe.Owner, err)
+	}
+	if got, _ := replicaB.ControlOwner(ctx, "alice", "desktop"); got != "replica-a" {
+		t.Fatalf("ControlOwner from B: %q", got)
+	}
+	if err := replicaA.ReleaseControl(ctx, "alice", "desktop", ctrlA); err != nil {
+		t.Fatalf("A control release: %v", err)
+	}
+	if _, err := replicaB.ClaimControl(ctx, "alice", "desktop", "p2"); err != nil {
+		t.Fatalf("B control claim after release: %v", err)
+	}
+	_ = seatB
+}
+
 var leaseGR = schema.GroupResource{Group: "coordination.k8s.io", Resource: "leases"}

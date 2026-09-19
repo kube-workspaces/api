@@ -34,10 +34,30 @@ const (
 	// It is written only by the local claimer; readers treat it as advisory to
 	// the registry, never as an authorization boundary on its own.
 	controlKey = "kubeworkspaces.io/control-participant"
+	// ownerKey records which API replica claimed a lease, so other replicas can
+	// route participants to the pod generating a workspace's display instead of
+	// dialing a second VNC console.
+	ownerKey = "kubeworkspaces.io/display-owner"
 )
 
 var ErrBusy = errors.New("interactive display in use")
 var ErrRevoked = errors.New("interactive display ownership revoked")
+
+// OwnershipError reports that another API replica owns a workspace display or
+// its control slot. Owner is the replica identity recorded on the lease at
+// claim time (see ownerKey); Kind is which lease held it
+// ("display-ownership" or "display-control"). It unwraps to ErrBusy so callers
+// keep working with a plain busy check while learning where to route.
+type OwnershipError struct {
+	Owner string
+	Kind  string
+}
+
+func (e *OwnershipError) Error() string {
+	return fmt.Sprintf("interactive display owned by replica %q (%s)", e.Owner, e.Kind)
+}
+
+func (e *OwnershipError) Unwrap() error { return ErrBusy }
 
 type observation struct {
 	version string
@@ -46,14 +66,25 @@ type observation struct {
 
 type Store struct {
 	client   kubernetes.Interface
+	owner    string
 	mu       sync.Mutex
 	observed map[string]observation
 	now      func() time.Time
 }
 
 func NewStore(client kubernetes.Interface) *Store {
-	return &Store{client: client, observed: make(map[string]observation), now: time.Now}
+	return NewStoreWithOwner(client, "")
 }
+
+// NewStoreWithOwner attaches this API replica's identity to every lease it
+// claims. Other replicas read it to route clients to the pod that actually
+// generates a workspace's display (see Owner, SeatOwner, ControlOwner).
+func NewStoreWithOwner(client kubernetes.Interface, owner string) *Store {
+	return &Store{client: client, owner: owner, observed: make(map[string]observation), now: time.Now}
+}
+
+// Owner reports the replica identity this store writes onto claims.
+func (s *Store) Owner() string { return s.owner }
 
 func leaseName(name string) string {
 	h := sha256.Sum256([]byte(name))
@@ -113,6 +144,9 @@ func (s *Store) claimLease(ctx context.Context, lease string, ns string, annotat
 		l = &coordination.Lease{ObjectMeta: metav1.ObjectMeta{Name: lease, Namespace: ns,
 			Labels: map[string]string{"app.kubernetes.io/component": component}}}
 	} else if held(l) && !s.expired(ns, l) {
+		if owner := l.Annotations[ownerKey]; owner != "" && owner != s.owner {
+			return "", &OwnershipError{Owner: owner, Kind: component}
+		}
 		return "", ErrBusy
 	}
 	l.Spec.HolderIdentity = &id
@@ -121,6 +155,14 @@ func (s *Store) claimLease(ctx context.Context, lease string, ns string, annotat
 	now := metav1.NewMicroTime(s.now())
 	l.Spec.RenewTime = &now
 	l.Annotations = annotations
+	if s.owner != "" {
+		// Never mutate the caller's map; add the replica identity on top.
+		l.Annotations = make(map[string]string, len(annotations)+1)
+		for k, v := range annotations {
+			l.Annotations[k] = v
+		}
+		l.Annotations[ownerKey] = s.owner
+	}
 	if create {
 		_, err = leases.Create(ctx, l, metav1.CreateOptions{})
 	} else {
@@ -162,6 +204,9 @@ func (s *Store) Release(ctx context.Context, ns, name, id string) error {
 			return ErrRevoked
 		}
 		l.Spec.HolderIdentity = nil
+		if l.Annotations != nil {
+			delete(l.Annotations, ownerKey)
+		}
 		return nil
 	})
 }
@@ -220,6 +265,7 @@ func (s *Store) ReleaseControl(ctx context.Context, ns, name, token string) erro
 			l.Annotations = make(map[string]string)
 		}
 		delete(l.Annotations, controlKey)
+		delete(l.Annotations, ownerKey)
 		return nil
 	})
 }
@@ -278,6 +324,30 @@ func (s *Store) InUse(ctx context.Context, ns, name string) (bool, error) {
 		return false, err
 	}
 	return held(l) && !s.expired(ns, l), nil
+}
+
+// SeatOwner reports the replica that currently holds the capture/seat lease for
+// ns/name, or "" when the lease is free or absent.
+func (s *Store) SeatOwner(ctx context.Context, ns, name string) (string, error) {
+	return s.leaseOwner(ctx, leaseName(name), ns)
+}
+
+// ControlOwner reports the replica that currently holds the control-role lease
+// for ns/name, or "" when it is free or absent. The control claim is written by
+// the seat holder, so this normally equals SeatOwner.
+func (s *Store) ControlOwner(ctx context.Context, ns, name string) (string, error) {
+	return s.leaseOwner(ctx, controlLeaseName(name), ns)
+}
+
+func (s *Store) leaseOwner(ctx context.Context, lease, ns string) (string, error) {
+	l, err := s.client.CoordinationV1().Leases(ns).Get(ctx, lease, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return l.Annotations[ownerKey], nil
 }
 
 func (s *Store) modify(ctx context.Context, ns, name string, change func(*coordination.Lease) error) error {
