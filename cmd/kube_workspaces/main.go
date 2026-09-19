@@ -14,6 +14,7 @@ import (
 	"time"
 
 	kubeworkspaces "github.com/kube-workspaces/api"
+	display "github.com/kube-workspaces/api/gen/display"
 	health "github.com/kube-workspaces/api/gen/health"
 	images "github.com/kube-workspaces/api/gen/images"
 	namespaces "github.com/kube-workspaces/api/gen/namespaces"
@@ -21,6 +22,7 @@ import (
 	volumes "github.com/kube-workspaces/api/gen/volumes"
 	workspaces "github.com/kube-workspaces/api/gen/workspaces"
 	"github.com/kube-workspaces/api/internal/auth"
+	dispstore "github.com/kube-workspaces/api/internal/display"
 	"github.com/kube-workspaces/api/internal/k8s"
 	"goa.design/clue/debug"
 	"goa.design/clue/log"
@@ -138,6 +140,7 @@ func main() {
 		namespacesSvc namespaces.Service
 		sshkeysSvc    sshkeys.Service
 		healthSvc     health.Service
+		displaySvc    display.Service
 	)
 	{
 		workspacesSvc = kubeworkspaces.NewWorkspaces(wsClient, imageClient, coreClient, authProvider, podDefaultClient)
@@ -146,6 +149,7 @@ func main() {
 		namespacesSvc = kubeworkspaces.NewNamespaces(authProvider)
 		sshkeysSvc = kubeworkspaces.NewSSHKeys(authProvider)
 		healthSvc = kubeworkspaces.NewHealth()
+		displaySvc = kubeworkspaces.NewDisplay(wsClient, dispstore.NewSessions())
 	}
 
 	// Wrap the services in endpoints that can be invoked from other services
@@ -157,6 +161,7 @@ func main() {
 		namespacesEndpoints *namespaces.Endpoints
 		sshkeysEndpoints    *sshkeys.Endpoints
 		healthEndpoints     *health.Endpoints
+		displayEndpoints    *display.Endpoints
 	)
 	{
 		workspacesEndpoints = workspaces.NewEndpoints(workspacesSvc)
@@ -177,6 +182,9 @@ func main() {
 		healthEndpoints = health.NewEndpoints(healthSvc)
 		healthEndpoints.Use(debug.LogPayloads())
 		healthEndpoints.Use(log.Endpoint)
+		displayEndpoints = display.NewEndpoints(displaySvc)
+		displayEndpoints.Use(debug.LogPayloads())
+		displayEndpoints.Use(log.Endpoint)
 	}
 
 	// Create channel used by both the signal handler and server goroutines
@@ -218,7 +226,7 @@ func main() {
 			} else if u.Port() == "" {
 				u.Host = net.JoinHostPort(u.Host, "80")
 			}
-			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, &wg, errc, *dbgF)
+			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, &wg, errc, *dbgF)
 		}
 
 	default:

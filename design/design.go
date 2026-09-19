@@ -596,6 +596,165 @@ var SshKeyResult = ResultType("application/vnd.sshkey+json", func() {
 	Required("name", "namespace", "public_key")
 })
 
+// Display session (shared desktop) types
+//
+// A shared display session lets several authenticated participants watch one VM
+// desktop while at most one of them controls it. Participating is distinct from
+// the account role: observer and controller describe the display session, not
+// cluster authorization.
+
+var Participant = Type("Participant", func() {
+	Description("A participant in a shared display session")
+	Attribute("id", String, "Opaque server-side participant identifier. A capability, not a credential; never sent to the guest or logged", func() {
+		Example("97f8c4b7a2")
+	})
+	Attribute("role", String, "Current role: observer (view-only) or controller. Server-enforced; a client-side viewOnly flag is not an authorization boundary", func() {
+		Enum("observer", "controller")
+		Example("observer")
+	})
+	Attribute("connected", Boolean, "Whether the participant is attached to a display stream", func() {
+		Example(false)
+	})
+	Attribute("joined_at", String, "RFC 3339 timestamp when the participant joined", func() {
+		Example("2026-09-19T15:04:05Z")
+	})
+	Required("id", "role", "connected", "joined_at")
+})
+
+var DisplayCapabilityResult = ResultType("application/vnd.display-capability+json", func() {
+	Description("Capability advertisement for a workspace's shared display session. Absence of this resource, or enabled=false, means the workspace uses the legacy exclusive display mode")
+	Attributes(func() {
+		Attribute("enabled", Boolean, "Whether shared display sessions are available for this workspace", func() {
+			Example(false)
+		})
+		Attribute("protocol", Int, "Display protocol/API revision", func() {
+			Example(1)
+		})
+		Attribute("transports", ArrayOf(String), "Supported display transports", func() {
+			Example([]string{"rfb", "tier1"})
+		})
+		Attribute("max_participants", Int, "Maximum simultaneous participants (controller + observers)", func() {
+			Example(8)
+		})
+		Attribute("max_width", Int, "Maximum advertised guest framebuffer width", func() {
+			Example(4096)
+		})
+		Attribute("max_height", Int, "Maximum advertised guest framebuffer height", func() {
+			Example(2160)
+		})
+		Attribute("handshake_timeout_ms", Int, "Display stream handshake timeout in milliseconds", func() {
+			Example(10000)
+		})
+		Attribute("participant_ttl_ms", Int, "Idle membership lifetime in milliseconds", func() {
+			Example(900000)
+		})
+		Attribute("participants", Int, "Current participant count", func() {
+			Example(2)
+		})
+		Attribute("controller_present", Boolean, "Whether a controller is currently attached", func() {
+			Example(true)
+		})
+	})
+	Required("enabled", "protocol")
+})
+
+var DisplayStatusResult = ResultType("application/vnd.display-status+json", func() {
+	Description("Live membership and control state of a workspace's shared display session")
+	Attributes(func() {
+		Attribute("enabled", Boolean, "Whether shared display sessions are available for this workspace", func() {
+			Example(false)
+		})
+		Attribute("protocol", Int, "Display protocol/API revision", func() {
+			Example(1)
+		})
+		Attribute("epoch", String, "Capture/broker generation. Changes when a new capture owner is elected", func() {
+			Example("8f2ac64d91")
+		})
+		Attribute("controller", Participant, "Current controller, if any")
+		Attribute("observers", ArrayOf(Participant), "Current observers")
+		Attribute("participants", Int, "Total participant count (controller + observers)", func() {
+			Example(3)
+		})
+	})
+	Required("enabled", "protocol", "epoch", "participants")
+})
+
+var JoinDisplayPayload = Type("JoinDisplayPayload", func() {
+	Description("Payload for joining a workspace's shared display session")
+	Attribute("namespace", String, "Workspace namespace", func() {
+		Default("workspaces")
+		Example("workspaces")
+	})
+	Attribute("name", String, "Workspace name", func() {
+		Example("my-workspace")
+	})
+	Attribute("role", String, "Initial role. Defaults to observer", func() {
+		Default("observer")
+		Enum("observer", "controller")
+	})
+	Required("name")
+})
+
+var JoinResult = ResultType("application/vnd.display-join+json", func() {
+	Description("Result of joining a shared display session")
+	Attributes(func() {
+		Attribute("participant", Participant, "The joined participant record")
+		Attribute("capability", DisplayCapabilityResult, "Current capability state, including the live participant count")
+	})
+	Required("participant")
+})
+
+var LeaveDisplayPayload = Type("LeaveDisplayPayload", func() {
+	Description("Payload for leaving a workspace's shared display session")
+	Attribute("namespace", String, "Workspace namespace", func() {
+		Default("workspaces")
+		Example("workspaces")
+	})
+	Attribute("name", String, "Workspace name", func() {
+		Example("my-workspace")
+	})
+	Attribute("participant_id", String, "Participant identifier to remove", func() {
+		Example("97f8c4b7a2")
+	})
+	Required("name", "participant_id")
+})
+
+var DisplayControlPayload = Type("DisplayControlPayload", func() {
+	Description("Payload for a control transition (acquire, release or transfer)")
+	Attribute("namespace", String, "Workspace namespace", func() {
+		Default("workspaces")
+		Example("workspaces")
+	})
+	Attribute("name", String, "Workspace name", func() {
+		Example("my-workspace")
+	})
+	Attribute("participant_id", String, "Participant performing the transition. Release requires the current controller; acquire may be any participant; transfer requires the current controller", func() {
+		Example("97f8c4b7a2")
+	})
+	Attribute("force", Boolean, "Explicit human consent to take or transfer control, demoting the current controller to observer. There is no silent takeover without this", func() {
+		Default(false)
+		Example(true)
+	})
+	Attribute("to", String, "Target observer participant identifier for a transfer", func() {
+		Example("3a2d5f8c7f")
+	})
+	Required("name", "participant_id")
+})
+
+var ControlResult = ResultType("application/vnd.display-control+json", func() {
+	Description("Result of a control transition")
+	Attributes(func() {
+		Attribute("controller", Participant, "Controller after the transition, if any")
+		Attribute("was_held", Boolean, "Whether a controller was present before the transition", func() {
+			Example(true)
+		})
+		Attribute("released", Boolean, "True when release cleared the controller", func() {
+			Example(false)
+		})
+	})
+	Required("was_held", "released")
+})
+
 // Service definitions
 
 var _ = Service("workspaces", func() {
@@ -1039,6 +1198,226 @@ var _ = Service("health", func() {
 		HTTP(func() {
 			GET("/healthz")
 			Response(StatusOK)
+		})
+	})
+})
+
+var _ = Service("display", func() {
+	Description("Shared display session membership and control: one controller plus view-only observers per VM desktop")
+
+	Method("capability", func() {
+		Description("Advertise whether a workspace participates in shared display sessions and with which limits")
+		Payload(func() {
+			Attribute("namespace", String, "Workspace namespace", func() {
+				Default("workspaces")
+				Example("workspaces")
+			})
+			Attribute("name", String, "Workspace name", func() {
+				Example("my-workspace")
+			})
+			Required("name")
+		})
+		Result(DisplayCapabilityResult)
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace not found", func() {
+			Example("workspace \"my-workspace\" not found")
+		})
+		HTTP(func() {
+			GET("/v1/workspaces/{name}/display")
+			Param("namespace")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+		})
+	})
+
+	Method("status", func() {
+		Description("Report live membership and control state of a workspace's shared display session")
+		Payload(func() {
+			Attribute("namespace", String, "Workspace namespace", func() {
+				Default("workspaces")
+				Example("workspaces")
+			})
+			Attribute("name", String, "Workspace name", func() {
+				Example("my-workspace")
+			})
+			Required("name")
+		})
+		Result(DisplayStatusResult)
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace not found", func() {
+			Example("workspace \"my-workspace\" not found")
+		})
+		HTTP(func() {
+			GET("/v1/workspaces/{name}/display/status")
+			Param("namespace")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+		})
+	})
+
+	Method("join", func() {
+		Description("Join a workspace's shared display session as an observer or, when free, as the controller")
+		Payload(JoinDisplayPayload)
+		Result(JoinResult)
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace not found", func() {
+			Example("workspace \"my-workspace\" not found")
+		})
+		Error("capacity", String, "The workspace display session is at its participant limit", func() {
+			Example("display session for workspace \"my-workspace\" is full (max 8 participants)")
+		})
+		Error("conflict", String, "The workspace display is occupied by a controller; join as observer and acquire control explicitly", func() {
+			Example("display for workspace \"my-workspace\" is controlled by another participant")
+		})
+		Error("invalid", String, "Invalid join request", func() {
+			Example("cannot join as controller: display is occupied")
+		})
+		HTTP(func() {
+			POST("/v1/workspaces/{name}/display/join")
+			Param("namespace")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+			Response("capacity", StatusTooManyRequests)
+			Response("conflict", StatusConflict)
+			Response("invalid", StatusBadRequest)
+		})
+	})
+
+	Method("leave", func() {
+		Description("Leave a workspace's shared display session, releasing control when the departing participant held it")
+		Payload(LeaveDisplayPayload)
+		Result(func() {
+			Attribute("ok", Boolean, "Whether the participant was removed", func() {
+				Example(true)
+			})
+			Required("ok")
+		})
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace or participant not found", func() {
+			Example("display session for workspace \"my-workspace\" has no participant \"97f8c4b7a2\"")
+		})
+		HTTP(func() {
+			DELETE("/v1/workspaces/{name}/display/sessions/{participant_id}")
+			Param("namespace")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+		})
+	})
+
+	Method("acquire", func() {
+		Description("Acquire control of a workspace's shared display session, demoting the current controller to observer when force is set")
+		Payload(DisplayControlPayload)
+		Result(ControlResult)
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace or participant not found", func() {
+			Example("display session for workspace \"my-workspace\" has no participant \"97f8c4b7a2\"")
+		})
+		Error("conflict", String, "The display is controlled by another participant and no force consent was given", func() {
+			Example("display for workspace \"my-workspace\" is controlled by another participant")
+		})
+		Error("invalid", String, "Invalid control request", func() {
+			Example("participant \"97f8c4b7a2\" is already the controller")
+		})
+		HTTP(func() {
+			POST("/v1/workspaces/{name}/display/control/acquire")
+			Param("namespace")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+			Response("conflict", StatusConflict)
+			Response("invalid", StatusBadRequest)
+		})
+	})
+
+	Method("release", func() {
+		Description("Release control of a workspace's shared display session, leaving observers attached")
+		Payload(DisplayControlPayload)
+		Result(ControlResult)
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace or participant not found", func() {
+			Example("display session for workspace \"my-workspace\" has no participant \"97f8c4b7a2\"")
+		})
+		Error("conflict", String, "The acting participant does not currently hold control", func() {
+			Example("participant \"97f8c4b7a2\" is not the current controller")
+		})
+		HTTP(func() {
+			POST("/v1/workspaces/{name}/display/control/release")
+			Param("namespace")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+			Response("conflict", StatusConflict)
+		})
+	})
+
+	Method("transfer", func() {
+		Description("Transfer control from the current controller to a named observer, keeping all observers attached")
+		Payload(DisplayControlPayload)
+		Result(ControlResult)
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace, controller or target participant not found", func() {
+			Example("display session for workspace \"my-workspace\" has no participant \"3a2d5f8c7f\"")
+		})
+		Error("conflict", String, "The display is controlled by another participant (not the acting participant)", func() {
+			Example("participant \"97f8c4b7a2\" is not the current controller")
+		})
+		Error("invalid", String, "Invalid transfer request", func() {
+			Example("transfer target must be an observer participant")
+		})
+		HTTP(func() {
+			POST("/v1/workspaces/{name}/display/control/transfer")
+			Param("namespace")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+			Response("conflict", StatusConflict)
+			Response("invalid", StatusBadRequest)
 		})
 	})
 })

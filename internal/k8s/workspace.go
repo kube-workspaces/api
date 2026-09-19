@@ -40,6 +40,12 @@ func NewWorkspaceClient() (*WorkspaceClient, error) {
 	return &WorkspaceClient{dynamic: dynClient}, nil
 }
 
+// NewWorkspaceClientFor wraps an injected dynamic client, for tests and
+// embedded use.
+func NewWorkspaceClientFor(dynamic dynamic.Interface) *WorkspaceClient {
+	return &WorkspaceClient{dynamic: dynamic}
+}
+
 func getConfig() (*rest.Config, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {

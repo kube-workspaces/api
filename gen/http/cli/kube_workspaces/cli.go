@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 
+	displayc "github.com/kube-workspaces/api/gen/http/display/client"
 	healthc "github.com/kube-workspaces/api/gen/http/health/client"
 	imagesc "github.com/kube-workspaces/api/gen/http/images/client"
 	namespacesc "github.com/kube-workspaces/api/gen/http/namespaces/client"
@@ -34,6 +35,7 @@ func UsageCommands() []string {
 		"images (list|create)",
 		"namespaces list",
 		"health check",
+		"display (capability|status|join|leave|acquire|release|transfer)",
 	}
 }
 
@@ -136,6 +138,41 @@ func ParseEndpoint(
 		healthFlags = flag.NewFlagSet("health", flag.ContinueOnError)
 
 		healthCheckFlags = flag.NewFlagSet("check", flag.ExitOnError)
+
+		displayFlags = flag.NewFlagSet("display", flag.ContinueOnError)
+
+		displayCapabilityFlags         = flag.NewFlagSet("capability", flag.ExitOnError)
+		displayCapabilityNameFlag      = displayCapabilityFlags.String("name", "REQUIRED", "Workspace name")
+		displayCapabilityNamespaceFlag = displayCapabilityFlags.String("namespace", "workspaces", "")
+
+		displayStatusFlags         = flag.NewFlagSet("status", flag.ExitOnError)
+		displayStatusNameFlag      = displayStatusFlags.String("name", "REQUIRED", "Workspace name")
+		displayStatusNamespaceFlag = displayStatusFlags.String("namespace", "workspaces", "")
+
+		displayJoinFlags         = flag.NewFlagSet("join", flag.ExitOnError)
+		displayJoinBodyFlag      = displayJoinFlags.String("body", "REQUIRED", "")
+		displayJoinNameFlag      = displayJoinFlags.String("name", "REQUIRED", "Workspace name")
+		displayJoinNamespaceFlag = displayJoinFlags.String("namespace", "workspaces", "")
+
+		displayLeaveFlags             = flag.NewFlagSet("leave", flag.ExitOnError)
+		displayLeaveNameFlag          = displayLeaveFlags.String("name", "REQUIRED", "Workspace name")
+		displayLeaveParticipantIDFlag = displayLeaveFlags.String("participant-id", "REQUIRED", "Participant identifier to remove")
+		displayLeaveNamespaceFlag     = displayLeaveFlags.String("namespace", "workspaces", "")
+
+		displayAcquireFlags         = flag.NewFlagSet("acquire", flag.ExitOnError)
+		displayAcquireBodyFlag      = displayAcquireFlags.String("body", "REQUIRED", "")
+		displayAcquireNameFlag      = displayAcquireFlags.String("name", "REQUIRED", "Workspace name")
+		displayAcquireNamespaceFlag = displayAcquireFlags.String("namespace", "workspaces", "")
+
+		displayReleaseFlags         = flag.NewFlagSet("release", flag.ExitOnError)
+		displayReleaseBodyFlag      = displayReleaseFlags.String("body", "REQUIRED", "")
+		displayReleaseNameFlag      = displayReleaseFlags.String("name", "REQUIRED", "Workspace name")
+		displayReleaseNamespaceFlag = displayReleaseFlags.String("namespace", "workspaces", "")
+
+		displayTransferFlags         = flag.NewFlagSet("transfer", flag.ExitOnError)
+		displayTransferBodyFlag      = displayTransferFlags.String("body", "REQUIRED", "")
+		displayTransferNameFlag      = displayTransferFlags.String("name", "REQUIRED", "Workspace name")
+		displayTransferNamespaceFlag = displayTransferFlags.String("namespace", "workspaces", "")
 	)
 	workspacesFlags.Usage = workspacesUsage
 	workspacesListFlags.Usage = workspacesListUsage
@@ -169,6 +206,15 @@ func ParseEndpoint(
 	healthFlags.Usage = healthUsage
 	healthCheckFlags.Usage = healthCheckUsage
 
+	displayFlags.Usage = displayUsage
+	displayCapabilityFlags.Usage = displayCapabilityUsage
+	displayStatusFlags.Usage = displayStatusUsage
+	displayJoinFlags.Usage = displayJoinUsage
+	displayLeaveFlags.Usage = displayLeaveUsage
+	displayAcquireFlags.Usage = displayAcquireUsage
+	displayReleaseFlags.Usage = displayReleaseUsage
+	displayTransferFlags.Usage = displayTransferUsage
+
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
 	}
@@ -196,6 +242,8 @@ func ParseEndpoint(
 			svcf = namespacesFlags
 		case "health":
 			svcf = healthFlags
+		case "display":
+			svcf = displayFlags
 		default:
 			return nil, nil, fmt.Errorf("unknown service %q", svcn)
 		}
@@ -292,6 +340,31 @@ func ParseEndpoint(
 			switch epn {
 			case "check":
 				epf = healthCheckFlags
+
+			}
+
+		case "display":
+			switch epn {
+			case "capability":
+				epf = displayCapabilityFlags
+
+			case "status":
+				epf = displayStatusFlags
+
+			case "join":
+				epf = displayJoinFlags
+
+			case "leave":
+				epf = displayLeaveFlags
+
+			case "acquire":
+				epf = displayAcquireFlags
+
+			case "release":
+				epf = displayReleaseFlags
+
+			case "transfer":
+				epf = displayTransferFlags
 
 			}
 
@@ -395,6 +468,31 @@ func ParseEndpoint(
 			switch epn {
 			case "check":
 				endpoint = c.Check()
+			}
+		case "display":
+			c := displayc.NewClient(scheme, host, doer, enc, dec, restore)
+			switch epn {
+			case "capability":
+				endpoint = c.Capability()
+				data, err = displayc.BuildCapabilityPayload(*displayCapabilityNameFlag, *displayCapabilityNamespaceFlag)
+			case "status":
+				endpoint = c.Status()
+				data, err = displayc.BuildStatusPayload(*displayStatusNameFlag, *displayStatusNamespaceFlag)
+			case "join":
+				endpoint = c.Join()
+				data, err = displayc.BuildJoinPayload(*displayJoinBodyFlag, *displayJoinNameFlag, *displayJoinNamespaceFlag)
+			case "leave":
+				endpoint = c.Leave()
+				data, err = displayc.BuildLeavePayload(*displayLeaveNameFlag, *displayLeaveParticipantIDFlag, *displayLeaveNamespaceFlag)
+			case "acquire":
+				endpoint = c.Acquire()
+				data, err = displayc.BuildAcquirePayload(*displayAcquireBodyFlag, *displayAcquireNameFlag, *displayAcquireNamespaceFlag)
+			case "release":
+				endpoint = c.Release()
+				data, err = displayc.BuildReleasePayload(*displayReleaseBodyFlag, *displayReleaseNameFlag, *displayReleaseNamespaceFlag)
+			case "transfer":
+				endpoint = c.Transfer()
+				data, err = displayc.BuildTransferPayload(*displayTransferBodyFlag, *displayTransferNameFlag, *displayTransferNamespaceFlag)
 			}
 		}
 	}
@@ -801,7 +899,7 @@ func imagesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "images create --body '{\n      \"category\": \"IDE\",\n      \"default_args\": [\n         \"--bind-addr\",\n         \"0.0.0.0:8080\"\n      ],\n      \"default_cloud_init\": false,\n      \"default_credentials\": {\n         \"password\": \"changeme\",\n         \"username\": \"coder\"\n      },\n      \"default_env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"default_homedir\": \"/home/coder\",\n      \"default_password\": \"changeme\",\n      \"default_path\": \"/\",\n      \"default_port\": 8080,\n      \"default_shared_memory\": false,\n      \"default_shell\": \"/bin/bash\",\n      \"default_uid\": 1000,\n      \"default_user\": \"coder\",\n      \"default_user_data\": \"\",\n      \"description\": \"Code editor in the browser\",\n      \"homepage_url\": \"https://github.com/coder/code-server\",\n      \"icon\": \"code\",\n      \"image\": \"codercom/code-server:latest\",\n      \"image_homepage_url\": \"https://hub.docker.com/r/codercom/code-server\",\n      \"links\": [\n         {\n            \"title\": \"GitHub\",\n            \"url\": \"https://github.com/coder/code-server\"\n         },\n         {\n            \"title\": \"Docker Hub\",\n            \"url\": \"https://hub.docker.com/r/codercom/code-server\"\n         }\n      ],\n      \"name\": \"Code Server (VS Code)\",\n      \"privileged\": false,\n      \"proxy_config\": {\n         \"custom_request_headers\": {\n            \"x-tenant\": \"workspaces\"\n         },\n         \"inject_base_tag\": false,\n         \"needs_noop_sw\": false,\n         \"preserve_path_prefix\": false,\n         \"rewrite_host_absolute_paths\": true,\n         \"tls_insecure\": true,\n         \"websocket_paths\": [\n            \"/websockify\"\n         ]\n      },\n      \"remote_desktop\": {\n         \"path\": \"/\",\n         \"port\": 8080,\n         \"protocol\": \"selkies\"\n      },\n      \"source_url\": \"https://github.com/coder/code-server\",\n      \"tags\": [\n         \"development\",\n         \"vscode\"\n      ],\n      \"workspace_types\": [\n         \"container\"\n      ]\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "images create --body '{\n      \"category\": \"IDE\",\n      \"default_args\": [\n         \"--bind-addr\",\n         \"0.0.0.0:8080\"\n      ],\n      \"default_cloud_init\": false,\n      \"default_credentials\": {\n         \"password\": \"changeme\",\n         \"username\": \"coder\"\n      },\n      \"default_env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"default_homedir\": \"/home/coder\",\n      \"default_password\": \"changeme\",\n      \"default_path\": \"/\",\n      \"default_port\": 8080,\n      \"default_shared_memory\": false,\n      \"default_shell\": \"/bin/bash\",\n      \"default_uid\": 1000,\n      \"default_user\": \"coder\",\n      \"default_user_data\": \"\",\n      \"description\": \"Code editor in the browser\",\n      \"homepage_url\": \"https://github.com/coder/code-server\",\n      \"icon\": \"code\",\n      \"image\": \"codercom/code-server:latest\",\n      \"image_homepage_url\": \"https://hub.docker.com/r/codercom/code-server\",\n      \"links\": [\n         {\n            \"title\": \"GitHub\",\n            \"url\": \"https://github.com/coder/code-server\"\n         },\n         {\n            \"title\": \"Docker Hub\",\n            \"url\": \"https://hub.docker.com/r/codercom/code-server\"\n         }\n      ],\n      \"name\": \"Code Server (VS Code)\",\n      \"privileged\": false,\n      \"proxy_config\": {\n         \"custom_request_headers\": {\n            \"x-tenant\": \"workspaces\"\n         },\n         \"inject_base_tag\": false,\n         \"needs_noop_sw\": false,\n         \"preserve_path_prefix\": false,\n         \"rewrite_host_absolute_paths\": true,\n         \"tls_insecure\": false,\n         \"websocket_paths\": [\n            \"/websockify\"\n         ]\n      },\n      \"remote_desktop\": {\n         \"path\": \"/\",\n         \"port\": 8080,\n         \"protocol\": \"selkies\"\n      },\n      \"source_url\": \"https://github.com/coder/code-server\",\n      \"tags\": [\n         \"development\",\n         \"vscode\"\n      ],\n      \"workspace_types\": [\n         \"container\"\n      ]\n   }'")
 }
 
 // namespacesUsage displays the usage of the namespaces command and its
@@ -855,4 +953,170 @@ func healthCheckUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "health check")
+}
+
+// displayUsage displays the usage of the display command and its subcommands.
+func displayUsage() {
+	fmt.Fprintln(os.Stderr, `Shared display session membership and control: one controller plus view-only observers per VM desktop`)
+	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] display COMMAND [flags]\n\n", os.Args[0])
+	fmt.Fprintln(os.Stderr, "COMMAND:")
+	fmt.Fprintln(os.Stderr, `    capability: Advertise whether a workspace participates in shared display sessions and with which limits`)
+	fmt.Fprintln(os.Stderr, `    status: Report live membership and control state of a workspace's shared display session`)
+	fmt.Fprintln(os.Stderr, `    join: Join a workspace's shared display session as an observer or, when free, as the controller`)
+	fmt.Fprintln(os.Stderr, `    leave: Leave a workspace's shared display session, releasing control when the departing participant held it`)
+	fmt.Fprintln(os.Stderr, `    acquire: Acquire control of a workspace's shared display session, demoting the current controller to observer when force is set`)
+	fmt.Fprintln(os.Stderr, `    release: Release control of a workspace's shared display session, leaving observers attached`)
+	fmt.Fprintln(os.Stderr, `    transfer: Transfer control from the current controller to a named observer, keeping all observers attached`)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Additional help:")
+	fmt.Fprintf(os.Stderr, "    %s display COMMAND --help\n", os.Args[0])
+}
+func displayCapabilityUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] display capability", os.Args[0])
+	fmt.Fprint(os.Stderr, " -name STRING")
+	fmt.Fprint(os.Stderr, " -namespace STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Advertise whether a workspace participates in shared display sessions and with which limits`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -name STRING: Workspace name`)
+	fmt.Fprintln(os.Stderr, `    -namespace STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "display capability --name \"my-workspace\" --namespace \"workspaces\"")
+}
+
+func displayStatusUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] display status", os.Args[0])
+	fmt.Fprint(os.Stderr, " -name STRING")
+	fmt.Fprint(os.Stderr, " -namespace STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Report live membership and control state of a workspace's shared display session`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -name STRING: Workspace name`)
+	fmt.Fprintln(os.Stderr, `    -namespace STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "display status --name \"my-workspace\" --namespace \"workspaces\"")
+}
+
+func displayJoinUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] display join", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprint(os.Stderr, " -name STRING")
+	fmt.Fprint(os.Stderr, " -namespace STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Join a workspace's shared display session as an observer or, when free, as the controller`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+	fmt.Fprintln(os.Stderr, `    -name STRING: Workspace name`)
+	fmt.Fprintln(os.Stderr, `    -namespace STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "display join --body '{\n      \"role\": \"observer\"\n   }' --name \"my-workspace\" --namespace \"workspaces\"")
+}
+
+func displayLeaveUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] display leave", os.Args[0])
+	fmt.Fprint(os.Stderr, " -name STRING")
+	fmt.Fprint(os.Stderr, " -participant-id STRING")
+	fmt.Fprint(os.Stderr, " -namespace STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Leave a workspace's shared display session, releasing control when the departing participant held it`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -name STRING: Workspace name`)
+	fmt.Fprintln(os.Stderr, `    -participant-id STRING: Participant identifier to remove`)
+	fmt.Fprintln(os.Stderr, `    -namespace STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "display leave --name \"my-workspace\" --participant-id \"97f8c4b7a2\" --namespace \"workspaces\"")
+}
+
+func displayAcquireUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] display acquire", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprint(os.Stderr, " -name STRING")
+	fmt.Fprint(os.Stderr, " -namespace STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Acquire control of a workspace's shared display session, demoting the current controller to observer when force is set`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+	fmt.Fprintln(os.Stderr, `    -name STRING: Workspace name`)
+	fmt.Fprintln(os.Stderr, `    -namespace STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "display acquire --body '{\n      \"force\": true,\n      \"participant_id\": \"97f8c4b7a2\",\n      \"to\": \"3a2d5f8c7f\"\n   }' --name \"my-workspace\" --namespace \"workspaces\"")
+}
+
+func displayReleaseUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] display release", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprint(os.Stderr, " -name STRING")
+	fmt.Fprint(os.Stderr, " -namespace STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Release control of a workspace's shared display session, leaving observers attached`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+	fmt.Fprintln(os.Stderr, `    -name STRING: Workspace name`)
+	fmt.Fprintln(os.Stderr, `    -namespace STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "display release --body '{\n      \"force\": true,\n      \"participant_id\": \"97f8c4b7a2\",\n      \"to\": \"3a2d5f8c7f\"\n   }' --name \"my-workspace\" --namespace \"workspaces\"")
+}
+
+func displayTransferUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] display transfer", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprint(os.Stderr, " -name STRING")
+	fmt.Fprint(os.Stderr, " -namespace STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Transfer control from the current controller to a named observer, keeping all observers attached`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+	fmt.Fprintln(os.Stderr, `    -name STRING: Workspace name`)
+	fmt.Fprintln(os.Stderr, `    -namespace STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "display transfer --body '{\n      \"force\": true,\n      \"participant_id\": \"97f8c4b7a2\",\n      \"to\": \"3a2d5f8c7f\"\n   }' --name \"my-workspace\" --namespace \"workspaces\"")
 }

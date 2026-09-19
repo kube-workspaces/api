@@ -13,6 +13,7 @@ REST API service for the kube-workspaces platform. Built with Goa v3.
 | `gen/` | Generated Goa code (types, endpoints, HTTP transport, OpenAPI) |
 | `internal/auth/` | Auth middleware (OIDC, local auth, session cookies, Bearer tokens, RFC 8252 native-app flow) |
 | `internal/exec/` | WebSocket bridges: exec, VM serial console, VM noVNC display, web SSH + session registry |
+| `internal/display/` | Display ownership (Lease-backed `Store`/`Guard`) plus the in-memory `Sessions` registry (one controller + view-only observers, per-workspace participant bounds) backing the Goa `display` service |
 | `internal/rfb/` | Shared-display broker groundwork: bounded post-handshake client-message framing and mutation classification; not wired into the VNC route yet |
 | `internal/broker/` | Read-only multi-viewer RFB feasibility prototype, independent observer sessions and bounded capture; not routed publicly. See its README for native/noVNC integration checks. |
 | `internal/k8s/` | Kubernetes client utilities |
@@ -40,6 +41,13 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
   console, `vmvnc.go` noVNC display, `ssh.go` web SSH). All are single-session
   via `session.go`'s registry with an idle TTL and take-over consent; `PUT`
   workspace updates and `shared_memory`/`volume_mounts` are rejected for `vm`.
+- Shared display sessions (`display.go` service, routes
+  `/v1/workspaces/{name}/display*`): Goa-designed membership/control API backed
+  by `internal/display.Sessions`. It is NOT yet wired to a viewer WebSocket or
+  the RFB broker, so participant membership/control is exercised by the API
+  only; there is no live multi-session media path. Handwritten `display.go`
+  mirrors the exec/vnc console gate (editor/admin + namespace access) with Goa
+  `unauthorized`/`forbidden`/`not_found`/`capacity`(429)/`conflict`(409) errors.
 - SshKey CRUD is implemented in `sshkeys.go` (`/v1/sshkeys*`) backed by
   `internal/k8s/sshkey.go`; keys live in the user's personal namespace.
 - Native (desktop) auth: `internal/auth/native.go` implements the RFC 8252

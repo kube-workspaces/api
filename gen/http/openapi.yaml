@@ -464,6 +464,337 @@ paths:
                         type: string
             schemes:
                 - http
+    /v1/workspaces/{name}/display:
+        get:
+            tags:
+                - display
+            summary: capability display
+            description: Advertise whether a workspace participates in shared display sessions and with which limits
+            operationId: display#capability
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/DisplayCapability'
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+            schemes:
+                - http
+    /v1/workspaces/{name}/display/control/acquire:
+        post:
+            tags:
+                - display
+            summary: acquire display
+            description: Acquire control of a workspace's shared display session, demoting the current controller to observer when force is set
+            operationId: display#acquire
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+                - name: AcquireRequestBody
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/DisplayControlPayload'
+                    required:
+                        - participant_id
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/DisplayControl'
+                "400":
+                    description: Bad Request response.
+                    schema:
+                        type: string
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+                "409":
+                    description: Conflict response.
+                    schema:
+                        type: string
+            schemes:
+                - http
+    /v1/workspaces/{name}/display/control/release:
+        post:
+            tags:
+                - display
+            summary: release display
+            description: Release control of a workspace's shared display session, leaving observers attached
+            operationId: display#release
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+                - name: ReleaseRequestBody
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/DisplayControlPayload'
+                    required:
+                        - participant_id
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/DisplayControl'
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+                "409":
+                    description: Conflict response.
+                    schema:
+                        type: string
+            schemes:
+                - http
+    /v1/workspaces/{name}/display/control/transfer:
+        post:
+            tags:
+                - display
+            summary: transfer display
+            description: Transfer control from the current controller to a named observer, keeping all observers attached
+            operationId: display#transfer
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+                - name: TransferRequestBody
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/DisplayControlPayload'
+                    required:
+                        - participant_id
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/DisplayControl'
+                "400":
+                    description: Bad Request response.
+                    schema:
+                        type: string
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+                "409":
+                    description: Conflict response.
+                    schema:
+                        type: string
+            schemes:
+                - http
+    /v1/workspaces/{name}/display/join:
+        post:
+            tags:
+                - display
+            summary: join display
+            description: Join a workspace's shared display session as an observer or, when free, as the controller
+            operationId: display#join
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+                - name: JoinRequestBody
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/JoinDisplayPayload'
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/DisplayJoin'
+                "400":
+                    description: Bad Request response.
+                    schema:
+                        type: string
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+                "409":
+                    description: Conflict response.
+                    schema:
+                        type: string
+                "429":
+                    description: Too Many Requests response.
+                    schema:
+                        type: string
+            schemes:
+                - http
+    /v1/workspaces/{name}/display/sessions/{participant_id}:
+        delete:
+            tags:
+                - display
+            summary: leave display
+            description: Leave a workspace's shared display session, releasing control when the departing participant held it
+            operationId: display#leave
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+                - name: participant_id
+                  in: path
+                  description: Participant identifier to remove
+                  required: true
+                  type: string
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/DisplayLeaveResponseBody'
+                        required:
+                            - ok
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+            schemes:
+                - http
+    /v1/workspaces/{name}/display/status:
+        get:
+            tags:
+                - display
+            summary: status display
+            description: Report live membership and control state of a workspace's shared display session
+            operationId: display#status
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/DisplayStatus'
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+            schemes:
+                - http
     /v1/workspaces/{name}/reset:
         post:
             tags:
@@ -602,7 +933,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Aut repudiandae neque.
+                    example: Ea nobis doloremque maiores molestias totam.
                 description: Default command-line args
                 example:
                     - --bind-addr
@@ -710,7 +1041,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Dicta tenetur perferendis eius.
+                    example: Aut repudiandae neque.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -719,7 +1050,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Ea nobis doloremque maiores molestias totam.
+                    example: Et libero perspiciatis suscipit aliquam non.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -763,7 +1094,7 @@ definitions:
                 needs_noop_sw: false
                 preserve_path_prefix: false
                 rewrite_host_absolute_paths: true
-                tls_insecure: true
+                tls_insecure: false
                 websocket_paths:
                     - /websockify
             remote_desktop:
@@ -893,7 +1224,7 @@ definitions:
                     nvidia.com/gpu: "true"
                 additionalProperties:
                     type: string
-                    example: Magnam fuga non et.
+                    example: Consequatur et aut.
             shared_memory:
                 type: boolean
                 description: Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML frameworks)
@@ -958,6 +1289,318 @@ definitions:
         required:
             - name
             - container
+    DisplayCapability:
+        title: 'Mediatype identifier: application/vnd.display-capability+json; view=default'
+        type: object
+        properties:
+            controller_present:
+                type: boolean
+                description: Whether a controller is currently attached
+                example: true
+            enabled:
+                type: boolean
+                description: Whether shared display sessions are available for this workspace
+                example: false
+            handshake_timeout_ms:
+                type: integer
+                description: Display stream handshake timeout in milliseconds
+                example: 10000
+                format: int64
+            max_height:
+                type: integer
+                description: Maximum advertised guest framebuffer height
+                example: 2160
+                format: int64
+            max_participants:
+                type: integer
+                description: Maximum simultaneous participants (controller + observers)
+                example: 8
+                format: int64
+            max_width:
+                type: integer
+                description: Maximum advertised guest framebuffer width
+                example: 4096
+                format: int64
+            participant_ttl_ms:
+                type: integer
+                description: Idle membership lifetime in milliseconds
+                example: 900000
+                format: int64
+            participants:
+                type: integer
+                description: Current participant count
+                example: 2
+                format: int64
+            protocol:
+                type: integer
+                description: Display protocol/API revision
+                example: 1
+                format: int64
+            transports:
+                type: array
+                items:
+                    type: string
+                    example: Quia rerum dolores perspiciatis qui.
+                description: Supported display transports
+                example:
+                    - rfb
+                    - tier1
+        description: CapabilityResponseBody result type (default view)
+        example:
+            controller_present: true
+            enabled: false
+            handshake_timeout_ms: 10000
+            max_height: 2160
+            max_participants: 8
+            max_width: 4096
+            participant_ttl_ms: 900000
+            participants: 2
+            protocol: 1
+            transports:
+                - rfb
+                - tier1
+        required:
+            - enabled
+            - protocol
+    DisplayCapabilityResponseBody:
+        title: 'Mediatype identifier: application/vnd.display-capability+json; view=default'
+        type: object
+        properties:
+            controller_present:
+                type: boolean
+                description: Whether a controller is currently attached
+                example: true
+            enabled:
+                type: boolean
+                description: Whether shared display sessions are available for this workspace
+                example: false
+            handshake_timeout_ms:
+                type: integer
+                description: Display stream handshake timeout in milliseconds
+                example: 10000
+                format: int64
+            max_height:
+                type: integer
+                description: Maximum advertised guest framebuffer height
+                example: 2160
+                format: int64
+            max_participants:
+                type: integer
+                description: Maximum simultaneous participants (controller + observers)
+                example: 8
+                format: int64
+            max_width:
+                type: integer
+                description: Maximum advertised guest framebuffer width
+                example: 4096
+                format: int64
+            participant_ttl_ms:
+                type: integer
+                description: Idle membership lifetime in milliseconds
+                example: 900000
+                format: int64
+            participants:
+                type: integer
+                description: Current participant count
+                example: 2
+                format: int64
+            protocol:
+                type: integer
+                description: Display protocol/API revision
+                example: 1
+                format: int64
+            transports:
+                type: array
+                items:
+                    type: string
+                    example: Saepe quo ut deleniti iusto.
+                description: Supported display transports
+                example:
+                    - rfb
+                    - tier1
+        description: Capability advertisement for a workspace's shared display session. Absence of this resource, or enabled=false, means the workspace uses the legacy exclusive display mode (default view)
+        example:
+            controller_present: true
+            enabled: false
+            handshake_timeout_ms: 10000
+            max_height: 2160
+            max_participants: 8
+            max_width: 4096
+            participant_ttl_ms: 900000
+            participants: 2
+            protocol: 1
+            transports:
+                - rfb
+                - tier1
+        required:
+            - enabled
+            - protocol
+    DisplayControl:
+        title: 'Mediatype identifier: application/vnd.display-control+json; view=default'
+        type: object
+        properties:
+            controller:
+                $ref: '#/definitions/Participant'
+            released:
+                type: boolean
+                description: True when release cleared the controller
+                example: false
+            was_held:
+                type: boolean
+                description: Whether a controller was present before the transition
+                example: true
+        description: AcquireResponseBody result type (default view)
+        example:
+            controller:
+                connected: false
+                id: 97f8c4b7a2
+                joined_at: "2026-09-19T15:04:05Z"
+                role: observer
+            released: false
+            was_held: true
+        required:
+            - was_held
+            - released
+    DisplayControlPayload:
+        title: DisplayControlPayload
+        type: object
+        properties:
+            force:
+                type: boolean
+                description: Explicit human consent to take or transfer control, demoting the current controller to observer. There is no silent takeover without this
+                default: false
+                example: true
+            participant_id:
+                type: string
+                description: Participant performing the transition. Release requires the current controller; acquire may be any participant; transfer requires the current controller
+                example: 97f8c4b7a2
+            to:
+                type: string
+                description: Target observer participant identifier for a transfer
+                example: 3a2d5f8c7f
+        example:
+            force: true
+            participant_id: 97f8c4b7a2
+            to: 3a2d5f8c7f
+        required:
+            - participant_id
+    DisplayJoin:
+        title: 'Mediatype identifier: application/vnd.display-join+json; view=default'
+        type: object
+        properties:
+            capability:
+                $ref: '#/definitions/DisplayCapabilityResponseBody'
+            participant:
+                $ref: '#/definitions/Participant'
+        description: JoinResponseBody result type (default view)
+        example:
+            capability:
+                controller_present: true
+                enabled: false
+                handshake_timeout_ms: 10000
+                max_height: 2160
+                max_participants: 8
+                max_width: 4096
+                participant_ttl_ms: 900000
+                participants: 2
+                protocol: 1
+                transports:
+                    - rfb
+                    - tier1
+            participant:
+                connected: false
+                id: 97f8c4b7a2
+                joined_at: "2026-09-19T15:04:05Z"
+                role: observer
+        required:
+            - participant
+    DisplayLeaveResponseBody:
+        title: DisplayLeaveResponseBody
+        type: object
+        properties:
+            ok:
+                type: boolean
+                description: Whether the participant was removed
+                example: true
+        example:
+            ok: true
+        required:
+            - ok
+    DisplayStatus:
+        title: 'Mediatype identifier: application/vnd.display-status+json; view=default'
+        type: object
+        properties:
+            controller:
+                $ref: '#/definitions/Participant'
+            enabled:
+                type: boolean
+                description: Whether shared display sessions are available for this workspace
+                example: false
+            epoch:
+                type: string
+                description: Capture/broker generation. Changes when a new capture owner is elected
+                example: 8f2ac64d91
+            observers:
+                type: array
+                items:
+                    $ref: '#/definitions/Participant'
+                description: Current observers
+                example:
+                    - connected: false
+                      id: 97f8c4b7a2
+                      joined_at: "2026-09-19T15:04:05Z"
+                      role: observer
+                    - connected: false
+                      id: 97f8c4b7a2
+                      joined_at: "2026-09-19T15:04:05Z"
+                      role: observer
+                    - connected: false
+                      id: 97f8c4b7a2
+                      joined_at: "2026-09-19T15:04:05Z"
+                      role: observer
+            participants:
+                type: integer
+                description: Total participant count (controller + observers)
+                example: 3
+                format: int64
+            protocol:
+                type: integer
+                description: Display protocol/API revision
+                example: 1
+                format: int64
+        description: StatusResponseBody result type (default view)
+        example:
+            controller:
+                connected: false
+                id: 97f8c4b7a2
+                joined_at: "2026-09-19T15:04:05Z"
+                role: observer
+            enabled: false
+            epoch: 8f2ac64d91
+            observers:
+                - connected: false
+                  id: 97f8c4b7a2
+                  joined_at: "2026-09-19T15:04:05Z"
+                  role: observer
+                - connected: false
+                  id: 97f8c4b7a2
+                  joined_at: "2026-09-19T15:04:05Z"
+                  role: observer
+                - connected: false
+                  id: 97f8c4b7a2
+                  joined_at: "2026-09-19T15:04:05Z"
+                  role: observer
+                - connected: false
+                  id: 97f8c4b7a2
+                  joined_at: "2026-09-19T15:04:05Z"
+                  role: observer
+            participants: 3
+            protocol: 1
+        required:
+            - enabled
+            - protocol
+            - epoch
+            - participants
     EnvVar:
         title: EnvVar
         type: object
@@ -1005,7 +1648,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Laborum assumenda illum quia.
+                    example: Assumenda illum quia cum.
                 description: Default command-line args injected at workspace creation
                 example:
                     - --bind-addr
@@ -1112,7 +1755,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Delectus quas.
+                    example: Ipsum delectus.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -1121,7 +1764,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Corrupti voluptatem.
+                    example: Voluptatem inventore dicta tenetur perferendis eius.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -1163,9 +1806,9 @@ definitions:
             proxy_config:
                 custom_request_headers:
                     x-tenant: workspaces
-                inject_base_tag: false
+                inject_base_tag: true
                 needs_noop_sw: false
-                preserve_path_prefix: true
+                preserve_path_prefix: false
                 rewrite_host_absolute_paths: true
                 tls_insecure: true
                 websocket_paths:
@@ -1250,17 +1893,17 @@ definitions:
                     x-tenant: workspaces
                 additionalProperties:
                     type: string
-                    example: Voluptatem nemo dolor id.
+                    example: Repudiandae molestiae voluptatem nemo dolor id nemo.
             inject_base_tag:
                 type: boolean
                 description: Inject a <base> tag into HTML responses to fix relative path resolution
                 default: false
-                example: true
+                example: false
             needs_noop_sw:
                 type: boolean
                 description: Serve a no-op ServiceWorker at /sw.js to prevent SW registration errors
                 default: false
-                example: true
+                example: false
             preserve_path_prefix:
                 type: boolean
                 description: Forward the full proxy path (including /proxy/{ns}/{name}) to the pod instead of stripping it. Required for apps configured with a base URL matching the proxy prefix.
@@ -1275,12 +1918,12 @@ definitions:
                 type: boolean
                 description: Connect to backend over HTTPS with skip-verify (for self-signed certs)
                 default: false
-                example: false
+                example: true
             websocket_paths:
                 type: array
                 items:
                     type: string
-                    example: Saepe magni alias delectus quam.
+                    example: Corporis saepe magni alias.
                 description: Paths that use WebSocket (informational, all paths support WS transparently)
                 example:
                     - /websockify
@@ -1290,9 +1933,9 @@ definitions:
                 x-tenant: workspaces
             inject_base_tag: true
             needs_noop_sw: true
-            preserve_path_prefix: false
+            preserve_path_prefix: true
             rewrite_host_absolute_paths: true
-            tls_insecure: true
+            tls_insecure: false
             websocket_paths:
                 - /websockify
     ImageRemoteDesktop:
@@ -1323,6 +1966,20 @@ definitions:
         required:
             - protocol
             - port
+    JoinDisplayPayload:
+        title: JoinDisplayPayload
+        type: object
+        properties:
+            role:
+                type: string
+                description: Initial role. Defaults to observer
+                default: observer
+                example: observer
+                enum:
+                    - observer
+                    - controller
+        example:
+            role: observer
     Namespace:
         title: 'Mediatype identifier: application/vnd.namespace+json; view=default'
         type: object
@@ -1347,6 +2004,40 @@ definitions:
         required:
             - name
             - phase
+    Participant:
+        title: Participant
+        type: object
+        properties:
+            connected:
+                type: boolean
+                description: Whether the participant is attached to a display stream
+                example: false
+            id:
+                type: string
+                description: Opaque server-side participant identifier. A capability, not a credential; never sent to the guest or logged
+                example: 97f8c4b7a2
+            joined_at:
+                type: string
+                description: RFC 3339 timestamp when the participant joined
+                example: "2026-09-19T15:04:05Z"
+            role:
+                type: string
+                description: 'Current role: observer (view-only) or controller. Server-enforced; a client-side viewOnly flag is not an authorization boundary'
+                example: observer
+                enum:
+                    - observer
+                    - controller
+        description: A participant in a shared display session
+        example:
+            connected: false
+            id: 97f8c4b7a2
+            joined_at: "2026-09-19T15:04:05Z"
+            role: observer
+        required:
+            - id
+            - role
+            - connected
+            - joined_at
     Sshkey:
         title: 'Mediatype identifier: application/vnd.sshkey+json; view=default'
         type: object
@@ -1444,7 +2135,7 @@ definitions:
                     workspace: my-workspace
                 additionalProperties:
                     type: string
-                    example: Et aut dicta alias dolore praesentium.
+                    example: Alias dolore.
             name:
                 type: string
                 description: PVC name

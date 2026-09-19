@@ -15,7 +15,9 @@ import (
 	"sync"
 	"time"
 
+	gendisplay "github.com/kube-workspaces/api/gen/display"
 	health "github.com/kube-workspaces/api/gen/health"
+	displaysvr "github.com/kube-workspaces/api/gen/http/display/server"
 	healthsvr "github.com/kube-workspaces/api/gen/http/health/server"
 	imagessvr "github.com/kube-workspaces/api/gen/http/images/server"
 	namespacessvr "github.com/kube-workspaces/api/gen/http/namespaces/server"
@@ -54,7 +56,7 @@ var godocFS embed.FS
 
 // handleHTTPServer starts configures and starts a HTTP server on the given
 // URL. It shuts down the server if any error is received in the error channel.
-func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, wg *sync.WaitGroup, errc chan error, dbg bool) {
+func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, displayEndpoints *gendisplay.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, wg *sync.WaitGroup, errc chan error, dbg bool) {
 
 	// Provide the transport specific request decoder and response encoder.
 	// The goa http package has built-in support for JSON, XML and gob.
@@ -89,6 +91,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		namespacesServer *namespacessvr.Server
 		sshkeysServer    *sshkeyssvr.Server
 		healthServer     *healthsvr.Server
+		displayServer    *displaysvr.Server
 	)
 	{
 		eh := errorHandler(ctx)
@@ -98,6 +101,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		namespacesServer = namespacessvr.New(namespacesEndpoints, mux, dec, enc, eh, nil)
 		sshkeysServer = sshkeyssvr.New(sshkeysEndpoints, mux, dec, enc, eh, nil)
 		healthServer = healthsvr.New(healthEndpoints, mux, dec, enc, eh, nil)
+		displayServer = displaysvr.New(displayEndpoints, mux, dec, enc, eh, nil)
 	}
 
 	// Configure the mux.
@@ -107,6 +111,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	namespacessvr.Mount(mux, namespacesServer)
 	sshkeyssvr.Mount(mux, sshkeysServer)
 	healthsvr.Mount(mux, healthServer)
+	displaysvr.Mount(mux, displayServer)
 
 	// Serve OpenAPI spec, rewriting the server URL to use EXTERNAL_HOST.
 	externalHost := os.Getenv("EXTERNAL_HOST")
@@ -1509,7 +1514,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		execOpts := &exec.Options{
 			RESTConfig: restConfig,
 			Clientset:  execClientset,
-			Display: displayStore,
+			Display:    displayStore,
 		}
 		execHandler := exec.Handler(execOpts)
 		vmConsoleHandler := exec.VMConsoleHandler(execOpts)
@@ -1720,7 +1725,9 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		for _, action := range []string{"renew", "release"} {
 			mux.Handle("POST", "/v1/workspaces/{name}/tier1/"+action, func(w http.ResponseWriter, r *http.Request) {
 				ns, name, ok := requireEditorAccess(w, r)
-				if !ok { return }
+				if !ok {
+					return
+				}
 				displayStore.ServeHTTP(w, r, ns, name, action)
 			})
 		}
