@@ -106,17 +106,54 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Join the membership registry first: control occupancy and the
-	// participant cap are decided there, independent of the media path.
-	p, err := s.opts.Sessions.Join(namespace, name, role)
-	if err != nil {
-		s.joinError(w, err)
-		return
-	}
+	// 1. Bind to the membership registry first: either an existing participant
+	// the client registered via the REST join endpoint (?participant=) or a
+	// freshly joined one. Control occupancy and the participant cap are decided
+	// here, independent of the media path.
 	leave := true
+	bound := false
+	var p *display.Participant
+	if participantID := r.URL.Query().Get("participant"); participantID != "" {
+		// The stream is bound to a REST-joined participant so the client can
+		// drive control transitions with the id it already knows. A bound
+		// participant must not already be attached elsewhere and its role must
+		// match the requested stream role.
+		bound = true
+		var err error
+		p, err = s.opts.Sessions.Lookup(namespace, name, participantID)
+		if err != nil {
+			if errors.Is(err, display.ErrParticipantNotFound) {
+				http.Error(w, "display participant not found", http.StatusNotFound)
+			} else {
+				http.Error(w, "failed to resolve display participant", http.StatusServiceUnavailable)
+			}
+			return
+		}
+		if p.Connected {
+			http.Error(w, "display participant is already attached to a stream", http.StatusConflict)
+			return
+		}
+		if p.Role != role {
+			http.Error(w, "participant role does not match the requested stream role", http.StatusConflict)
+			return
+		}
+	} else {
+		var err error
+		p, err = s.opts.Sessions.Join(namespace, name, role)
+		if err != nil {
+			s.joinError(w, err)
+			return
+		}
+	}
 	defer func() {
 		if leave {
-			_ = s.opts.Sessions.Leave(namespace, name, p.ID)
+			if bound {
+				// A bound participant's membership survives a stream drop so the
+				// client can reconnect with the same id; SetConnected already ran.
+				_ = s.opts.Sessions.SetConnected(namespace, name, p.ID, false)
+			} else {
+				_ = s.opts.Sessions.Leave(namespace, name, p.ID)
+			}
 		}
 	}()
 
@@ -183,9 +220,12 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 	// guest-mutating RFB messages upstream only through the fence.
 	_ = rt.broker.ServeParticipant(ctx, broker.NewWebSocketStream(clientConn), role == display.RoleController, fence)
 
-	// Leave explicitly so the empty-session prune is immediate; the deferred
-	// Leave is therefore a no-op.
-	_ = s.opts.Sessions.Leave(namespace, name, p.ID)
+	// Drop membership immediately: a fresh-join participant is gone; a bound
+	// participant's stream detaches and keeps its membership for reconnect. The
+	// deferred cleanup is therefore a no-op for the fresh case.
+	if !bound {
+		_ = s.opts.Sessions.Leave(namespace, name, p.ID)
+	}
 	leave = false
 }
 

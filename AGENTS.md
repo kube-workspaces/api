@@ -59,6 +59,13 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
   the stream route answers 409 with `{"error": ..., "owner": "<replica>"}`
   instead of dialing a second VNC console, so a routing layer can re-issue the
   request against the owner. See `Store.SeatOwner`/`Store.ControlOwner`.
+- Stream/participant binding: the WS route accepts `?participant=<id>` to attach
+  a stream to a participant registered via `POST .../display/join` (so a client
+  learns its `participant_id` and drives `control/acquire|release|transfer` with
+  it). A bound participant's membership survives a disconnect (reconnect keeps
+  the id, REST `leave` removes it); a fresh-join (`no participant`) stream still
+  removes its member on disconnect. Role and attachment state are validated
+  before the upgrade. `Sessions.Lookup` refreshes the idle deadline.
 - SshKey CRUD is implemented in `sshkeys.go` (`/v1/sshkeys*`) backed by
   `internal/k8s/sshkey.go`; keys live in the user's personal namespace.
 - Native (desktop) auth: `internal/auth/native.go` implements the RFC 8252

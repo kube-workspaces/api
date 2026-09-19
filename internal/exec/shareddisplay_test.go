@@ -137,3 +137,60 @@ func TestSharedDisplayHandleCrossReplicaOwner(t *testing.T) {
 		t.Fatalf("non-owner response identifies owner %q, want %q", body.Owner, "replica-a")
 	}
 }
+
+// TestSharedDisplayHandleBindsParticipant proves a stream can attach to a
+// participant registered through the REST membership API (?participant=): the
+// route validates the participant, its role and attachment state before any
+// WebSocket conversation.
+func TestSharedDisplayHandleBindsParticipant(t *testing.T) {
+	store := display.NewStore(fake.NewClientset())
+	sessions := display.NewSessions()
+	sd := &SharedDisplay{
+		opts: &Options{Display: store, Sessions: sessions},
+		live: make(map[string]*sharedRuntime),
+		dial: func(context.Context, string, string) (broker.Stream, error) {
+			t.Fatal("bind validation must fail before dialing")
+			return nil, errors.New("unreachable")
+		},
+	}
+
+	participant, err := sessions.Join("workspaces", "vm-a", display.RoleObserver)
+	if err != nil {
+		t.Fatalf("REST join: %v", err)
+	}
+
+	// Unknown participant id.
+	req := httptest.NewRequest("GET", "/v1/workspaces/vm-a/display/ws?participant=nope", nil)
+	req.SetPathValue("name", "vm-a")
+	rec := httptest.NewRecorder()
+	sd.Handle(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown participant: got %d want %d", rec.Code, http.StatusNotFound)
+	}
+
+	// Role mismatch: participant is an observer, stream requests controller.
+	req = httptest.NewRequest("GET", "/v1/workspaces/vm-a/display/ws?participant="+participant.ID+"&role=controller", nil)
+	req.SetPathValue("name", "vm-a")
+	rec = httptest.NewRecorder()
+	sd.Handle(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("role mismatch: got %d want %d", rec.Code, http.StatusConflict)
+	}
+
+	// Already attached elsewhere.
+	if err := sessions.SetConnected("workspaces", "vm-a", participant.ID, true); err != nil {
+		t.Fatalf("mark connected: %v", err)
+	}
+	req = httptest.NewRequest("GET", "/v1/workspaces/vm-a/display/ws?participant="+participant.ID+"&role=observer", nil)
+	req.SetPathValue("name", "vm-a")
+	rec = httptest.NewRecorder()
+	sd.Handle(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("already-attached bind: got %d want %d", rec.Code, http.StatusConflict)
+	}
+
+	// Membership is untouched by rejected binds.
+	if st, _ := sessions.Status("workspaces", "vm-a"); len(st.Observers) != 1 || !st.Observers[0].Connected {
+		t.Fatalf("rejected binds altered the registry: %+v", st)
+	}
+}

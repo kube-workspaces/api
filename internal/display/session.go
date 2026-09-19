@@ -240,6 +240,22 @@ func (s *Sessions) Join(ns, name, role string) (*Participant, error) {
 	return &c, nil
 }
 
+// Lookup returns a live snapshot of an existing participant, updating its idle
+// deadline. It is used by the stream route to bind a WebSocket connection to a
+// participant registered through the REST membership API.
+func (s *Sessions) Lookup(ns, name, id string) (*Participant, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := s.key(ns, name)
+	sess := s.purge(key, s.sessions[key])
+	if sess == nil || sess.members[id] == nil {
+		return nil, ErrParticipantNotFound
+	}
+	sess.lastSeen[id] = s.now()
+	c := *sess.members[id]
+	return &c, nil
+}
+
 // Leave removes a participant, clearing control first when the departing member
 // held it. Observers are unaffected.
 func (s *Sessions) Leave(ns, name, id string) error {

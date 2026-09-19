@@ -131,6 +131,27 @@ func TestAcquireReleaseTransfer(t *testing.T) {
 	}
 }
 
+func TestLookupParticipant(t *testing.T) {
+	s := NewSessions()
+	p, err := s.Join("workspaces", "vm-a", RoleObserver)
+	if err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	if _, err := s.Lookup("workspaces", "vm-a", p.ID); err != nil {
+		t.Fatalf("lookup known participant: %v", err)
+	}
+	if _, err := s.Lookup("workspaces", "vm-a", "nope"); !errors.Is(err, ErrParticipantNotFound) {
+		t.Fatalf("lookup unknown: expected ErrParticipantNotFound, got %v", err)
+	}
+	// Lookup refreshes the idle deadline and must not mark the member connected.
+	if err := s.SetConnected("workspaces", "vm-a", p.ID, true); err != nil {
+		t.Fatalf("set connected: %v", err)
+	}
+	if st := s.mustStatus(t, "workspaces", "vm-a"); len(st.Observers) != 1 || !st.Observers[0].Connected {
+		t.Fatalf("connected flag not recorded: %+v", st)
+	}
+}
+
 func TestLeaveAndIdleEviction(t *testing.T) {
 	base, setNow := fixedClock()
 	s := NewSessions()
