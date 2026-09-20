@@ -15,7 +15,7 @@ REST API service for the kube-workspaces platform. Built with Goa v3.
 | `internal/exec/` | WebSocket bridges: exec, VM serial console, VM noVNC display, web SSH + session registry, and the shared-display WS route (`shareddisplay.go`, `/v1/workspaces/{name}/display/ws`) that runs a broker generation per workspace (capture lease + one upstream dial, plus the interactive seat when free) shared by all participants |
 | `internal/display/` | Display ownership: Lease-backed `Store`/`Guard` for the interactive seat and the **VNC-console capture lease** (`ClaimCapture`, own coordination object — `Acquire` takes seat+capture, `AcquireCapture` takes the console alone for observer-only coexistence with a Tier 1 seat holder), a **separate control-role lease** (`ClaimControl`/`RenewControl`/`RevokeControl`/`ReleaseControl`) and `Fence.DispatchInput` gating input writes at the fencing bound, plus the in-memory `Sessions` registry (one controller + view-only observers, `SetControlLocked` while a Tier 1 session owns the seat) backing the Goa `display` service |
 | `internal/rfb/` | Shared-display broker groundwork: bounded post-handshake client-message framing and mutation classification; not wired into the VNC route yet |
-| `internal/broker/` | Shared-display RFB broker: one capture upstream, up to eight participants, immutable snapshot fan-out with slow-reader isolation. `ServeParticipant` serves observers read-only and forwards a controller's guest-mutating messages upstream **only through an `InputGate`** (the display control `Fence`), with upstream writes serialized against capture. Wired publicly via exec's shared-display route (`internal/exec/shareddisplay.go`). |
+| `internal/broker/` | Shared-display RFB broker: one capture upstream, up to eight participants, immutable snapshot fan-out with slow-reader isolation. `ServeParticipant` serves observers read-only and forwards a controller's guest-mutating messages upstream **only through an `InputGate`** (the display control `Fence`), with upstream writes serialized against capture. ZRLE output (`zrle.go`) when negotiated — solid/packed-palette/plain-RLE/raw tiles, smallest per tile, one connection-scoped zlib stream; Raw fallback. Wired publicly via exec's shared-display route (`internal/exec/shareddisplay.go`). |
 | `internal/k8s/` | Kubernetes client utilities |
 | `internal/platform/` | PlatformConfig reading |
 | `internal/proxy/` | Legacy proxy support |
@@ -65,10 +65,18 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
   `Acquire`, `ClaimCapture` and `ClaimControl`) records this pod's identity
   (hostname) in the `kubeworkspaces.io/display-owner` lease annotation. A
   replica that loses the race gets a typed `display.OwnershipError` (unwraps
-  to `ErrBusy`); the stream route answers 409 with
-  `{"error": ..., "owner": "<replica>"}` instead of dialing a second VNC
-  console, so a routing layer can re-issue the request against the owner. See
-  `Store.SeatOwner`/`Store.CaptureOwner`/`Store.ControlOwner`.
+  to `ErrBusy`). The consumer is `exec.OwnerHop`: the request is forwarded to
+  the owner pod (resolved via the pods API, one hop marked by
+  `X-KW-Display-Hop`, loop-guarded) with the client's credentials intact, so
+  the owner re-authorizes it; an unresolvable owner degrades to the 409/owner
+  body. The Goa display REST routes forward through
+  `exec.DisplayOwnerMiddleware`, keeping the in-memory membership registry
+  coherent across pods. See `Store.SeatOwner`/`Store.CaptureOwner`/
+  `Store.ControlOwner`.
+- Pilot gate: the shared display ships opt-in (plan E) —
+  `KW_DISPLAY_SHARED=on` enables it (`SharedDisplayEnabledFromEnv`). Off by
+  default: capability/status advertise `enabled: false`, join/control answer
+  400, and the stream route answers 404 (`exec.Options.SharedDisplayDisabled`).
 - Stream/participant binding: the WS route accepts `?participant=<id>` to attach
   a stream to a participant registered via `POST .../display/join` (so a client
   learns its `participant_id` and drives `control/acquire|release|transfer` with
