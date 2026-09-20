@@ -149,14 +149,17 @@ func displayRequestOwner(r *http.Request, store *display.Store, instance string)
 	// The seat is checked first (a full generation holds both), then the
 	// capture (an observer-only generation holds only it), then membership
 	// (a registry that exists before any generation — the fresh join this
-	// very request may belong to).
-	if owner, err := store.SeatOwner(ctx, ns, name); err == nil && owner != "" && owner != instance {
+	// very request may belong to). Only LIVE claims route: an owner whose
+	// renewals stopped (dead pod, partition) stops being forwarded to once
+	// the fencing observation elapses, so a local takeover can recover the
+	// display instead of 409ing toward a dead pod forever.
+	if owner, err := store.LiveSeatOwner(ctx, ns, name); err == nil && owner != "" && owner != instance {
 		return owner
 	}
-	if owner, err := store.CaptureOwner(ctx, ns, name); err == nil && owner != "" && owner != instance {
+	if owner, err := store.LiveCaptureOwner(ctx, ns, name); err == nil && owner != "" && owner != instance {
 		return owner
 	}
-	if owner, err := store.MembershipOwner(ctx, ns, name); err == nil && owner != "" && owner != instance {
+	if owner, err := store.LiveMembershipOwner(ctx, ns, name); err == nil && owner != "" && owner != instance {
 		return owner
 	}
 	return ""

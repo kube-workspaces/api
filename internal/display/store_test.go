@@ -623,6 +623,80 @@ func TestMembershipLeaseLifecycle(t *testing.T) {
 	}
 }
 
+// Live owner reads stop routing toward a holder that has gone quiet: the
+// routing traffic itself is the fencing observation, so after the interval a
+// dead owner's annotation no longer forwards requests to a dead pod.
+func TestLiveOwnerFencesStaleClaims(t *testing.T) {
+	cs := fake.NewClientset()
+	ctx := context.Background()
+	now := time.Now()
+	replicaA := NewStoreWithOwner(cs, "replica-a")
+	replicaA.now = func() time.Time { return now }
+	replicaB := NewStoreWithOwner(cs, "replica-b")
+	replicaB.now = func() time.Time { return now }
+
+	if _, err := replicaA.ClaimMembership(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("A membership claim: %v", err)
+	}
+	// Fresh: B routes to A.
+	if got, err := replicaB.LiveMembershipOwner(ctx, "alice", "desktop"); err != nil || got != "replica-a" {
+		t.Fatalf("fresh live owner: %q err=%v", got, err)
+	}
+	// Same version, no renewal, before the interval: still routes.
+	now = now.Add(FenceInterval - time.Second)
+	if got, _ := replicaB.LiveMembershipOwner(ctx, "alice", "desktop"); got != "replica-a" {
+		t.Fatalf("owner inside the fence interval: %q", got)
+	}
+	// Past the interval with an unchanged lease: stop routing (recoverable).
+	now = now.Add(2 * time.Second)
+	if got, _ := replicaB.LiveMembershipOwner(ctx, "alice", "desktop"); got != "" {
+		t.Fatalf("stale owner still routed after the fence interval: %q", got)
+	}
+	// The plain annotation read still reports A (it is not a liveness check).
+	if got, _ := replicaB.MembershipOwner(ctx, "alice", "desktop"); got != "replica-a" {
+		t.Fatalf("annotation read: %q", got)
+	}
+	// And a takeover can now proceed locally.
+	if _, err := replicaB.ClaimMembership(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("takeover after fencing: %v", err)
+	}
+	if got, _ := replicaB.LiveMembershipOwner(ctx, "alice", "desktop"); got != "replica-b" {
+		t.Fatalf("owner after takeover: %q", got)
+	}
+}
+
+// LiveSeatOwner/LiveCaptureOwner share the same liveness check on their own
+// leases.
+func TestLiveSeatAndCaptureOwners(t *testing.T) {
+	cs := fake.NewClientset()
+	ctx := context.Background()
+	now := time.Now()
+	replicaA := NewStoreWithOwner(cs, "replica-a")
+	replicaA.now = func() time.Time { return now }
+	replicaB := NewStoreWithOwner(cs, "replica-b")
+	replicaB.now = func() time.Time { return now }
+
+	if _, err := replicaA.Claim(ctx, "alice", "desktop", "vnc"); err != nil {
+		t.Fatalf("seat claim: %v", err)
+	}
+	if _, err := replicaA.ClaimCapture(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("capture claim: %v", err)
+	}
+	if got, _ := replicaB.LiveSeatOwner(ctx, "alice", "desktop"); got != "replica-a" {
+		t.Fatalf("live seat owner: %q", got)
+	}
+	if got, _ := replicaB.LiveCaptureOwner(ctx, "alice", "desktop"); got != "replica-a" {
+		t.Fatalf("live capture owner: %q", got)
+	}
+	now = now.Add(FenceInterval + 2*time.Second)
+	if got, _ := replicaB.LiveSeatOwner(ctx, "alice", "desktop"); got != "" {
+		t.Fatalf("stale seat owner routed: %q", got)
+	}
+	if got, _ := replicaB.LiveCaptureOwner(ctx, "alice", "desktop"); got != "" {
+		t.Fatalf("stale capture owner routed: %q", got)
+	}
+}
+
 // The membership lease is independent of the seat/capture leases: a routing
 // marker must never gate the console, and the media leases never gate it.
 func TestMembershipLeaseIndependentOfMediaLeases(t *testing.T) {

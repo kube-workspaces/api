@@ -86,6 +86,14 @@ func NewStoreWithOwner(client kubernetes.Interface, owner string) *Store {
 // Owner reports the replica identity this store writes onto claims.
 func (s *Store) Owner() string { return s.owner }
 
+// SetNow overrides the store's clock. It exists for tests that drive fencing
+// observations through time.
+func (s *Store) SetNow(now func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.now = now
+}
+
 func leaseName(name string) string {
 	h := sha256.Sum256([]byte(name))
 	return "kw-display-" + hex.EncodeToString(h[:20])
@@ -515,6 +523,43 @@ func (s *Store) MembershipOwner(ctx context.Context, ns, name string) (string, e
 // ns/name, or "" when the lease is free or absent.
 func (s *Store) SeatOwner(ctx context.Context, ns, name string) (string, error) {
 	return s.leaseOwner(ctx, leaseName(name), ns)
+}
+
+// LiveSeatOwner is SeatOwner with a liveness check: it returns "" once the
+// recorded holder has gone quiet past this replica's fencing observation, so
+// routing toward a dead owner's pod stops and a local takeover can proceed.
+// The repeated reads that drive routing traffic ARE the fencing observation.
+func (s *Store) LiveSeatOwner(ctx context.Context, ns, name string) (string, error) {
+	return s.liveOwner(ctx, leaseName(name), ns)
+}
+
+// LiveCaptureOwner is CaptureOwner with the same liveness check as
+// LiveSeatOwner.
+func (s *Store) LiveCaptureOwner(ctx context.Context, ns, name string) (string, error) {
+	return s.liveOwner(ctx, captureLeaseName(name), ns)
+}
+
+// LiveMembershipOwner is MembershipOwner with the same liveness check as
+// LiveSeatOwner.
+func (s *Store) LiveMembershipOwner(ctx context.Context, ns, name string) (string, error) {
+	return s.liveOwner(ctx, membershipLeaseName(name), ns)
+}
+
+func (s *Store) liveOwner(ctx context.Context, lease, ns string) (string, error) {
+	l, err := s.client.CoordinationV1().Leases(ns).Get(ctx, lease, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !held(l) {
+		return "", nil
+	}
+	if s.expired(ns, l) {
+		return "", nil
+	}
+	return l.Annotations[ownerKey], nil
 }
 
 // ControlOwner reports the replica that currently holds the control-role lease

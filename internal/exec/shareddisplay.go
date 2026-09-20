@@ -98,9 +98,9 @@ func (s *SharedDisplay) anyDisplayOwner(ctx context.Context, ns, name string) st
 	}
 	own := s.instance()
 	for _, ownerOf := range []func(context.Context, string, string) (string, error){
-		s.opts.Display.MembershipOwner,
-		s.opts.Display.SeatOwner,
-		s.opts.Display.CaptureOwner,
+		s.opts.Display.LiveMembershipOwner,
+		s.opts.Display.LiveSeatOwner,
+		s.opts.Display.LiveCaptureOwner,
 	} {
 		lctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		owner, err := ownerOf(lctx, ns, name)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/kube-workspaces/api/internal/broker"
 	"github.com/kube-workspaces/api/internal/display"
@@ -277,6 +278,59 @@ func TestDisplayOwnerMiddlewareRoutesOnMembership(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if forwarded || !served {
 		t.Fatalf("self-owned join was forwarded (forwarded=%v served=%v)", forwarded, served)
+	}
+}
+
+// A stale owner (dead pod: renewals stopped) stops being forwarded to once
+// the fencing observation elapses, so the surviving replica answers locally
+// and a takeover can recover the display.
+func TestDisplayOwnerMiddlewareStopsRoutingToStaleOwner(t *testing.T) {
+	cs := fake.NewClientset()
+	ctx := context.Background()
+	now := time.Now()
+	ownerStore := display.NewStoreWithOwner(cs, "replica-b")
+	ownerStore.SetNow(func() time.Time { return now })
+	if _, err := ownerStore.ClaimMembership(ctx, "workspaces", "vm-a"); err != nil {
+		t.Fatalf("membership claim: %v", err)
+	}
+	localStore := display.NewStoreWithOwner(cs, "replica-a")
+	localStore.SetNow(func() time.Time { return now })
+
+	var forwarded, served bool
+	owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = true
+		_, _ = w.Write([]byte(`{"owner":true}`))
+	}))
+	defer owner.Close()
+	hop := &OwnerHop{clientset: cs, namespace: "test-ns", transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		r.URL.Scheme = "http"
+		r.URL.Host = strings.TrimPrefix(owner.URL, "http://")
+		return http.DefaultTransport.RoundTrip(r)
+	})}
+	ownerPod(t, cs, "test-ns", "replica-b", "10.0.0.9")
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served = true
+		_, _ = w.Write([]byte(`{"local":true}`))
+	})
+	h := DisplayOwnerMiddleware(localStore, "replica-a", hop, next)
+
+	// Fresh claim: forwarded to the owner.
+	req := httptest.NewRequest("POST", "/v1/workspaces/vm-a/display/join", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if !forwarded || served {
+		t.Fatalf("fresh claim was not forwarded (forwarded=%v served=%v)", forwarded, served)
+	}
+
+	// The owner went quiet (renewals stop at pod death): requests drive the
+	// fencing observation, and after the interval routing falls local.
+	now = now.Add(12*time.Second + time.Second)
+	forwarded, served = false, false
+	req = httptest.NewRequest("POST", "/v1/workspaces/vm-a/display/join", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if forwarded || !served {
+		t.Fatalf("stale owner still routed after the fence interval (forwarded=%v served=%v)", forwarded, served)
 	}
 }
 
