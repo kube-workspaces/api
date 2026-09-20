@@ -62,6 +62,13 @@ func getConfig() (*rest.Config, error) {
 			return nil, fmt.Errorf("unable to build kubeconfig: %w", err)
 		}
 	}
+	// The display coordination leases renew on a fencing bound of seconds;
+	// client-go's default rate limiter (5 QPS / 10 burst) can stall a renewal
+	// past its budget under the claim burst at generation start and kill a
+	// healthy display generation. Keep the limiter well above coordination
+	// chatter so renewals land inside the fencing bound.
+	config.QPS = 50
+	config.Burst = 100
 	return config, nil
 }
 

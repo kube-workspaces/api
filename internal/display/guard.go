@@ -142,7 +142,10 @@ func (g *Guard) run(ctx context.Context) {
 				return
 			}
 			started := time.Now()
-			renewCtx, cancel := context.WithDeadline(ctx, minTime(deadline, started.Add(time.Second)))
+			// A renewal gets up to half the fencing bound: slow API-server
+			// responses must not kill a healthy guard, while renewals still
+			// land well inside ClientTTL.
+			renewCtx, cancel := context.WithDeadline(ctx, minTime(deadline, started.Add(ClientTTL/2)))
 			err := g.renew(renewCtx)
 			cancel()
 			g.mu.Lock()

@@ -86,7 +86,8 @@ func (f *Fence) run(ctx context.Context) {
 				return
 			}
 			started := f.now()
-			renewCtx, cancel := context.WithDeadline(ctx, minTime(deadline, started.Add(time.Second)))
+			// A renewal gets up to half the fencing bound (see Guard).
+			renewCtx, cancel := context.WithDeadline(ctx, minTime(deadline, started.Add(ClientTTL/2)))
 			err := f.store.RenewControl(renewCtx, f.ns, f.name, f.token)
 			cancel()
 			f.mu.Lock()
