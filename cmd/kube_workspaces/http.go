@@ -1521,6 +1521,14 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		// sibling replicas can route display participants to this pod.
 		replicaID, _ := os.Hostname()
 		displayStore := display.NewStoreWithOwner(execClientset, replicaID)
+
+		// The membership registry is in-memory per replica. Claim a
+		// membership-owner lease on first join (renewed while members exist,
+		// released when the last leaves) so sibling replicas can forward
+		// fresh joins/attaches here instead of 404ing from an empty registry.
+		displayMembership := display.NewMembership(displayStore, displaySessions)
+		displaySessions.SetMembershipClaimer(displayMembership)
+		go displayMembership.Run(ctx)
 		execOpts := &exec.Options{
 			RESTConfig:            restConfig,
 			Clientset:             execClientset,

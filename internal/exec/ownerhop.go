@@ -147,11 +147,16 @@ func displayRequestOwner(r *http.Request, store *display.Store, instance string)
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	// The seat is checked first (a full generation holds both), then the
-	// capture (an observer-only generation holds only it).
+	// capture (an observer-only generation holds only it), then membership
+	// (a registry that exists before any generation — the fresh join this
+	// very request may belong to).
 	if owner, err := store.SeatOwner(ctx, ns, name); err == nil && owner != "" && owner != instance {
 		return owner
 	}
 	if owner, err := store.CaptureOwner(ctx, ns, name); err == nil && owner != "" && owner != instance {
+		return owner
+	}
+	if owner, err := store.MembershipOwner(ctx, ns, name); err == nil && owner != "" && owner != instance {
 		return owner
 	}
 	return ""

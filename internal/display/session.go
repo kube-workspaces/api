@@ -103,6 +103,17 @@ func (s *session) activeParticipant() *Participant {
 	return s.members[s.controller]
 }
 
+// MembershipClaimer records which replica owns a workspace's membership when
+// the first join creates a local session. The registry is in-memory per
+// replica, so without this marker a stream attach or REST call landing on a
+// sibling replica would answer 404 from an empty registry (see Membership).
+type MembershipClaimer interface {
+	// ClaimForJoin claims the membership-owner lease for ns/name. An
+	// *OwnershipError means another replica holds it; the join is unwound
+	// and the client's next attempt is forwarded to the owner.
+	ClaimForJoin(ns, name string) error
+}
+
 // Sessions is the in-memory membership registry for shared display sessions.
 // It enforces the "one controller plus view-only observers" invariant and keeps
 // participants bounded. B later binds control back to the coordination Lease
@@ -118,12 +129,23 @@ type Sessions struct {
 	// generation that evaluated the seat sets and clears it; see
 	// exec.SharedDisplay.
 	controlLocked map[string]bool
-	now           func() time.Time
+	// claimer records cross-replica membership ownership on first join (nil
+	// in single-replica/test wiring).
+	claimer MembershipClaimer
+	now     func() time.Time
 }
 
 // NewSessions returns an empty registry.
 func NewSessions() *Sessions {
 	return &Sessions{sessions: make(map[string]*session), controlLocked: make(map[string]bool), now: time.Now}
+}
+
+// SetMembershipClaimer installs the cross-replica ownership hook consulted by
+// Join when it creates a fresh session.
+func (s *Sessions) SetMembershipClaimer(c MembershipClaimer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.claimer = c
 }
 
 func (s *Sessions) key(ns, name string) string { return ns + "/" + name }
@@ -210,34 +232,41 @@ func (s *Sessions) Status(ns, name string) (Status, bool) {
 }
 
 // Join adds a participant. role is RoleObserver or RoleController. Requesting
-// controller on an occupied display yields ErrControllerPresent.
+// controller on an occupied display yields ErrControllerPresent. When the
+// join creates a fresh session and a MembershipClaimer is installed, the
+// claim runs before the join returns: a claim owned by another replica
+// unwinds the member and returns the *OwnershipError so the caller can route.
 func (s *Sessions) Join(ns, name, role string) (*Participant, error) {
 	if role != RoleObserver && role != RoleController {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidRole, role)
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	key := s.key(ns, name)
 	sess := s.purge(key, s.sessions[key])
 	id, err := randomID()
 	if err != nil {
+		s.mu.Unlock()
 		return nil, err
 	}
-	if sess == nil {
+	created := sess == nil
+	if created {
 		epoch, err := randomID()
 		if err != nil {
+			s.mu.Unlock()
 			return nil, err
 		}
 		sess = &session{epoch: epoch, members: make(map[string]*Participant), lastSeen: make(map[string]time.Time)}
 		s.sessions[key] = sess
 	}
 	if len(sess.members) >= MaxParticipants {
+		s.mu.Unlock()
 		return nil, ErrCapacity
 	}
 	now := s.now()
 	m := &Participant{ID: id, Role: role, JoinedAt: now}
 	if role == RoleController {
 		if sess.controller != "" || s.controlLocked[key] {
+			s.mu.Unlock()
 			return nil, ErrControllerPresent
 		}
 		sess.controller = id
@@ -245,7 +274,42 @@ func (s *Sessions) Join(ns, name, role string) (*Participant, error) {
 	sess.members[id] = m
 	sess.lastSeen[id] = now
 	c := *m
+	s.mu.Unlock()
+
+	if created && s.claimer != nil {
+		if err := s.claimer.ClaimForJoin(ns, name); err != nil {
+			// Unwind the member: the membership marker belongs to another
+			// replica (or could not be written), so answering here would
+			// strand the participant on the wrong registry.
+			s.mu.Lock()
+			if cur := s.sessions[key]; cur != nil && cur.members[id] != nil {
+				if cur.controller == id {
+					cur.controller = ""
+				}
+				delete(cur.members, id)
+				delete(cur.lastSeen, id)
+				s.purge(key, cur)
+			}
+			s.mu.Unlock()
+			return nil, err
+		}
+	}
 	return &c, nil
+}
+
+// Keys returns the keys (ns/name) of sessions with at least one live member,
+// purging idle members first. The membership coordinator uses it to renew
+// live claims and release emptied ones.
+func (s *Sessions) Keys() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keys := make([]string, 0, len(s.sessions))
+	for key, sess := range s.sessions {
+		if s.purge(key, sess) != nil {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 // Lookup returns a live snapshot of an existing participant, updating its idle

@@ -288,7 +288,12 @@ func (s *displaysrvc) control(ctx context.Context, p *gendisplay.DisplayControlP
 // mapSessionError translates registry sentinels to the Goa error surface while
 // preserving 401/403/404, capacity (429) and occupied-control (409) semantics.
 func mapSessionError(err error) error {
+	var oe *display.OwnershipError
 	switch {
+	case errors.As(err, &oe):
+		// The membership marker belongs to another API replica: conflict,
+		// naming the owner — the middleware forwards the retry.
+		return gendisplay.Conflict(oe.Error())
 	case errors.Is(err, display.ErrParticipantNotFound):
 		return gendisplay.NotFound(err.Error())
 	case errors.Is(err, display.ErrCapacity):

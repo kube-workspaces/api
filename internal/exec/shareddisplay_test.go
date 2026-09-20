@@ -448,3 +448,102 @@ func TestSharedDisplayDisabledByPilotGate(t *testing.T) {
 		t.Fatal("a gated route claimed the seat")
 	}
 }
+
+// A bound attach for a participant the local registry has never seen means
+// the membership lives elsewhere: when the membership lease names a sibling
+// replica, the route answers 409 with that owner (never 404, never a second
+// dial). This is the join-on-A-then-attach-on-B case.
+func TestSharedDisplayHandleUnknownBoundParticipantOwnedElsewhere(t *testing.T) {
+	cs := fake.NewClientset()
+	if _, err := display.NewStoreWithOwner(cs, "replica-b").ClaimMembership(context.Background(), "workspaces", "vm-a"); err != nil {
+		t.Fatalf("membership claim: %v", err)
+	}
+	sd := &SharedDisplay{
+		opts: &Options{Display: display.NewStoreWithOwner(cs, "replica-a"), Sessions: display.NewSessions()},
+		live: make(map[string]*sharedRuntime),
+		dial: func(context.Context, string, string) (broker.Stream, error) {
+			t.Fatal("a non-owner replica must not dial")
+			return nil, errors.New("unreachable")
+		},
+	}
+	req := httptest.NewRequest("GET", "/v1/workspaces/vm-a/display/ws?participant=ghost&role=observer", nil)
+	req.SetPathValue("name", "vm-a")
+	rec := httptest.NewRecorder()
+	sd.Handle(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("unknown bound participant on a membership-owned workspace: got %d want %d", rec.Code, http.StatusConflict)
+	}
+	var body struct {
+		Error string `json:"error"`
+		Owner string `json:"owner"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not the owner JSON: %v (%q)", err, rec.Body.String())
+	}
+	if body.Owner != "replica-b" {
+		t.Fatalf("owner %q, want replica-b", body.Owner)
+	}
+}
+
+// The same unknown-participant attach on a workspace with NO membership owner
+// keeps the plain 404: nobody else holds the registry, so the id is simply
+// wrong.
+func TestSharedDisplayHandleUnknownBoundParticipantUnowned(t *testing.T) {
+	sd := &SharedDisplay{
+		opts: &Options{Display: display.NewStoreWithOwner(fake.NewClientset(), "replica-a"), Sessions: display.NewSessions()},
+		live: make(map[string]*sharedRuntime),
+		dial: func(context.Context, string, string) (broker.Stream, error) {
+			t.Fatal("must not dial for an unknown participant")
+			return nil, errors.New("unreachable")
+		},
+	}
+	req := httptest.NewRequest("GET", "/v1/workspaces/vm-a/display/ws?participant=ghost&role=observer", nil)
+	req.SetPathValue("name", "vm-a")
+	rec := httptest.NewRecorder()
+	sd.Handle(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown bound participant on an unowned workspace: got %d want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// A fresh join that loses the membership claim to a sibling replica routes
+// the whole attach there: 409 with the owner, and no local participant is
+// left behind.
+func TestSharedDisplayHandleFreshJoinMembershipOwnedElsewhere(t *testing.T) {
+	cs := fake.NewClientset()
+	if _, err := display.NewStoreWithOwner(cs, "replica-b").ClaimMembership(context.Background(), "workspaces", "vm-a"); err != nil {
+		t.Fatalf("membership claim: %v", err)
+	}
+	store := display.NewStoreWithOwner(cs, "replica-a")
+	sessions := display.NewSessions()
+	sessions.SetMembershipClaimer(display.NewMembership(store, sessions))
+	sd := &SharedDisplay{
+		opts: &Options{Display: store, Sessions: sessions},
+		live: make(map[string]*sharedRuntime),
+		dial: func(context.Context, string, string) (broker.Stream, error) {
+			t.Fatal("a non-owner replica must not dial")
+			return nil, errors.New("unreachable")
+		},
+	}
+	req := httptest.NewRequest("GET", "/v1/workspaces/vm-a/display/ws?role=observer", nil)
+	req.SetPathValue("name", "vm-a")
+	rec := httptest.NewRecorder()
+	sd.Handle(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("fresh join on a membership-owned workspace: got %d want %d", rec.Code, http.StatusConflict)
+	}
+	var body struct {
+		Owner string `json:"owner"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not the owner JSON: %v (%q)", err, rec.Body.String())
+	}
+	if body.Owner != "replica-b" {
+		t.Fatalf("owner %q, want replica-b", body.Owner)
+	}
+	if st, ok := sessions.Status("workspaces", "vm-a"); ok {
+		t.Fatalf("owned join stranded a local participant: %+v", st)
+	}
+}

@@ -275,6 +275,100 @@ func TestSetConnected(t *testing.T) {
 	}
 }
 
+// The membership claimer runs exactly when a join creates a fresh session:
+// the first join claims, later joins to the same live session do not, and a
+// join after full drain claims again.
+func TestJoinClaimsMembershipOnFreshSession(t *testing.T) {
+	s := NewSessions()
+	var claims []string
+	s.SetMembershipClaimer(claimerFunc(func(ns, name string) error {
+		claims = append(claims, ns+"/"+name)
+		return nil
+	}))
+
+	if _, err := s.Join("workspaces", "vm-a", RoleObserver); err != nil {
+		t.Fatalf("first join: %v", err)
+	}
+	if _, err := s.Join("workspaces", "vm-a", RoleObserver); err != nil {
+		t.Fatalf("second join: %v", err)
+	}
+	if len(claims) != 1 || claims[0] != "workspaces/vm-a" {
+		t.Fatalf("claims: %v", claims)
+	}
+	// A different workspace's first join claims independently.
+	if _, err := s.Join("workspaces", "vm-b", RoleObserver); err != nil {
+		t.Fatalf("vm-b join: %v", err)
+	}
+	if len(claims) != 2 {
+		t.Fatalf("claims after vm-b: %v", claims)
+	}
+}
+
+// A claim owned by another replica unwinds the fresh member: the join fails
+// with the typed OwnershipError, the registry holds nothing, and the next
+// join (e.g. after forwarding) can claim again.
+func TestJoinUnwindsWhenMembershipOwnedElsewhere(t *testing.T) {
+	s := NewSessions()
+	s.SetMembershipClaimer(claimerFunc(func(ns, name string) error {
+		return &OwnershipError{Owner: "replica-b", Kind: "display-membership"}
+	}))
+	if _, err := s.Join("workspaces", "vm-a", RoleObserver); err == nil {
+		t.Fatal("join must fail when the claim is owned elsewhere")
+	} else {
+		var oe *OwnershipError
+		if !errors.As(err, &oe) || oe.Owner != "replica-b" {
+			t.Fatalf("join error: %v", err)
+		}
+	}
+	if st, ok := s.Status("workspaces", "vm-a"); ok {
+		t.Fatalf("member stranded on an unwound join: %+v", st)
+	}
+	// Same for a controller join (control must not linger either).
+	if _, err := s.Join("workspaces", "vm-a", RoleController); err == nil {
+		t.Fatal("controller join must fail when the claim is owned elsewhere")
+	}
+	if st, ok := s.Status("workspaces", "vm-a"); ok {
+		t.Fatalf("controller stranded on an unwound join: %+v", st)
+	}
+	// Ownership resolves: a later join succeeds.
+	s.SetMembershipClaimer(claimerFunc(func(ns, name string) error { return nil }))
+	if _, err := s.Join("workspaces", "vm-a", RoleObserver); err != nil {
+		t.Fatalf("rejoin after ownership resolved: %v", err)
+	}
+	if st := s.mustStatus(t, "workspaces", "vm-a"); len(st.Observers) != 1 {
+		t.Fatalf("observers after rejoin: %d", len(st.Observers))
+	}
+}
+
+// Keys drives the membership sweeper: it purges idle sessions first, so a
+// workspace with no live members does not keep its routing marker.
+func TestKeysPurgesBeforeListing(t *testing.T) {
+	base, setNow := fixedClock()
+	s := NewSessions()
+	setNow(s, base)
+	if _, err := s.Join("workspaces", "vm-a", RoleObserver); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	if _, err := s.Join("workspaces", "vm-b", RoleObserver); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	setNow(s, base.Add(IdleMembershipTTL+time.Second))
+	// vm-c joined "now" stays live; the other two must purge.
+	fresh, err := s.Join("workspaces", "vm-c", RoleObserver)
+	if err != nil {
+		t.Fatalf("fresh join: %v", err)
+	}
+	_ = fresh
+	keys := s.Keys()
+	if len(keys) != 1 || keys[0] != "workspaces/vm-c" {
+		t.Fatalf("keys: %v", keys)
+	}
+}
+
+type claimerFunc func(ns, name string) error
+
+func (f claimerFunc) ClaimForJoin(ns, name string) error { return f(ns, name) }
+
 func (s *Sessions) mustStatus(t *testing.T, ns, name string) Status {
 	t.Helper()
 	st, ok := s.Status(ns, name)

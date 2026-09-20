@@ -110,6 +110,19 @@ func captureLeaseName(name string) string {
 	return "kw-display-capture-" + hex.EncodeToString(h[:20])
 }
 
+// membershipLeaseName derives the membership-owner lease for a workspace. The
+// session registry is in-memory per replica, so before any generation exists
+// the first join must record WHICH replica holds the membership: sibling
+// replicas then forward stream attaches and REST calls there instead of
+// answering 404 from an empty registry. The lease gates nothing media-side —
+// it is a routing marker with the same fencing/expiry semantics as the other
+// display leases, claimed on first join, renewed while members exist, and
+// released when the last member leaves.
+func membershipLeaseName(name string) string {
+	h := sha256.Sum256([]byte(name))
+	return "kw-display-membership-" + hex.EncodeToString(h[:20])
+}
+
 // expired requires this replica to have observed the SAME resourceVersion for
 // the fencing interval. We never compare clocks across pods or trust a remote
 // wall-clock timestamp for expiry. A CAS update fences renewals racing acquire.
@@ -397,6 +410,105 @@ func (s *Store) ReleaseCapture(ctx context.Context, ns, name, id string) error {
 // must send observers to the owner instead of dialing a second console.
 func (s *Store) CaptureOwner(ctx context.Context, ns, name string) (string, error) {
 	return s.leaseOwner(ctx, captureLeaseName(name), ns)
+}
+
+// ClaimMembership takes the membership-owner lease for a workspace. Unlike
+// the media leases, a claim by the SAME replica that already holds it adopts
+// the slot with a fresh id: after a process restart the registry is empty
+// while the old claim may still be fresh, and the replica must be able to
+// re-attach its own routing marker without waiting out the fencing interval.
+// Another replica's live claim still yields an OwnershipError naming it.
+func (s *Store) ClaimMembership(ctx context.Context, ns, name string) (string, error) {
+	var secret [32]byte
+	if _, err := rand.Read(secret[:]); err != nil {
+		return "", err
+	}
+	id := hex.EncodeToString(secret[:])
+	leases := s.client.CoordinationV1().Leases(ns)
+	lease := membershipLeaseName(name)
+	l, err := leases.Get(ctx, lease, metav1.GetOptions{})
+	create := apierrors.IsNotFound(err)
+	if err != nil && !create {
+		return "", err
+	}
+	if create {
+		l = &coordination.Lease{ObjectMeta: metav1.ObjectMeta{Name: lease, Namespace: ns,
+			Labels: map[string]string{"app.kubernetes.io/component": "display-membership"}}}
+	} else if held(l) {
+		owner := l.Annotations[ownerKey]
+		switch {
+		case owner == s.owner:
+			// Same-owner adopt (including two owner-less stores in tests):
+			// fall through and overwrite with the fresh id.
+		case !s.expired(ns, l):
+			if owner != "" {
+				return "", &OwnershipError{Owner: owner, Kind: "display-membership"}
+			}
+			return "", ErrBusy
+		}
+	}
+	l.Spec.HolderIdentity = &id
+	seconds := int32(FenceInterval / time.Second)
+	l.Spec.LeaseDurationSeconds = &seconds
+	now := metav1.NewMicroTime(s.now())
+	l.Spec.RenewTime = &now
+	l.Annotations = map[string]string{revokedKey: "false"}
+	if s.owner != "" {
+		l.Annotations[ownerKey] = s.owner
+	}
+	if create {
+		_, err = leases.Create(ctx, l, metav1.CreateOptions{})
+	} else {
+		_, err = leases.Update(ctx, l, metav1.UpdateOptions{})
+	}
+	if apierrors.IsAlreadyExists(err) || apierrors.IsConflict(err) {
+		return "", ErrBusy
+	}
+	if err != nil {
+		return "", err
+	}
+	// A fresh claim restarts fencing observation: the next contender must
+	// watch this holder's lease go quiet for the full interval.
+	s.mu.Lock()
+	delete(s.observed, ns+"/"+lease)
+	s.mu.Unlock()
+	return id, nil
+}
+
+// RenewMembership keeps the membership lease alive, with the same fencing
+// semantics as Renew.
+func (s *Store) RenewMembership(ctx context.Context, ns, name, id string) error {
+	return s.modifyNamed(ctx, membershipLeaseName(name), ns, func(l *coordination.Lease) error {
+		if !held(l) || id == "" || *l.Spec.HolderIdentity != id || l.Annotations[revokedKey] == "true" {
+			return ErrRevoked
+		}
+		now := metav1.NewMicroTime(s.now())
+		l.Spec.RenewTime = &now
+		return nil
+	})
+}
+
+// ReleaseMembership frees the membership lease held by id. A stale id can
+// never release a successor.
+func (s *Store) ReleaseMembership(ctx context.Context, ns, name, id string) error {
+	return s.modifyNamed(ctx, membershipLeaseName(name), ns, func(l *coordination.Lease) error {
+		if !held(l) || id == "" || *l.Spec.HolderIdentity != id {
+			return ErrRevoked
+		}
+		l.Spec.HolderIdentity = nil
+		if l.Annotations != nil {
+			delete(l.Annotations, ownerKey)
+		}
+		return nil
+	})
+}
+
+// MembershipOwner reports the replica that currently holds the membership
+// lease for ns/name, or "" when it is free or absent. It is the cross-replica
+// routing key for the in-memory session registry: a replica that cannot find
+// a participant locally forwards to the membership owner.
+func (s *Store) MembershipOwner(ctx context.Context, ns, name string) (string, error) {
+	return s.leaseOwner(ctx, membershipLeaseName(name), ns)
 }
 
 // SeatOwner reports the replica that currently holds the capture/seat lease for

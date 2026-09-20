@@ -228,6 +228,58 @@ func TestDisplayOwnerMiddlewareRoutesToOwner(t *testing.T) {
 	}
 }
 
+// A workspace with only a membership claim (a fresh registry, no generation
+// yet) routes its REST calls to the membership owner: this is the
+// join-on-A-then-status-on-B sequence.
+func TestDisplayOwnerMiddlewareRoutesOnMembership(t *testing.T) {
+	cs := fake.NewClientset()
+	ctx := context.Background()
+	ownerStore := display.NewStoreWithOwner(cs, "replica-b")
+	if _, err := ownerStore.ClaimMembership(ctx, "workspaces", "vm-a"); err != nil {
+		t.Fatalf("membership claim: %v", err)
+	}
+	localStore := display.NewStoreWithOwner(cs, "replica-a")
+
+	var forwarded, served bool
+	owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = true
+		_, _ = w.Write([]byte(`{"owner":true}`))
+	}))
+	defer owner.Close()
+	hop := &OwnerHop{clientset: cs, namespace: "test-ns", transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		r.URL.Scheme = "http"
+		r.URL.Host = strings.TrimPrefix(owner.URL, "http://")
+		return http.DefaultTransport.RoundTrip(r)
+	})}
+	ownerPod(t, cs, "test-ns", "replica-b", "10.0.0.9")
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served = true
+		_, _ = w.Write([]byte(`{"local":true}`))
+	})
+	h := DisplayOwnerMiddleware(localStore, "replica-a", hop, next)
+
+	req := httptest.NewRequest("POST", "/v1/workspaces/vm-a/display/join", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if !forwarded || served {
+		t.Fatalf("join was not routed to the membership owner (forwarded=%v served=%v)", forwarded, served)
+	}
+
+	// Self-owned membership answers locally.
+	forwarded = false
+	localOwnedStore := display.NewStoreWithOwner(cs, "replica-a")
+	if _, err := localOwnedStore.ClaimMembership(ctx, "workspaces", "vm-b"); err != nil {
+		t.Fatalf("self membership claim: %v", err)
+	}
+	req = httptest.NewRequest("POST", "/v1/workspaces/vm-b/display/join", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if forwarded || !served {
+		t.Fatalf("self-owned join was forwarded (forwarded=%v served=%v)", forwarded, served)
+	}
+}
+
 // End to end at the stream route: replica A owns the generation, replica B's
 // route forwards the client to A instead of answering 409.
 func TestSharedDisplayHandleForwardsToOwner(t *testing.T) {

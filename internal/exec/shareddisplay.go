@@ -87,6 +87,31 @@ func ownedElsewhere(err error, instance string) (string, bool) {
 	return "", false
 }
 
+// anyDisplayOwner returns the sibling replica recorded as owning this
+// workspace's display routing markers — membership first (the registry the
+// client joined), then seat/capture (an existing generation) — or "" when no
+// other replica owns it. Self-owned markers mean the local registry is
+// authoritative and the 404 path is correct.
+func (s *SharedDisplay) anyDisplayOwner(ctx context.Context, ns, name string) string {
+	if s.opts.Display == nil {
+		return ""
+	}
+	own := s.instance()
+	for _, ownerOf := range []func(context.Context, string, string) (string, error){
+		s.opts.Display.MembershipOwner,
+		s.opts.Display.SeatOwner,
+		s.opts.Display.CaptureOwner,
+	} {
+		lctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		owner, err := ownerOf(lctx, ns, name)
+		cancel()
+		if err == nil && owner != "" && owner != own {
+			return owner
+		}
+	}
+	return ""
+}
+
 func (s *SharedDisplay) key(ns, name string) string { return ns + "/" + name }
 
 // Handle upgrades the client to a WebSocket and serves it an RFB shared-display
@@ -137,6 +162,17 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 		p, err = s.opts.Sessions.Lookup(namespace, name, participantID)
 		if err != nil {
 			if errors.Is(err, display.ErrParticipantNotFound) {
+				// The registry is in-memory per replica: when the membership
+				// (or generation) is owned by a sibling replica, the client
+				// joined there and this attach must be forwarded, not 404'd.
+				if owner := s.anyDisplayOwner(r.Context(), namespace, name); owner != "" {
+					if s.hop != nil {
+						s.hop.Forward(w, r, owner)
+						return
+					}
+					writeOwnerConflict(w, owner)
+					return
+				}
 				http.Error(w, "display participant not found", http.StatusNotFound)
 			} else {
 				http.Error(w, "failed to resolve display participant", http.StatusServiceUnavailable)
@@ -155,6 +191,17 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 		var err error
 		p, err = s.opts.Sessions.Join(namespace, name, role)
 		if err != nil {
+			// A fresh join claims the membership-owner lease; losing that
+			// claim means the membership lives on a sibling replica and this
+			// attach must be forwarded there.
+			if owner, ok := ownedElsewhere(err, s.instance()); ok {
+				if s.hop != nil {
+					s.hop.Forward(w, r, owner)
+					return
+				}
+				writeOwnerConflict(w, owner)
+				return
+			}
 			s.joinError(w, err)
 			return
 		}

@@ -569,3 +569,80 @@ func TestAcquireReleasesSeatWhenCaptureBusy(t *testing.T) {
 		t.Fatal("seat leaked by a failed Acquire")
 	}
 }
+
+// The membership lease records which replica owns a workspace's in-memory
+// registry, so siblings can route fresh joins/attaches there. It claims,
+// renews, releases and reads owners like the media leases, plus same-owner
+// adopt for restart safety.
+func TestMembershipLeaseLifecycle(t *testing.T) {
+	cs := fake.NewClientset()
+	ctx := context.Background()
+	replicaA := NewStoreWithOwner(cs, "replica-a")
+	replicaB := NewStoreWithOwner(cs, "replica-b")
+
+	id, err := replicaA.ClaimMembership(ctx, "alice", "desktop")
+	if err != nil {
+		t.Fatalf("membership claim: %v", err)
+	}
+	if got, _ := replicaB.MembershipOwner(ctx, "alice", "desktop"); got != "replica-a" {
+		t.Fatalf("MembershipOwner from B: %q", got)
+	}
+	// Another replica's fresh claim names the owner.
+	if _, err := replicaB.ClaimMembership(ctx, "alice", "desktop"); err == nil {
+		t.Fatal("B's membership claim must fail while A holds it")
+	} else {
+		var oe *OwnershipError
+		if !errors.As(err, &oe) || oe.Owner != "replica-a" || oe.Kind != "display-membership" {
+			t.Fatalf("B's membership claim: %v", err)
+		}
+	}
+	// Same-owner re-claim adopts (restart safety): a fresh id, no fencing wait.
+	id2, err := replicaA.ClaimMembership(ctx, "alice", "desktop")
+	if err != nil {
+		t.Fatalf("same-owner adopt: %v", err)
+	}
+	if id2 == id {
+		t.Fatal("adopt returned the old claim id")
+	}
+	// The stale id can no longer renew; the adopted one can.
+	if err := replicaA.RenewMembership(ctx, "alice", "desktop", id); !errors.Is(err, ErrRevoked) {
+		t.Fatalf("stale membership renew: %v", err)
+	}
+	if err := replicaA.RenewMembership(ctx, "alice", "desktop", id2); err != nil {
+		t.Fatalf("adopted membership renew: %v", err)
+	}
+	// Release frees the marker; B can then claim.
+	if err := replicaA.ReleaseMembership(ctx, "alice", "desktop", id2); err != nil {
+		t.Fatalf("membership release: %v", err)
+	}
+	if got, _ := replicaB.MembershipOwner(ctx, "alice", "desktop"); got != "" {
+		t.Fatalf("MembershipOwner after release: %q", got)
+	}
+	if _, err := replicaB.ClaimMembership(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("replica B membership reclaim: %v", err)
+	}
+}
+
+// The membership lease is independent of the seat/capture leases: a routing
+// marker must never gate the console, and the media leases never gate it.
+func TestMembershipLeaseIndependentOfMediaLeases(t *testing.T) {
+	s := NewStore(fake.NewClientset())
+	ctx := context.Background()
+	if _, err := s.ClaimMembership(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("membership claim: %v", err)
+	}
+	if inUse, _ := s.InUse(ctx, "alice", "desktop"); inUse {
+		t.Fatal("membership claim showed up as a held seat")
+	}
+	if got, _ := s.CaptureOwner(ctx, "alice", "desktop"); got != "" {
+		t.Fatalf("membership claim showed up as a capture owner: %q", got)
+	}
+	g, err := Acquire(ctx, s, "alice", "desktop")
+	if err != nil {
+		t.Fatalf("seat+capture acquire under a held membership lease: %v", err)
+	}
+	defer g.Close()
+	if _, err := s.ClaimMembership(ctx, "alice", "desktop"); err != nil {
+		t.Fatalf("membership re-claim under a live generation: %v", err)
+	}
+}

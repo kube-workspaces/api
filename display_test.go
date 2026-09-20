@@ -202,6 +202,25 @@ func asGoaError[T any](t *testing.T, err error) bool {
 	return errors.As(err, &e)
 }
 
+// A membership claim owned by another replica surfaces as the 409 conflict
+// contract (not a bare 500): the middleware forwards the retry to the owner.
+// The owner identity itself rides on the lease and on the ws route's 409
+// JSON; the Goa conflict body carries the fixed design description.
+func TestMapSessionErrorOwnershipConflict(t *testing.T) {
+	err := mapSessionError(&display.OwnershipError{Owner: "replica-b", Kind: "display-membership"})
+	if err == nil {
+		t.Fatal("nil error for an owned membership")
+	}
+	if !asGoaError[gendisplay.Conflict](t, err) {
+		t.Fatalf("OwnershipError should map to conflict, got %T %v", err, err)
+	}
+	// Untyped errors keep falling through unchanged.
+	plain := errors.New("boom")
+	if mapSessionError(plain) != plain {
+		t.Fatal("untyped error was wrapped")
+	}
+}
+
 // While the pilot gate is off, the shared display advertises disabled and
 // refuses every mutation path with a clear error — the rollback posture.
 func TestDisplayPilotGateDisabled(t *testing.T) {
