@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	gendisplay "github.com/kube-workspaces/api/gen/display"
@@ -23,11 +25,36 @@ const displayRoleObserver = "observer"
 type displaysrvc struct {
 	wsClient *k8s.WorkspaceClient
 	sessions *display.Sessions
+	// enabled is the pilot gate: while the shared display ships opt-in
+	// (platform plan E), an API replica advertises enabled=false and refuses
+	// mutations unless it is explicitly switched on.
+	enabled bool
 }
 
 // NewDisplay returns the display service implementation.
-func NewDisplay(wsClient *k8s.WorkspaceClient, sessions *display.Sessions) gendisplay.Service {
-	return &displaysrvc{wsClient: wsClient, sessions: sessions}
+func NewDisplay(wsClient *k8s.WorkspaceClient, sessions *display.Sessions, enabled bool) gendisplay.Service {
+	return &displaysrvc{wsClient: wsClient, sessions: sessions, enabled: enabled}
+}
+
+// SharedDisplayEnabledFromEnv reads the pilot gate: the shared display ships
+// opt-in until the platform plan's acceptance package passes, so it must be
+// explicitly switched on with KW_DISPLAY_SHARED=on. Rolling back is the
+// inverse: unset it and restart — generations end with the process, claims
+// are released, and clients fall back to the legacy exclusive /vnc path.
+func SharedDisplayEnabledFromEnv() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("KW_DISPLAY_SHARED"))) {
+	case "on", "true", "1":
+		return true
+	default:
+		return false
+	}
+}
+
+// errSharedDisplayDisabled is the mutation-path answer while the pilot gate
+// is off: the capability advert says enabled=false, and anything trying to
+// change session state gets a clear 400 instead.
+func errSharedDisplayDisabled() error {
+	return gendisplay.Invalid("shared display sessions are not enabled on this platform")
 }
 
 // authorizeEditor enforces the console gate: an authenticated editor/admin with
@@ -113,7 +140,7 @@ func (s *displaysrvc) Capability(ctx context.Context, p *gendisplay.CapabilityPa
 	if err != nil {
 		return nil, err
 	}
-	if !isVM {
+	if !isVM || !s.enabled {
 		// Back-compat: absence of the capability means legacy exclusive mode.
 		return &gendisplay.DisplayCapability{Enabled: false, Protocol: 1}, nil
 	}
@@ -132,7 +159,7 @@ func (s *displaysrvc) Status(ctx context.Context, p *gendisplay.StatusPayload) (
 	if err != nil {
 		return nil, err
 	}
-	if !isVM {
+	if !isVM || !s.enabled {
 		return &gendisplay.DisplayStatus{Enabled: false, Protocol: 1, Epoch: "", Participants: 0}, nil
 	}
 	st, _ := s.sessions.Status(ns, p.Name)
@@ -161,6 +188,9 @@ func (s *displaysrvc) Join(ctx context.Context, p *gendisplay.JoinDisplayPayload
 	if _, err := s.displayWorkspace(ctx, ns, p.Name, true); err != nil {
 		return nil, err
 	}
+	if !s.enabled {
+		return nil, errSharedDisplayDisabled()
+	}
 	role := p.Role
 	if role == "" {
 		role = displayRoleObserver
@@ -182,6 +212,9 @@ func (s *displaysrvc) Leave(ctx context.Context, p *gendisplay.LeaveDisplayPaylo
 	}
 	if _, err := s.displayWorkspace(ctx, ns, p.Name, true); err != nil {
 		return nil, err
+	}
+	if !s.enabled {
+		return nil, errSharedDisplayDisabled()
 	}
 	if err := s.sessions.Leave(ns, p.Name, p.ParticipantID); err != nil {
 		return nil, mapSessionError(err)
@@ -215,6 +248,9 @@ func (s *displaysrvc) control(ctx context.Context, p *gendisplay.DisplayControlP
 	}
 	if _, err := s.displayWorkspace(ctx, ns, p.Name, true); err != nil {
 		return nil, err
+	}
+	if !s.enabled {
+		return nil, errSharedDisplayDisabled()
 	}
 	var (
 		controller *display.Participant

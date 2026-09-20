@@ -24,11 +24,16 @@ func workspaceCR(ns, name, wsType string) *unstructured.Unstructured {
 
 func newDisplaySvc(t *testing.T) (gendisplay.Service, *display.Sessions) {
 	t.Helper()
+	return newDisplaySvcEnabled(t, true)
+}
+
+func newDisplaySvcEnabled(t *testing.T, enabled bool) (gendisplay.Service, *display.Sessions) {
+	t.Helper()
 	fake := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(),
 		workspaceCR("workspaces", "vm-a", "vm"),
 		workspaceCR("workspaces", "wordpress", "container"),
 	)
-	return NewDisplay(k8s.NewWorkspaceClientFor(fake), display.NewSessions()), display.NewSessions()
+	return NewDisplay(k8s.NewWorkspaceClientFor(fake), display.NewSessions(), enabled), display.NewSessions()
 }
 
 func TestDisplayCapabilityGatesByWorkspaceType(t *testing.T) {
@@ -195,4 +200,52 @@ func asGoaError[T any](t *testing.T, err error) bool {
 	t.Helper()
 	var e T
 	return errors.As(err, &e)
+}
+
+// While the pilot gate is off, the shared display advertises disabled and
+// refuses every mutation path with a clear error — the rollback posture.
+func TestDisplayPilotGateDisabled(t *testing.T) {
+	svc, _ := newDisplaySvcEnabled(t, false)
+	ctx := context.Background()
+
+	cap, err := svc.Capability(ctx, &gendisplay.CapabilityPayload{Namespace: "workspaces", Name: "vm-a"})
+	if err != nil {
+		t.Fatalf("capability: %v", err)
+	}
+	if cap.Enabled {
+		t.Fatal("capability advertises enabled with the pilot gate off")
+	}
+	st, err := svc.Status(ctx, &gendisplay.StatusPayload{Namespace: "workspaces", Name: "vm-a"})
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if st.Enabled {
+		t.Fatal("status advertises enabled with the pilot gate off")
+	}
+	if _, err := svc.Join(ctx, &gendisplay.JoinDisplayPayload{Namespace: "workspaces", Name: "vm-a", Role: "observer"}); !asGoaError[gendisplay.Invalid](t, err) {
+		t.Fatalf("join while disabled should be invalid, got %v", err)
+	}
+	if _, err := svc.Acquire(ctx, &gendisplay.DisplayControlPayload{Namespace: "workspaces", Name: "vm-a", ParticipantID: "p1"}); !asGoaError[gendisplay.Invalid](t, err) {
+		t.Fatalf("acquire while disabled should be invalid, got %v", err)
+	}
+	if _, err := svc.Leave(ctx, &gendisplay.LeaveDisplayPayload{Namespace: "workspaces", Name: "vm-a", ParticipantID: "p1"}); !asGoaError[gendisplay.Invalid](t, err) {
+		t.Fatalf("leave while disabled should be invalid, got %v", err)
+	}
+}
+
+func TestSharedDisplayEnabledFromEnv(t *testing.T) {
+	t.Setenv("KW_DISPLAY_SHARED", "")
+	if SharedDisplayEnabledFromEnv() {
+		t.Fatal("unset KW_DISPLAY_SHARED enables the pilot gate")
+	}
+	for _, v := range []string{"on", "ON", "true", "1"} {
+		t.Setenv("KW_DISPLAY_SHARED", v)
+		if !SharedDisplayEnabledFromEnv() {
+			t.Fatalf("KW_DISPLAY_SHARED=%q does not enable the pilot gate", v)
+		}
+	}
+	t.Setenv("KW_DISPLAY_SHARED", "off")
+	if SharedDisplayEnabledFromEnv() {
+		t.Fatal("KW_DISPLAY_SHARED=off enables the pilot gate")
+	}
 }

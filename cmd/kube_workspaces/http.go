@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	kubeworkspaces "github.com/kube-workspaces/api"
 	gendisplay "github.com/kube-workspaces/api/gen/display"
 	health "github.com/kube-workspaces/api/gen/health"
 	displaysvr "github.com/kube-workspaces/api/gen/http/display/server"
@@ -1521,10 +1522,11 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		replicaID, _ := os.Hostname()
 		displayStore := display.NewStoreWithOwner(execClientset, replicaID)
 		execOpts := &exec.Options{
-			RESTConfig: restConfig,
-			Clientset:  execClientset,
-			Display:    displayStore,
-			Sessions:   displaySessions,
+			RESTConfig:            restConfig,
+			Clientset:             execClientset,
+			Display:               displayStore,
+			Sessions:              displaySessions,
+			SharedDisplayDisabled: !kubeworkspaces.SharedDisplayEnabledFromEnv(),
 		}
 		execHandler := exec.Handler(execOpts)
 		vmConsoleHandler := exec.VMConsoleHandler(execOpts)

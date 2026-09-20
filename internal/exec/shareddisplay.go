@@ -111,6 +111,10 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	if s.opts.SharedDisplayDisabled {
+		http.Error(w, "shared display sessions are not enabled on this platform", http.StatusNotFound)
+		return
+	}
 	if s.opts.Display == nil || s.opts.Sessions == nil {
 		http.Error(w, "display ownership unavailable", http.StatusServiceUnavailable)
 		return

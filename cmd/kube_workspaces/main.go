@@ -153,7 +153,7 @@ func main() {
 		namespacesSvc = kubeworkspaces.NewNamespaces(authProvider)
 		sshkeysSvc = kubeworkspaces.NewSSHKeys(authProvider)
 		healthSvc = kubeworkspaces.NewHealth()
-		displaySvc = kubeworkspaces.NewDisplay(wsClient, displaySessions)
+		displaySvc = kubeworkspaces.NewDisplay(wsClient, displaySessions, kubeworkspaces.SharedDisplayEnabledFromEnv())
 	}
 
 	// Wrap the services in endpoints that can be invoked from other services

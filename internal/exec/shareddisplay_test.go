@@ -424,3 +424,27 @@ func TestSharedDisplayGenerationEndsWhenGuardDies(t *testing.T) {
 		t.Fatalf("console capture not released with the generation: %v", err)
 	}
 }
+
+// While the pilot gate is off the stream route answers 404 before anything
+// else: no join, no lease, no dial.
+func TestSharedDisplayDisabledByPilotGate(t *testing.T) {
+	store := display.NewStore(fake.NewClientset())
+	sd := &SharedDisplay{
+		opts: &Options{Display: store, Sessions: display.NewSessions(), SharedDisplayDisabled: true},
+		live: make(map[string]*sharedRuntime),
+		dial: func(context.Context, string, string) (broker.Stream, error) {
+			t.Fatal("a gated route must not dial")
+			return nil, errors.New("unreachable")
+		},
+	}
+	req := httptest.NewRequest("GET", "/v1/workspaces/vm-a/display/ws", nil)
+	req.SetPathValue("name", "vm-a")
+	rec := httptest.NewRecorder()
+	sd.Handle(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("pilot-gated stream route: got %d want %d", rec.Code, http.StatusNotFound)
+	}
+	if inUse, _ := store.InUse(context.Background(), "workspaces", "vm-a"); inUse {
+		t.Fatal("a gated route claimed the seat")
+	}
+}

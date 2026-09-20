@@ -40,6 +40,10 @@ type Options struct {
 	// display route registers/unregisters participants here; it must be the same
 	// instance backing the Goa display service.
 	Sessions *display.Sessions
+	// SharedDisplayDisabled is the pilot gate for the shared-display stream
+	// route (plan E: opt-in until acceptance passes). When set, the route
+	// answers 404 like an unknown capability.
+	SharedDisplayDisabled bool
 }
 
 // resizeMessage is sent by the client to resize the terminal.
