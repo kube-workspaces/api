@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -80,14 +83,15 @@ func runFixture(c net.Conn, updates <-chan []byte) error {
 	if !bytes.Equal(p, append([]byte{0, 0, 0, 0}, canonicalFormat()...)) {
 		return errors.New("incorrect capture pixel format")
 	}
-	p, err = readBytes(c, 20)
+	p, err = readBytes(c, 24)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(p, []byte{2, 0, 0, 4,
+	if !bytes.Equal(p, []byte{2, 0, 0, 5,
 		0, 0, 0, 0,
 		255, 255, 255, 17,
 		255, 255, 255, 40,
+		255, 255, 254, 253,
 		255, 255, 255, 223}) {
 		return errors.New("incorrect capture encodings")
 	}
@@ -301,7 +305,7 @@ func receiveUpdate(t *testing.T, c net.Conn) []wireRect {
 			if r.w > 0 && r.h > 0 {
 				r.payload = readTest(t, c, r.w*r.h*4+((r.w+7)/8)*r.h)
 			}
-		case -232, -223:
+		case -232, -223, -259:
 		default:
 			t.Fatalf("unexpected rect encoding %d", r.enc)
 		}
@@ -426,6 +430,412 @@ func TestCursorBoundsFailClosed(t *testing.T) {
 	}
 	if s.missing != 2*1 {
 		t.Fatalf("cursor traffic disturbed pixel coverage: missing=%d", s.missing)
+	}
+}
+
+// audioAckUpdate is the console's audio acknowledgment: one zero-size
+// audio pseudo-encoding rect carrying no payload.
+func audioAckUpdate() []byte {
+	return append([]byte{0, 0, 0, 1}, rectangleHeader(0, 0, 0, 0, -259)...)
+}
+
+// audioBatchMessage is one server-side PCM batch: type 255, audio sub,
+// data command, u32 count and payload.
+func audioBatchMessage(pcm []byte) []byte {
+	p := []byte{255, 1, 0, 2, 0, 0, 0, byte(len(pcm))}
+	return append(p, pcm...)
+}
+
+// audioCmd builds one downstream audio session message: enable, disable or
+// set-format with the 6-byte sample format.
+func audioCmd(t *testing.T, c net.Conn, cmd uint16, format []byte) {
+	t.Helper()
+	p := []byte{255, 1, byte(cmd >> 8), byte(cmd)}
+	writeTest(t, c, append(p, format...))
+}
+
+func receiveAudioBatch(t *testing.T, c net.Conn) []byte {
+	t.Helper()
+	if hdr := readTest(t, c, 4); !bytes.Equal(hdr, []byte{255, 1, 0, 2}) {
+		t.Fatalf("not an audio batch: %x", hdr)
+	}
+	n := readTest(t, c, 4)
+	return readTest(t, c, int(binary.BigEndian.Uint32(n)))
+}
+
+// tcpPair returns a loopback TCP pair. Unlike net.Pipe it is full-duplex
+// with kernel buffers, so fixture batch pushes never deadlock against the
+// broker's own writes however they interleave.
+func tcpPair(t *testing.T) (client, server net.Conn) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	accept := make(chan net.Conn, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err == nil {
+			accept <- c
+		}
+	}()
+	client, err = net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case server = <-accept:
+	case <-time.After(3 * time.Second):
+		t.Fatal("loopback accept timed out")
+	}
+	return client, server
+}
+
+// startAudioFixture runs the broker against a console that acknowledges
+// audio, answers the broker's format/enable handshake on the setup channel,
+// and pushes queued PCM batches spontaneously over a full-duplex loopback
+// pair, like a real server would.
+func startAudioFixture(t *testing.T) (*Broker, chan<- []byte, chan<- []byte, <-chan []byte) {
+	t.Helper()
+	client, server := tcpPair(t)
+	b := New(client)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	serverDone := make(chan error, 1)
+	pusherDone := make(chan error, 1)
+	updates := make(chan []byte, 8)
+	audio := make(chan []byte, 8)
+	setup := make(chan []byte, 8)
+	var wmu sync.Mutex
+	writeFixture := func(p []byte) error {
+		wmu.Lock()
+		defer wmu.Unlock()
+		_ = server.SetWriteDeadline(time.Now().Add(3 * time.Second))
+		return writeAll(server, p)
+	}
+	go func() { done <- b.Run(ctx) }()
+	// Batch pusher: queued PCM flows whenever the test queues it, never
+	// waiting for a frame request. Writes serialize with answers below.
+	go func() {
+		defer close(pusherDone)
+		for {
+			select {
+			case batch, ok := <-audio:
+				if !ok {
+					return
+				}
+				if err := writeFixture(batch); err != nil {
+					pusherDone <- err
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	runAudio := func() error {
+		if err := audioHandshake(server, writeFixture); err != nil {
+			return err
+		}
+		for {
+			msg, err := readForwarded(server)
+			if err != nil {
+				return err
+			}
+			switch msg[0] {
+			case 3: // framebuffer request: answer from the queue
+				update, ok := <-updates
+				if !ok {
+					return nil
+				}
+				if err := writeFixture(update); err != nil {
+					return err
+				}
+			case 255: // audio session control: record for assertions
+				select {
+				case setup <- msg:
+				default:
+					return errors.New("setup channel full")
+				}
+			default:
+				return fmt.Errorf("guest mutation leaked upstream: %x", msg)
+			}
+		}
+	}
+	go func() {
+		defer server.Close()
+		defer close(setup)
+		serverDone <- runAudio()
+	}()
+	t.Cleanup(func() {
+		cancel()
+		b.Close()
+		close(updates)
+		close(audio)
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, os.ErrClosed) && !errors.Is(err, syscall.ECONNRESET) {
+				t.Error(err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("capture did not stop")
+		}
+		select {
+		case err := <-serverDone:
+			if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, os.ErrClosed) && !errors.Is(err, syscall.ECONNRESET) {
+				t.Error(err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("fixture did not stop")
+		}
+		select {
+		case err := <-pusherDone:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("pusher did not stop")
+		}
+	})
+	return b, updates, audio, setup
+}
+
+func audioHandshake(c net.Conn, write func([]byte) error) error {
+	if err := write([]byte(protocolVersion)); err != nil {
+		return err
+	}
+	p, err := readBytes(c, 12)
+	if err != nil {
+		return err
+	}
+	if string(p) != protocolVersion {
+		return errors.New("incorrect client protocol")
+	}
+	if err := write([]byte{1, 1}); err != nil {
+		return err
+	}
+	p, err = readBytes(c, 1)
+	if err != nil {
+		return err
+	}
+	if p[0] != 1 {
+		return errors.New("incorrect security selection")
+	}
+	if err := write([]byte{0, 0, 0, 0}); err != nil {
+		return err
+	}
+	p, err = readBytes(c, 1)
+	if err != nil {
+		return err
+	}
+	if p[0] != 1 {
+		return errors.New("upstream must be shared")
+	}
+	header := make([]byte, 24)
+	header[1], header[3] = 2, 1
+	copy(header[4:], canonicalFormat())
+	if err := write(header); err != nil {
+		return err
+	}
+	p, err = readBytes(c, 20)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(p, append([]byte{0, 0, 0, 0}, canonicalFormat()...)) {
+		return errors.New("incorrect capture pixel format")
+	}
+	p, err = readBytes(c, 24)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(p, []byte{2, 0, 0, 5,
+		0, 0, 0, 0,
+		255, 255, 255, 17,
+		255, 255, 255, 40,
+		255, 255, 254, 253,
+		255, 255, 255, 223}) {
+		return errors.New("incorrect capture encodings")
+	}
+	return nil
+}
+
+func awaitAudio(t *testing.T, b *Broker, version uint64) {
+	t.Helper()
+	timeout := time.NewTimer(3 * time.Second)
+	defer timeout.Stop()
+	for {
+		_, ver, _, err := b.currentAudio()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ver >= version {
+			return
+		}
+		select {
+		case <-timeout.C:
+			t.Fatal("no audio published")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// The console's audio acknowledgment drives exactly one upstream session in
+// the broker's fixed PCM format, then streaming enable.
+func TestAudioAckEnablesUpstreamSession(t *testing.T) {
+	b, updates, _, setup := startAudioFixture(t)
+	updates <- rawUpdate(0, 0, 2, 1, make([]byte, 8))
+	awaitVersion(t, b, 1)
+	updates <- audioAckUpdate()
+	var format, enable []byte
+	for range 2 {
+		select {
+		case msg := <-setup:
+			switch len(msg) {
+			case 10:
+				format = msg
+			case 4:
+				enable = msg
+			default:
+				t.Fatalf("unexpected setup message: %x", msg)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("broker did not open the upstream audio session")
+		}
+	}
+	if !bytes.Equal(format, append([]byte{255, 1, 0, 2}, brokerAudioFormat...)) {
+		t.Fatalf("upstream format: %x", format)
+	}
+	if !bytes.Equal(enable, []byte{255, 1, 0, 0}) {
+		t.Fatalf("upstream enable: %x", enable)
+	}
+	live, _, _, err := b.currentAudio()
+	if err != nil || !live {
+		t.Fatalf("upstream audio not live: %v", live)
+	}
+}
+
+// An enabled participant receives each PCM batch verbatim; a participant
+// that never opted in sees only frames.
+func TestAudioBatchRelayedToEnabledParticipant(t *testing.T) {
+	b, updates, audio, _ := startAudioFixture(t)
+	updates <- rawUpdate(0, 0, 2, 1, make([]byte, 8))
+	awaitVersion(t, b, 1)
+	updates <- audioAckUpdate()
+	awaitAudio(t, b, 1)
+	c, _ := observer(t, b)
+	setEncodings(t, c, 0, -259, -223)
+	request(t, c, 2, 1, false)
+	// The acknowledgment rides the pending request ahead of the frame.
+	if rects := receiveUpdate(t, c); len(rects) != 1 || rects[0].enc != -259 {
+		t.Fatalf("audio ack: %+v", rects)
+	}
+	if frame := receiveUpdate(t, c); len(frame) != 1 || frame[0].enc != 0 {
+		t.Fatalf("frame after ack: %+v", frame)
+	}
+	audioCmd(t, c, 2, brokerAudioFormat)
+	audioCmd(t, c, 0, nil)
+	pcm := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+	audio <- audioBatchMessage(pcm)
+	awaitAudio(t, b, 2)
+	if got := receiveAudioBatch(t, c); !bytes.Equal(got, pcm) {
+		t.Fatalf("batch bytes: %x", got)
+	}
+	// A second batch flows without another request: audio pushes.
+	pcm2 := []byte{9, 10, 11, 12}
+	audio <- audioBatchMessage(pcm2)
+	awaitAudio(t, b, 3)
+	if got := receiveAudioBatch(t, c); !bytes.Equal(got, pcm2) {
+		t.Fatalf("second batch: %x", got)
+	}
+
+	plain, _ := observer(t, b)
+	request(t, plain, 2, 1, false)
+	if rects := receiveUpdate(t, plain); len(rects) != 1 || rects[0].enc != 0 {
+		t.Fatalf("non-audio observer got audio traffic: %+v", rects)
+	}
+}
+
+// Disabling stops delivery for that participant while others keep flowing;
+// a mismatched format fails the stream closed instead of serving
+// mislabelled bytes.
+func TestAudioDisableAndFormatMismatch(t *testing.T) {
+	b, updates, audio, _ := startAudioFixture(t)
+	updates <- rawUpdate(0, 0, 2, 1, make([]byte, 8))
+	awaitVersion(t, b, 1)
+	updates <- audioAckUpdate()
+	awaitAudio(t, b, 1)
+	c, _ := observer(t, b)
+	setEncodings(t, c, 0, -259, -223)
+	request(t, c, 2, 1, false)
+	receiveUpdate(t, c) // ack
+	receiveUpdate(t, c) // frame
+	audioCmd(t, c, 2, brokerAudioFormat)
+	audioCmd(t, c, 0, nil)
+	audio <- audioBatchMessage([]byte{1, 2})
+	awaitAudio(t, b, 2)
+	receiveAudioBatch(t, c)
+	audioCmd(t, c, 1, nil)
+	audio <- audioBatchMessage([]byte{3, 4})
+	awaitAudio(t, b, 3)
+	_ = c.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	if _, err := readBytes(c, 1); err == nil {
+		t.Fatal("disabled participant received audio")
+	}
+	_ = c.SetReadDeadline(time.Time{})
+
+	d, done := observer(t, b)
+	setEncodings(t, d, 0, -259, -223)
+	request(t, d, 2, 1, false)
+	receiveUpdate(t, d)                            // ack
+	receiveUpdate(t, d)                            // frame
+	audioCmd(t, d, 2, []byte{3, 2, 0, 0, 187, 68}) // 48000, not the shared 44100
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("format mismatch did not fail the stream")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("format mismatch left the stream running")
+	}
+}
+
+// Malformed upstream audio fails closed before any allocation: bad
+// sub-types/commands and an oversize batch count (with no payload sent)
+// must already error, while a valid batch publishes.
+func TestAudioBatchBoundsFailClosed(t *testing.T) {
+	// audioMessage runs past the already-consumed type byte, so feed
+	// strips it like the capture loop does.
+	feed := func(msg []byte) (*Broker, error) {
+		b := New(nil)
+		client, server := net.Pipe()
+		writeErr := make(chan error, 1)
+		go func() {
+			writeErr <- writeAll(client, msg[1:])
+		}()
+		err := b.audioMessage(server)
+		// Unblock a writer holding bytes the failing read never consumed.
+		client.Close()
+		server.Close()
+		<-writeErr
+		return b, err
+	}
+	for _, msg := range [][]byte{
+		{255, 2, 0, 2},                   // bad subtype
+		{255, 1, 0, 9},                   // bad command
+		{255, 1, 0, 2, 0, 32, 0, 0},      // 2 MiB batch, no payload sent
+		{255, 1, 0, 2, 255, 255, 255, 0}, // near-u32-max batch
+	} {
+		if _, err := feed(msg); err == nil {
+			t.Fatalf("accepted malformed audio message %x", msg)
+		}
+	}
+	b, err := feed(append([]byte{255, 1, 0, 2, 0, 0, 0, 3}, 7, 8, 9))
+	if err != nil {
+		t.Fatalf("valid batch rejected: %v", err)
+	}
+	if live, ver, batch, err := b.currentAudio(); err != nil || live || ver != 1 || !bytes.Equal(batch, []byte{7, 8, 9}) {
+		t.Fatalf("valid batch not published: live=%v ver=%d batch=%x err=%v", live, ver, batch, err)
 	}
 }
 
@@ -717,6 +1127,25 @@ func readForwarded(c net.Conn) ([]byte, error) {
 			return nil, err
 		}
 		return append(msg, rest...), nil
+	case 255: // QEMU audio session control from the broker under test.
+		hdr, err := readBytes(c, 3)
+		if err != nil {
+			return nil, err
+		}
+		if hdr[0] != 1 {
+			return nil, fmt.Errorf("unexpected audio subtype %d", hdr[0])
+		}
+		msg := append(kind, hdr...)
+		if cmd := binary.BigEndian.Uint16(hdr[1:]); cmd == 2 {
+			rest, err := readBytes(c, 6)
+			if err != nil {
+				return nil, err
+			}
+			msg = append(msg, rest...)
+		} else if cmd != 0 && cmd != 1 {
+			return nil, fmt.Errorf("unexpected audio command %d", cmd)
+		}
+		return msg, nil
 	case 251: // SetDesktopSize
 		hdr, err := readBytes(c, 11)
 		if err != nil {
@@ -782,14 +1211,15 @@ func runInputFixture(c net.Conn, updates <-chan []byte, input chan<- []byte) err
 	if !bytes.Equal(p, append([]byte{0, 0, 0, 0}, canonicalFormat()...)) {
 		return errors.New("incorrect capture pixel format")
 	}
-	p, err = readBytes(c, 20)
+	p, err = readBytes(c, 24)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(p, []byte{2, 0, 0, 4,
+	if !bytes.Equal(p, []byte{2, 0, 0, 5,
 		0, 0, 0, 0,
 		255, 255, 255, 17,
 		255, 255, 255, 40,
+		255, 255, 254, 253,
 		255, 255, 255, 223}) {
 		return errors.New("incorrect capture encodings")
 	}

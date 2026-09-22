@@ -80,12 +80,14 @@ func (b *Broker) capture() error {
 	if err = writeAll(c, append([]byte{0, 0, 0, 0}, canonicalFormat()...)); err != nil {
 		return err
 	}
-	// Raw plus DesktopSize and the cursor pseudo-encodings (Cursor, CursorPos):
-	// no stream compression state or unparsed extensions.
-	if err = writeAll(c, []byte{2, 0, 0, 4,
+	// Raw plus DesktopSize, the cursor pseudo-encodings (Cursor, CursorPos)
+	// and the QEMU audio pseudo-encoding: no stream compression state or
+	// unparsed extensions.
+	if err = writeAll(c, []byte{2, 0, 0, 5,
 		0, 0, 0, 0,
 		255, 255, 255, 17,
 		255, 255, 255, 40,
+		255, 255, 254, 253,
 		255, 255, 255, 223}); err != nil {
 		return err
 	}
@@ -113,6 +115,18 @@ func (b *Broker) capture() error {
 				s.cursor = cursorUpdate{}
 				b.publishCursor(up)
 			}
+			if s.audioAck {
+				s.audioAck = false
+				live, _, _, err := b.currentAudio()
+				if err != nil {
+					return err
+				}
+				if !live {
+					if err := b.enableUpstreamAudio(); err != nil {
+						return err
+					}
+				}
+			}
 			if changed && s.missing == 0 {
 				b.publish(s.width, s.height, s.pixels)
 			}
@@ -120,7 +134,13 @@ func (b *Broker) capture() error {
 				return err
 			}
 		case 2: // Bell has no payload; not forwarded in this observer-only spike.
+		case 255: // QEMU extension: only the audio sub-stream is negotiated.
+			if err = b.audioMessage(c); err != nil {
+				return err
+			}
 		case 3:
+			// FramebufferUpdate handled below; payload parsing lives in
+			// update() so coverage and cursor/audio ack stay together.
 			header, err := readBytes(c, 7)
 			if err != nil {
 				return err
@@ -136,6 +156,65 @@ func (b *Broker) capture() error {
 			return fmt.Errorf("unsupported upstream RFB message %d", kind[0])
 		}
 	}
+}
+
+// maxAudioBatch bounds one upstream PCM batch. QEMU bundles small batches;
+// anything larger is a desynced stream, failed closed before allocation.
+const maxAudioBatch = 1 << 20
+
+// audioMessage consumes one QEMU extension server message (type 255). Only
+// the audio sub-stream is negotiated; anything else fails the capture
+// closed. Data batches publish to the shared audio snapshot; begin/end
+// notifications carry no payload.
+func (b *Broker) audioMessage(c Stream) error {
+	hdr, err := readBytes(c, 3) // subtype, command (u16)
+	if err != nil {
+		return err
+	}
+	if hdr[0] != 1 {
+		return fmt.Errorf("unsupported upstream QEMU subtype %d", hdr[0])
+	}
+	switch cmd := binary.BigEndian.Uint16(hdr[1:]); cmd {
+	case 0, 1: // end/begin: capture state unchanged
+		return nil
+	case 2: // data: u32 count + PCM in the negotiated format
+		n, err := readBytes(c, 4)
+		if err != nil {
+			return err
+		}
+		count := int(binary.BigEndian.Uint32(n))
+		if count < 0 || count > maxAudioBatch {
+			return errors.New("upstream audio batch outside bounds")
+		}
+		pcm, err := readBytes(c, count)
+		if err != nil {
+			return err
+		}
+		b.publishAudio(pcm)
+		return nil
+	default:
+		return fmt.Errorf("unsupported upstream audio command %d", cmd)
+	}
+}
+
+// enableUpstreamAudio opens the broker's single shared audio session once
+// the console acknowledged the audio pseudo-encoding. It serializes with
+// capture's own writes and forwarded input. The fixed PCM format keeps every
+// downstream consumer on identical bytes.
+func (b *Broker) enableUpstreamAudio() error {
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+	if err := b.upstream.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		return err
+	}
+	if err := writeAll(b.upstream, append([]byte{255, 1, 0, 2}, brokerAudioFormat...)); err != nil {
+		return err
+	}
+	if err := writeAll(b.upstream, []byte{255, 1, 0, 0}); err != nil {
+		return err
+	}
+	b.setAudioLive()
+	return nil
 }
 
 // requestUpdate asks the upstream for the next frame. It shares the upstream

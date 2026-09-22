@@ -30,7 +30,17 @@ existing `VMVNCHandler` remains the active exclusive bridge.
   cursor-only changes without waiting for frame damage, and to late joiners
   with their first frame. Shapes are size-bounded, coverage-independent and
   converted to each participant's pixel format; a zero-sized shape hides the
-  pointer. Participants that do not negotiate cursor encodings are unaffected.
+  pointer. Controller pointer moves are published as positions (the console
+  does not echo client-driven moves), so observers track the controller;
+  neither producer clobbers the other. Participants that do not negotiate
+  cursor encodings are unaffected.
+- Guest-audio channel: the capture negotiates the QEMU audio pseudo-encoding
+  upstream and opens one shared session in S16 stereo 44100 Hz once the
+  console acknowledges it. Participants that advertise audio get an ack, then
+  select exactly that format and enable/disable their own tap; PCM batches
+  push spontaneously to enabled participants. Anything else (unnegotiated
+  encodings, mismatched formats, oversize batches) fails closed. No playback
+  anywhere yet — the channel is transport, measured in batches and bytes.
 - All key/pointer/clipboard/resize/extended-key mutations from observers are
   consumed and discarded. No control-claim placeholder or input forwarding.
 - At most eight attached observers including stalled handshakes. An observer

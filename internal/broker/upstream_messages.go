@@ -21,6 +21,10 @@ type captureState struct {
 	// pointer, not pixels.
 	cursor      cursorUpdate
 	cursorDirty bool
+	// audioAck marks a console audio acknowledgment for the capture loop:
+	// the zero-size audio pseudo-encoding rect that arms the broker's
+	// single shared upstream audio session.
+	audioAck bool
 }
 
 // cursorState is one remote-pointer snapshot: an optional shape (hotspot,
@@ -105,6 +109,15 @@ func (s *captureState) update(r io.Reader) (bool, error) {
 			}
 			s.cursor.pos = &cursorPos{x: x, y: y}
 			s.cursorDirty = true
+			continue
+		}
+		if encoding == -259 {
+			// Audio acknowledgment: defined as a zero-size rect carrying
+			// no payload. Anything else is malformed, failed closed.
+			if x != 0 || y != 0 || w != 0 || h != 0 {
+				return false, errors.New("invalid upstream audio acknowledgment")
+			}
+			s.audioAck = true
 			continue
 		}
 		if encoding != 0 {

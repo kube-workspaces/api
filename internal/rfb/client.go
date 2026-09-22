@@ -35,6 +35,15 @@ const (
 	MaxEncodings      = 1024
 	MaxClipboardBytes = 1 << 20
 	MaxScreens        = 16
+
+	// QEMU audio client-message layout: type 255, subtype 1, u16 command,
+	// then the command payload. Enable/disable carry none; set-format
+	// carries the 6-byte sample format.
+	QEMUSubAudio       byte   = 1
+	QEMUAudioEnable    uint16 = 0
+	QEMUAudioDisable   uint16 = 1
+	QEMUAudioSetFormat uint16 = 2
+	audioFormatBytes          = 6
 )
 
 var (
@@ -65,9 +74,10 @@ func (m ClientMessage) Bytes() []byte { return bytes.Clone(m.wire) }
 // supply deadlines/cancellation by closing its reader; memory limits do not
 // prevent a peer from stalling midway through a message.
 //
-// Supported extensions are SetDesktopSize and QEMU extended keys. Audio,
-// continuous updates, Fence, extended clipboard and other extensions must not
-// be advertised by the initial broker until explicitly implemented.
+// Supported extensions are SetDesktopSize, QEMU extended keys and the QEMU
+// audio session commands (enable/disable/set-format, terminated by the
+// broker). Continuous updates, Fence, extended clipboard and other extensions
+// must not be advertised by the initial broker until explicitly implemented.
 func ReadClientMessage(r io.Reader) (ClientMessage, error) {
 	var first [1]byte
 	if _, err := io.ReadFull(r, first[:]); err != nil {
@@ -128,10 +138,26 @@ func ReadClientMessage(r io.Reader) (ClientMessage, error) {
 		}
 	case QEMU:
 		if err = read(1); err == nil {
-			if wire[1] != 0 { // subtype 0: down flag, keysym, keycode
+			switch wire[1] {
+			case 0: // subtype 0: down flag, keysym, keycode
+				err = read(10)
+			case QEMUSubAudio:
+				// Audio session control is participant-local: the broker
+				// terminates it (format policy, enable fan-out) rather than
+				// forwarding it to the shared upstream.
+				scope = ParticipantLocal
+				if err = read(2); err == nil {
+					switch cmd := binary.BigEndian.Uint16(wire[2:4]); cmd {
+					case QEMUAudioEnable, QEMUAudioDisable:
+					case QEMUAudioSetFormat:
+						err = read(audioFormatBytes)
+					default:
+						return ClientMessage{}, fmt.Errorf("%w: QEMU audio command %d", ErrUnsupported, cmd)
+					}
+				}
+			default:
 				return ClientMessage{}, fmt.Errorf("%w: QEMU subtype %d", ErrUnsupported, wire[1])
 			}
-			err = read(10)
 		}
 	default:
 		return ClientMessage{}, fmt.Errorf("%w: type %d", ErrUnsupported, first[0])

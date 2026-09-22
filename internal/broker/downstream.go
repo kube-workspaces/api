@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -78,6 +79,13 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 	// received so a re-attached viewer immediately gets the current pointer.
 	wantCursor, wantCursorPos := false, false
 	var lastCursor uint64
+	// Guest audio is opt-in per participant: wantAudio advertises interest,
+	// ackSent tracks the acknowledgment, audioFmtSelected the validated
+	// format, audioOn the enabled session, and lastAudio the latest batch
+	// delivered. Audio pushes spontaneously like the server does — it never
+	// waits for a framebuffer request.
+	wantAudio, audioAckSent, audioFmtSelected, audioOn := false, false, false, false
+	var lastAudio uint64
 	// zrle is negotiated by the participant's own SetEncodings; the encoder
 	// (and its connection-scoped zlib dictionary) is created on first use.
 	zrle := false
@@ -119,6 +127,10 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 		if err != nil {
 			return err
 		}
+		audioLive, audioVer, batch, err := b.currentAudio()
+		if err != nil {
+			return err
+		}
 		// The remote pointer rides the participant's own request flow, but
 		// on its own trigger: a moving mouse over a static desktop must not
 		// wait for a pixel change. Cursor rects precede any pixel rects so
@@ -128,6 +140,22 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 				return err
 			}
 			lastCursor = curVer
+		}
+		// Guest audio pushes spontaneously like the server does: enabled
+		// participants receive each batch without waiting for a framebuffer
+		// request. The acknowledgment answers the encoding advertisement,
+		// so it rides the request flow like cursor rects do.
+		if pending != nil && wantAudio && !audioAckSent && audioLive {
+			if err = sendAudioAck(c); err != nil {
+				return err
+			}
+			audioAckSent = true
+		}
+		if audioOn && batch != nil && audioVer > lastAudio {
+			if err = sendAudioBatch(c, batch); err != nil {
+				return err
+			}
+			lastAudio = audioVer
 		}
 		if pending != nil && f != nil && (!pending.incremental || f.version != lastVersion) {
 			x, y, w, h := pending.x, pending.y, pending.w, pending.h
@@ -177,6 +205,30 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 			}
 			p := m.Bytes()
 			switch p[0] {
+			case rfb.QEMU:
+				// Audio session control only: the parser scopes extended
+				// keys as guest mutations, which never reach this branch.
+				// The broker terminates audio control (single shared
+				// upstream format) instead of forwarding it.
+				if len(p) < 4 || p[1] != 1 {
+					return errors.New("invalid downstream audio message")
+				}
+				switch cmd := binary.BigEndian.Uint16(p[2:4]); cmd {
+				case 0: // enable
+					if !audioFmtSelected {
+						return errors.New("audio enabled before format selection")
+					}
+					audioOn = true
+				case 1: // disable
+					audioOn = false
+				case 2: // set-format: must match the shared upstream session
+					if len(p) != 10 || !bytes.Equal(p[4:10], brokerAudioFormat) {
+						return errors.New("unsupported downstream audio format")
+					}
+					audioFmtSelected = true
+				default:
+					return errors.New("unsupported downstream audio command")
+				}
 			case rfb.SetPixelFormat:
 				var err error
 				format, err = parseFormat(p[4:])
@@ -188,6 +240,7 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 				desktopSize = false
 				zrle = false
 				wantCursor, wantCursorPos = false, false
+				wantAudio, audioAckSent, audioFmtSelected, audioOn = false, false, false, false
 				for i := 4; i < len(p); i += 4 {
 					switch int32(binary.BigEndian.Uint32(p[i:])) {
 					case -223:
@@ -198,6 +251,8 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 						wantCursor = true
 					case -232:
 						wantCursorPos = true
+					case -259:
+						wantAudio = true
 					}
 				}
 				// Raw is mandatory in RFB, even if absent from SetEncodings.
@@ -358,6 +413,35 @@ func sendCursor(c Stream, cur cursorState, format pixelFormat, shape, pos bool) 
 		}
 	}
 	return nil
+}
+
+// sendAudioAck answers a participant's audio advertisement with the
+// payload-free acknowledgment rectangle, once the shared upstream audio
+// session is live. Without a live upstream there is nothing to join, so
+// the ack waits — exactly like a direct console without audio.
+func sendAudioAck(c Stream) error {
+	if err := c.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		return err
+	}
+	return writeAll(c, append([]byte{0, 0, 0, 1}, rectangleHeader(0, 0, 0, 0, -259)...))
+}
+
+// sendAudioBatch relays one upstream PCM batch verbatim: every consumer
+// shares the broker's single audio format, negotiated once upstream.
+func sendAudioBatch(c Stream, pcm []byte) error {
+	if err := c.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		return err
+	}
+	hdr := []byte{255, 1, 0, 2}
+	var n [4]byte
+	binary.BigEndian.PutUint32(n[:], uint32(len(pcm)))
+	if err := writeAll(c, hdr); err != nil {
+		return err
+	}
+	if err := writeAll(c, n[:]); err != nil {
+		return err
+	}
+	return writeAll(c, pcm)
 }
 
 func rectangleHeader(x, y, w, h int, encoding int32) []byte {

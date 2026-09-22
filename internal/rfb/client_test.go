@@ -64,13 +64,38 @@ func TestEveryTruncatedMessageFails(t *testing.T) {
 func TestUnsupportedMessagesFailClosed(t *testing.T) {
 	for _, wire := range [][]byte{
 		{1}, {7}, {150}, {248}, // unknown, continuous updates, Fence
-		{255, 1}, {255, 255}, // QEMU audio and unknown extension
+		{255, 255},                       // unknown QEMU subtype
+		{255, 1, 0, 9},                   // unknown QEMU audio command
 		{6, 0, 0, 0, 255, 255, 255, 255}, // extended clipboard
 		{6, 0, 0, 0, 128, 0, 0, 0},       // signed-length overflow
 	} {
 		message, err := ReadClientMessage(bytes.NewReader(wire))
 		if !errors.Is(err, ErrUnsupported) || message.Scope() != Invalid || len(message.Bytes()) != 0 {
 			t.Fatalf("%x: scope=%v err=%v", wire, message.Scope(), err)
+		}
+	}
+}
+
+// QEMU audio session commands parse as complete ParticipantLocal messages:
+// the broker terminates them (format policy, enable fan-out) instead of
+// forwarding them to the shared upstream.
+func TestQEMUAudioMessages(t *testing.T) {
+	for _, wire := range [][]byte{
+		{255, 1, 0, 0},                      // enable
+		{255, 1, 0, 1},                      // disable
+		{255, 1, 0, 2, 3, 2, 0, 0, 172, 68}, // set-format S16 stereo 44100
+	} {
+		message, err := ReadClientMessage(bytes.NewReader(wire))
+		if err != nil {
+			t.Fatalf("%x: %v", wire, err)
+		}
+		if !bytes.Equal(message.Bytes(), wire) || message.Scope() != ParticipantLocal {
+			t.Fatalf("%x: bytes=%x scope=%v", wire, message.Bytes(), message.Scope())
+		}
+		for end := 1; end < len(wire); end++ {
+			if _, err := ReadClientMessage(bytes.NewReader(wire[:end])); !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Fatalf("%x truncated at %d: err=%v", wire, end, err)
+			}
 		}
 	}
 }

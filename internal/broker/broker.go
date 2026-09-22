@@ -59,8 +59,18 @@ type Broker struct {
 	// cursor.
 	cursor        cursorState
 	cursorVersion uint64
-	changed       chan struct{}
-	peers         map[Stream]struct{}
+	// audio is the guest PCM stream. audioLive goes true once the console
+	// acknowledged the audio pseudo-encoding and the broker enabled its
+	// single upstream audio session; audioBatch is the latest published
+	// batch (shared, never mutated). Batches counter bytes for the live
+	// recording; playback is a client concern.
+	audioLive    bool
+	audioVersion uint64
+	audioBatch   []byte
+	audioBatches uint64
+	audioBytes   uint64
+	changed      chan struct{}
+	peers        map[Stream]struct{}
 	// writeMu serializes upstream writes so a controller's forwarded input can
 	// never interleave with capture's own client messages.
 	writeMu sync.Mutex
@@ -192,6 +202,52 @@ func (b *Broker) currentCursor() (cursorState, uint64, <-chan struct{}, error) {
 		return cursorState{}, 0, nil, ErrClosed
 	}
 	return b.cursor, b.cursorVersion, b.changed, nil
+}
+
+// brokerAudioFormat is the one PCM format the shared upstream audio session
+// uses: signed 16-bit stereo 44100 Hz, the shape every desktop audio device
+// accepts without conversion. Participants selecting anything else are
+// refused fail-closed rather than served mislabelled bytes.
+var brokerAudioFormat = []byte{3, 2, 0, 0, 172, 68}
+
+// setAudioLive marks the upstream audio session established. It bumps the
+// version (waking serve loops so pending downstream acks go out) without
+// publishing a batch.
+func (b *Broker) setAudioLive() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed || b.audioLive {
+		return
+	}
+	b.audioLive = true
+	b.audioVersion++
+	close(b.changed)
+	b.changed = make(chan struct{})
+}
+
+// publishAudio records one upstream PCM batch, waking serve loops. The batch
+// is copied: producers must not retain or mutate it afterwards.
+func (b *Broker) publishAudio(batch []byte) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
+	b.audioBatch = append([]byte(nil), batch...)
+	b.audioVersion++
+	b.audioBatches++
+	b.audioBytes += uint64(len(batch))
+	close(b.changed)
+	b.changed = make(chan struct{})
+}
+
+func (b *Broker) currentAudio() (live bool, version uint64, batch []byte, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return false, 0, nil, ErrClosed
+	}
+	return b.audioLive, b.audioVersion, b.audioBatch, nil
 }
 
 func writeAll(w io.Writer, data []byte) error {
