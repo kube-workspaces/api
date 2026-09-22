@@ -80,11 +80,15 @@ func runFixture(c net.Conn, updates <-chan []byte) error {
 	if !bytes.Equal(p, append([]byte{0, 0, 0, 0}, canonicalFormat()...)) {
 		return errors.New("incorrect capture pixel format")
 	}
-	p, err = readBytes(c, 12)
+	p, err = readBytes(c, 20)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(p, []byte{2, 0, 0, 2, 0, 0, 0, 0, 255, 255, 255, 33}) {
+	if !bytes.Equal(p, []byte{2, 0, 0, 4,
+		0, 0, 0, 0,
+		255, 255, 255, 17,
+		255, 255, 255, 40,
+		255, 255, 255, 223}) {
 		return errors.New("incorrect capture encodings")
 	}
 	for {
@@ -224,6 +228,205 @@ func receive(t *testing.T, c net.Conn, size int) ([]byte, bool) {
 		}
 	}
 	return pixels, resized
+}
+
+func cursorShapeUpdate(hotX, hotY, w, h int, pixels, mask []byte) []byte {
+	p := append([]byte{0, 0, 0, 1}, rectangleHeader(hotX, hotY, w, h, -239)...)
+	p = append(p, pixels...)
+	return append(p, mask...)
+}
+
+func cursorPosUpdate(x, y int) []byte {
+	return append([]byte{0, 0, 0, 1}, rectangleHeader(x, y, 0, 0, -232)...)
+}
+
+func setEncodings(t *testing.T, c net.Conn, encs ...int32) {
+	t.Helper()
+	p := make([]byte, 4+4*len(encs))
+	p[0] = 2
+	binary.BigEndian.PutUint16(p[2:], uint16(len(encs)))
+	for i, e := range encs {
+		binary.BigEndian.PutUint32(p[4+4*i:], uint32(e))
+	}
+	writeTest(t, c, p)
+}
+
+func awaitCursor(t *testing.T, b *Broker, version uint64) cursorState {
+	t.Helper()
+	timeout := time.NewTimer(3 * time.Second)
+	defer timeout.Stop()
+	for {
+		cur, ver, _, err := b.currentCursor()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ver >= version {
+			return cur
+		}
+		select {
+		case <-timeout.C:
+			t.Fatal("no cursor published")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+type wireRect struct {
+	x, y, w, h int
+	enc        int32
+	payload    []byte
+}
+
+func receiveUpdate(t *testing.T, c net.Conn) []wireRect {
+	t.Helper()
+	header := readTest(t, c, 4)
+	if header[0] != 0 {
+		t.Fatal("not a framebuffer update")
+	}
+	count := int(binary.BigEndian.Uint16(header[2:]))
+	var out []wireRect
+	for range count {
+		p := readTest(t, c, 12)
+		r := wireRect{
+			x:   int(binary.BigEndian.Uint16(p)),
+			y:   int(binary.BigEndian.Uint16(p[2:])),
+			w:   int(binary.BigEndian.Uint16(p[4:])),
+			h:   int(binary.BigEndian.Uint16(p[6:])),
+			enc: int32(binary.BigEndian.Uint32(p[8:])),
+		}
+		switch r.enc {
+		case 0:
+			r.payload = readTest(t, c, r.w*r.h*4)
+		case -239:
+			if r.w > 0 && r.h > 0 {
+				r.payload = readTest(t, c, r.w*r.h*4+((r.w+7)/8)*r.h)
+			}
+		case -232, -223:
+		default:
+			t.Fatalf("unexpected rect encoding %d", r.enc)
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// A late joiner that negotiated the cursor pseudo-encodings receives the
+// current shape and position ahead of its first frame; a joiner that did not
+// negotiate them sees only pixel rects.
+func TestCursorShapeAndPosForwardedToNegotiatingParticipant(t *testing.T) {
+	b, updates := startFixture(t)
+	updates <- rawUpdate(0, 0, 2, 1, make([]byte, 8))
+	awaitVersion(t, b, 1)
+	pixels := []byte{1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0, 10, 11, 12, 0}
+	mask := []byte{0b11000000, 0b10100000}
+	updates <- cursorShapeUpdate(1, 0, 2, 2, pixels, mask)
+	updates <- cursorPosUpdate(1, 0)
+	awaitCursor(t, b, 2)
+
+	c, _ := observer(t, b)
+	setEncodings(t, c, 0, -239, -232, -223)
+	request(t, c, 2, 1, false)
+	rects := receiveUpdate(t, c)
+	if len(rects) != 2 || rects[0].enc != -239 || rects[1].enc != -232 {
+		t.Fatalf("cursor update rects: %+v", rects)
+	}
+	shape := rects[0]
+	if shape.x != 1 || shape.y != 0 || shape.w != 2 || shape.h != 2 {
+		t.Fatalf("shape header: %+v", shape)
+	}
+	if !bytes.Equal(shape.payload, append(append([]byte{}, pixels...), mask...)) {
+		t.Fatal("shape payload not forwarded intact")
+	}
+	if pos := rects[1]; pos.x != 1 || pos.y != 0 || pos.w != 0 || pos.h != 0 || len(pos.payload) != 0 {
+		t.Fatalf("pos rect: %+v", pos)
+	}
+	frame := receiveUpdate(t, c)
+	if len(frame) != 1 || frame[0].enc != 0 {
+		t.Fatalf("frame after cursor: %+v", frame)
+	}
+
+	plain, _ := observer(t, b)
+	request(t, plain, 2, 1, false)
+	rects = receiveUpdate(t, plain)
+	if len(rects) != 1 || rects[0].enc != 0 {
+		t.Fatalf("non-negotiating observer got cursor rects: %+v", rects)
+	}
+}
+
+// A cursor-only change on a static desktop is delivered on the next
+// incremental request without any pixel rects.
+func TestCursorOnlyChangeDeliveredWithoutFrameChange(t *testing.T) {
+	b, updates := startFixture(t)
+	updates <- rawUpdate(0, 0, 2, 1, make([]byte, 8))
+	awaitVersion(t, b, 1)
+	c, _ := observer(t, b)
+	setEncodings(t, c, 0, -239, -232, -223)
+	request(t, c, 2, 1, false)
+	if rects := receiveUpdate(t, c); len(rects) != 1 || rects[0].enc != 0 {
+		t.Fatalf("initial frame: %+v", rects)
+	}
+	updates <- cursorPosUpdate(0, 0)
+	awaitCursor(t, b, 1)
+	request(t, c, 2, 1, true)
+	rects := receiveUpdate(t, c)
+	if len(rects) != 1 || rects[0].enc != -232 {
+		t.Fatalf("cursor-only update: %+v", rects)
+	}
+	if rects[0].x != 0 || rects[0].y != 0 {
+		t.Fatalf("cursor pos: %+v", rects[0])
+	}
+}
+
+// A zero-sized shape hides the pointer and carries no payload.
+func TestZeroSizeCursorHidesPointer(t *testing.T) {
+	b, updates := startFixture(t)
+	updates <- rawUpdate(0, 0, 2, 1, make([]byte, 8))
+	awaitVersion(t, b, 1)
+	updates <- cursorShapeUpdate(0, 0, 0, 0, nil, nil)
+	awaitCursor(t, b, 1)
+	c, _ := observer(t, b)
+	setEncodings(t, c, 0, -239, -232, -223)
+	request(t, c, 2, 1, false)
+	rects := receiveUpdate(t, c)
+	if len(rects) != 1 || rects[0].enc != -239 || rects[0].w != 0 || rects[0].h != 0 || len(rects[0].payload) != 0 {
+		t.Fatalf("hide rect: %+v", rects)
+	}
+}
+
+// Malformed cursor rectangles fail the capture closed: oversize shapes,
+// positions outside the framebuffer and truncated payloads are all rejected,
+// and valid cursor traffic does not disturb pixel coverage.
+func TestCursorBoundsFailClosed(t *testing.T) {
+	s := newCapture(2, 1)
+	if _, err := s.update(bytes.NewReader(append([]byte{0, 0, 1}, rectangleHeader(0, 0, 300, 300, -239)...))); err == nil {
+		t.Fatal("accepted oversize cursor shape")
+	}
+	if _, err := s.update(bytes.NewReader(append([]byte{0, 0, 1}, rectangleHeader(9, 9, 0, 0, -232)...))); err == nil {
+		t.Fatal("accepted out-of-frame cursor position")
+	}
+	hdr := append([]byte{0, 0, 1}, rectangleHeader(0, 0, 2, 2, -239)...)
+	if _, err := s.update(bytes.NewReader(append(hdr, 1, 2, 3))); err == nil {
+		t.Fatal("accepted truncated cursor payload")
+	}
+	if s.cursorDirty {
+		t.Fatal("rejected cursor traffic marked the cursor dirty")
+	}
+	px := make([]byte, 16)
+	if _, err := s.update(bytes.NewReader(append(append([]byte{0, 0, 1}, rectangleHeader(1, 0, 2, 2, -239)...), append(px, 0, 0)...))); err != nil {
+		t.Fatalf("valid shape rejected: %v", err)
+	}
+	if !s.cursorDirty || !s.cursor.hasShape || s.cursor.hotX != 1 || s.cursor.w != 2 {
+		t.Fatalf("valid shape not recorded: %+v", s.cursor)
+	}
+	if _, err := s.update(bytes.NewReader(append([]byte{0, 0, 1}, rectangleHeader(1, 0, 0, 0, -232)...))); err != nil {
+		t.Fatalf("valid pos rejected: %v", err)
+	}
+	if !s.cursor.hasPos || s.cursor.posX != 1 {
+		t.Fatalf("valid pos not recorded: %+v", s.cursor)
+	}
+	if s.missing != 2*1 {
+		t.Fatalf("cursor traffic disturbed pixel coverage: missing=%d", s.missing)
+	}
 }
 
 func TestIndependentObserversLateJoinAndResize(t *testing.T) {
@@ -579,11 +782,15 @@ func runInputFixture(c net.Conn, updates <-chan []byte, input chan<- []byte) err
 	if !bytes.Equal(p, append([]byte{0, 0, 0, 0}, canonicalFormat()...)) {
 		return errors.New("incorrect capture pixel format")
 	}
-	p, err = readBytes(c, 12)
+	p, err = readBytes(c, 20)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(p, []byte{2, 0, 0, 2, 0, 0, 0, 0, 255, 255, 255, 33}) {
+	if !bytes.Equal(p, []byte{2, 0, 0, 4,
+		0, 0, 0, 0,
+		255, 255, 255, 17,
+		255, 255, 255, 40,
+		255, 255, 255, 223}) {
 		return errors.New("incorrect capture encodings")
 	}
 	for {

@@ -24,6 +24,13 @@ existing `VMVNCHandler` remains the active exclusive bridge.
   64x64 tiles coded as solid / packed palette (2–16 colours) / plain RLE / raw,
   smallest per tile, one connection-scoped zlib stream sync-flushed per
   rectangle. Raw remains the mandatory fallback.
+- Remote-pointer channel: the capture negotiates the Cursor/CursorPos
+  pseudo-encodings upstream and the broker forwards the latest shape and
+  position to participants that negotiate them — ahead of pixel rects, on
+  cursor-only changes without waiting for frame damage, and to late joiners
+  with their first frame. Shapes are size-bounded, coverage-independent and
+  converted to each participant's pixel format; a zero-sized shape hides the
+  pointer. Participants that do not negotiate cursor encodings are unaffected.
 - All key/pointer/clipboard/resize/extended-key mutations from observers are
   consumed and discarded. No control-claim placeholder or input forwarding.
 - At most eight attached observers including stalled handshakes. An observer

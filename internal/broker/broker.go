@@ -52,8 +52,14 @@ type Broker struct {
 	started  bool
 	closed   bool
 	frame    *frame
-	changed  chan struct{}
-	peers    map[Stream]struct{}
+	// cursor is the latest remote-pointer shape and position. Like the
+	// framebuffer it is an immutable snapshot: publishers replace it whole
+	// under mu and bump cursorVersion, so readers never observe a torn
+	// cursor.
+	cursor        cursorState
+	cursorVersion uint64
+	changed       chan struct{}
+	peers         map[Stream]struct{}
 	// writeMu serializes upstream writes so a controller's forwarded input can
 	// never interleave with capture's own client messages.
 	writeMu sync.Mutex
@@ -128,6 +134,40 @@ func (b *Broker) current() (*frame, <-chan struct{}, error) {
 		return nil, nil, ErrClosed
 	}
 	return b.frame, b.changed, nil
+}
+
+// publishCursor records a new remote-pointer snapshot. It wakes waiters
+// through the same changed channel as publish: serve loops re-check both
+// the frame and the cursor versions.
+func (b *Broker) publishCursor(cur cursorState) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
+	// Copy the pixel/mask slices so the snapshot stays immutable even
+	// though the capture side reuses its scratch buffers.
+	cp := cursorState{
+		hasShape: cur.hasShape,
+		hotX:     cur.hotX, hotY: cur.hotY, w: cur.w, h: cur.h,
+		pixels: append([]byte(nil), cur.pixels...),
+		mask:   append([]byte(nil), cur.mask...),
+		hasPos: cur.hasPos,
+		posX:   cur.posX, posY: cur.posY,
+	}
+	b.cursor = cp
+	b.cursorVersion++
+	close(b.changed)
+	b.changed = make(chan struct{})
+}
+
+func (b *Broker) currentCursor() (cursorState, uint64, <-chan struct{}, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return cursorState{}, 0, nil, ErrClosed
+	}
+	return b.cursor, b.cursorVersion, b.changed, nil
 }
 
 func writeAll(w io.Writer, data []byte) error {

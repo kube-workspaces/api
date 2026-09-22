@@ -80,8 +80,13 @@ func (b *Broker) capture() error {
 	if err = writeAll(c, append([]byte{0, 0, 0, 0}, canonicalFormat()...)); err != nil {
 		return err
 	}
-	// Only Raw and DesktopSize: no stream compression state or unparsed extensions.
-	if err = writeAll(c, []byte{2, 0, 0, 2, 0, 0, 0, 0, 255, 255, 255, 33}); err != nil {
+	// Raw plus DesktopSize and the cursor pseudo-encodings (Cursor, CursorPos):
+	// no stream compression state or unparsed extensions.
+	if err = writeAll(c, []byte{2, 0, 0, 4,
+		0, 0, 0, 0,
+		255, 255, 255, 17,
+		255, 255, 255, 40,
+		255, 255, 255, 223}); err != nil {
 		return err
 	}
 	if err = c.SetDeadline(time.Time{}); err != nil {
@@ -101,6 +106,10 @@ func (b *Broker) capture() error {
 			changed, err := s.update(c)
 			if err != nil {
 				return err
+			}
+			if s.cursorDirty {
+				s.cursorDirty = false
+				b.publishCursor(s.cursor)
 			}
 			if changed && s.missing == 0 {
 				b.publish(s.width, s.height, s.pixels)

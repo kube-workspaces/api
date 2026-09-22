@@ -15,7 +15,30 @@ type captureState struct {
 	pixels        []byte
 	covered       []byte
 	missing       int
+	// cursor accumulates the latest remote-pointer shape and position, and
+	// cursorDirty marks an unpublished change for the capture loop. Cursor
+	// rectangles never touch framebuffer coverage: they describe the
+	// pointer, not pixels.
+	cursor      cursorState
+	cursorDirty bool
 }
+
+// cursorState is one remote-pointer snapshot: an optional shape (hotspot,
+// dimensions, canonical RGBX pixels plus the 1-bit mask) and an optional
+// absolute position. A zero-sized shape hides the pointer.
+type cursorState struct {
+	hasShape   bool
+	hotX, hotY int
+	w, h       int
+	pixels     []byte
+	mask       []byte
+	hasPos     bool
+	posX, posY int
+}
+
+// maxCursorEdge bounds one cursor dimension. Real guest cursors are tens of
+// pixels; anything larger is a malformed or hostile upstream, failed closed.
+const maxCursorEdge = 256
 
 func newCapture(w, h int) *captureState {
 	return &captureState{width: w, height: h, pixels: make([]byte, w*h*4), covered: make([]byte, w*h), missing: w * h}
@@ -49,6 +72,43 @@ func (s *captureState) update(r io.Reader) (bool, error) {
 			resized = true
 			*s = *newCapture(w, h)
 			changed = true
+			continue
+		}
+		if encoding == -239 {
+			// Cursor shape: the header carries the hotspot, then w*h
+			// canonical pixels plus the 1-bit mask. A zero-sized shape
+			// hides the pointer and carries no payload.
+			if w < 0 || h < 0 || w > maxCursorEdge || h > maxCursorEdge || w*h > pixelBudget {
+				return false, errors.New("upstream cursor shape outside bounds")
+			}
+			pixelBudget -= w * h
+			s.cursor.hasShape = true
+			s.cursor.hotX, s.cursor.hotY = x, y
+			s.cursor.w, s.cursor.h = w, h
+			if w == 0 || h == 0 {
+				s.cursor.pixels, s.cursor.mask = nil, nil
+			} else {
+				px, err := readBytes(r, w*h*4)
+				if err != nil {
+					return false, err
+				}
+				mask, err := readBytes(r, ((w+7)/8)*h)
+				if err != nil {
+					return false, err
+				}
+				s.cursor.pixels, s.cursor.mask = px, mask
+			}
+			s.cursorDirty = true
+			continue
+		}
+		if encoding == -232 {
+			// Cursor position: header only, no payload.
+			if x > s.width || y > s.height {
+				return false, errors.New("upstream cursor position outside bounds")
+			}
+			s.cursor.hasPos = true
+			s.cursor.posX, s.cursor.posY = x, y
+			s.cursorDirty = true
 			continue
 		}
 		if encoding != 0 {

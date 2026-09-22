@@ -73,6 +73,11 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 	initial = nil // don't retain an extra generation while serving
 	format, _ := parseFormat(canonicalFormat())
 	desktopSize := false
+	// Cursor shape/position pseudo-encodings are negotiated per participant
+	// like any other encoding; lastCursor tracks what this stream already
+	// received so a re-attached viewer immediately gets the current pointer.
+	wantCursor, wantCursorPos := false, false
+	var lastCursor uint64
 	// zrle is negotiated by the participant's own SetEncodings; the encoder
 	// (and its connection-scoped zlib dictionary) is created on first use.
 	zrle := false
@@ -109,6 +114,20 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 		f, changed, err := b.current()
 		if err != nil {
 			return err
+		}
+		cur, curVer, _, err := b.currentCursor()
+		if err != nil {
+			return err
+		}
+		// The remote pointer rides the participant's own request flow, but
+		// on its own trigger: a moving mouse over a static desktop must not
+		// wait for a pixel change. Cursor rects precede any pixel rects so
+		// a viewer applies the pointer before the frame it belongs to.
+		if pending != nil && curVer > lastCursor && (wantCursor || wantCursorPos) {
+			if err = sendCursor(c, cur, format, wantCursor, wantCursorPos); err != nil {
+				return err
+			}
+			lastCursor = curVer
 		}
 		if pending != nil && f != nil && (!pending.incremental || f.version != lastVersion) {
 			x, y, w, h := pending.x, pending.y, pending.w, pending.h
@@ -168,12 +187,17 @@ func (b *Broker) serve(ctx context.Context, c Stream, controller bool, gate Inpu
 			case rfb.SetEncodings:
 				desktopSize = false
 				zrle = false
+				wantCursor, wantCursorPos = false, false
 				for i := 4; i < len(p); i += 4 {
 					switch int32(binary.BigEndian.Uint32(p[i:])) {
 					case -223:
 						desktopSize = true
 					case 16:
 						zrle = true
+					case -239:
+						wantCursor = true
+					case -232:
+						wantCursorPos = true
 					}
 				}
 				// Raw is mandatory in RFB, even if absent from SetEncodings.
@@ -284,6 +308,52 @@ func sendFrame(c Stream, f *frame, format pixelFormat, x, y, w, h int, resized b
 		start := (yy*f.width + x) * 4
 		format.row(row, f.pixels[start:start+w*4])
 		if err := writeAll(c, row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sendCursor emits the remote-pointer pseudo-rectangles a participant
+// negotiated: the Cursor shape (hotspot header, pixels converted to the
+// participant's own format, 1-bit mask unchanged) and/or the CursorPos
+// position (header only). A zero-sized shape hides the pointer.
+func sendCursor(c Stream, cur cursorState, format pixelFormat, shape, pos bool) error {
+	sendShape := shape && cur.hasShape
+	sendPos := pos && cur.hasPos
+	if !sendShape && !sendPos {
+		return nil
+	}
+	if err := c.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		return err
+	}
+	nrects := 0
+	if sendShape {
+		nrects++
+	}
+	if sendPos {
+		nrects++
+	}
+	if err := writeAll(c, []byte{0, 0, 0, byte(nrects)}); err != nil {
+		return err
+	}
+	if sendShape {
+		if err := writeAll(c, rectangleHeader(cur.hotX, cur.hotY, cur.w, cur.h, -239)); err != nil {
+			return err
+		}
+		if cur.w > 0 && cur.h > 0 {
+			pixels := make([]byte, cur.w*cur.h*format.size)
+			format.row(pixels, cur.pixels)
+			if err := writeAll(c, pixels); err != nil {
+				return err
+			}
+			if err := writeAll(c, cur.mask); err != nil {
+				return err
+			}
+		}
+	}
+	if sendPos {
+		if err := writeAll(c, rectangleHeader(cur.posX, cur.posY, 0, 0, -232)); err != nil {
 			return err
 		}
 	}
