@@ -439,6 +439,19 @@ func audioAckUpdate() []byte {
 	return append([]byte{0, 0, 0, 1}, rectangleHeader(0, 0, 0, 0, -259)...)
 }
 
+// QEMU sizes its audio acknowledgment like the framebuffer: only the
+// absence of a payload is asserted, never the dimensions. A strict
+// zero-size check killed live generations (found live 2026-09-22).
+func TestAudioAckIgnoresDimensions(t *testing.T) {
+	s := newCapture(2, 1)
+	if _, err := s.update(bytes.NewReader(append([]byte{0, 0, 1}, rectangleHeader(0, 0, 2, 1, -259)...))); err != nil {
+		t.Fatalf("framebuffer-sized ack rejected: %v", err)
+	}
+	if !s.audioAck {
+		t.Fatal("ack not recorded")
+	}
+}
+
 // audioBatchMessage is one server-side PCM batch: type 255, audio sub,
 // data command, u32 count and payload.
 func audioBatchMessage(pcm []byte) []byte {

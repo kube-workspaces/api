@@ -112,11 +112,9 @@ func (s *captureState) update(r io.Reader) (bool, error) {
 			continue
 		}
 		if encoding == -259 {
-			// Audio acknowledgment: defined as a zero-size rect carrying
-			// no payload. Anything else is malformed, failed closed.
-			if x != 0 || y != 0 || w != 0 || h != 0 {
-				return false, errors.New("invalid upstream audio acknowledgment")
-			}
+			// Audio acknowledgment: a payload-free rect. QEMU sizes it
+			// like the framebuffer, so only the absence of a payload is
+			// asserted, never the dimensions.
 			s.audioAck = true
 			continue
 		}
