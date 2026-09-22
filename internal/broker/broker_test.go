@@ -415,14 +415,14 @@ func TestCursorBoundsFailClosed(t *testing.T) {
 	if _, err := s.update(bytes.NewReader(append(append([]byte{0, 0, 1}, rectangleHeader(1, 0, 2, 2, -239)...), append(px, 0, 0)...))); err != nil {
 		t.Fatalf("valid shape rejected: %v", err)
 	}
-	if !s.cursorDirty || !s.cursor.hasShape || s.cursor.hotX != 1 || s.cursor.w != 2 {
-		t.Fatalf("valid shape not recorded: %+v", s.cursor)
+	if !s.cursorDirty || s.cursor.shape == nil || s.cursor.shape.hotX != 1 || s.cursor.shape.w != 2 {
+		t.Fatalf("valid shape not recorded: %+v", s.cursor.shape)
 	}
 	if _, err := s.update(bytes.NewReader(append([]byte{0, 0, 1}, rectangleHeader(1, 0, 0, 0, -232)...))); err != nil {
 		t.Fatalf("valid pos rejected: %v", err)
 	}
-	if !s.cursor.hasPos || s.cursor.posX != 1 {
-		t.Fatalf("valid pos not recorded: %+v", s.cursor)
+	if s.cursor.pos == nil || s.cursor.pos.x != 1 {
+		t.Fatalf("valid pos not recorded: %+v", s.cursor.pos)
 	}
 	if s.missing != 2*1 {
 		t.Fatalf("cursor traffic disturbed pixel coverage: missing=%d", s.missing)
@@ -897,6 +897,52 @@ func TestControllerInputIsForwardedThroughGate(t *testing.T) {
 	case <-ctrlDone:
 	case <-time.After(time.Second):
 		t.Fatal("controller did not stop")
+	}
+}
+
+// The console does not echo client-driven pointer moves, so the broker
+// publishes the controller's absolute pointer as the cursor position
+// observers see — preserving any server-sent shape.
+func TestControllerPointerPublishesCursorPos(t *testing.T) {
+	b, updates, input := startInputFixture(t)
+	updates <- rawUpdate(0, 0, 2, 1, make([]byte, 8))
+	awaitVersion(t, b, 1)
+	ctrl, _ := participant(t, b, true, &stubGate{})
+	setEncodings(t, ctrl, 0, -239, -232, -223)
+	request(t, ctrl, 2, 1, false)
+	if rects := receiveUpdate(t, ctrl); len(rects) != 1 || rects[0].enc != 0 {
+		t.Fatalf("initial frame: %+v", rects)
+	}
+	move := []byte{5, 0, 0, 1, 0, 0}
+	writeTest(t, ctrl, move)
+	select {
+	case got := <-input:
+		if !bytes.Equal(got, move) {
+			t.Fatalf("forwarded move: %x", got)
+		}
+	case <-time.After(writeTimeout + time.Second):
+		t.Fatal("controller move was not forwarded")
+	}
+	awaitCursor(t, b, 1)
+	request(t, ctrl, 2, 1, true)
+	rects := receiveUpdate(t, ctrl)
+	if len(rects) != 1 || rects[0].enc != -232 {
+		t.Fatalf("synthesized pos update: %+v", rects)
+	}
+	if rects[0].x != 1 || rects[0].y != 0 {
+		t.Fatalf("synthesized pos: %+v", rects[0])
+	}
+	// A server-sent shape survives alongside the synthesized position.
+	px := make([]byte, 16)
+	updates <- cursorShapeUpdate(0, 0, 2, 2, px, []byte{0, 0})
+	awaitCursor(t, b, 2)
+	request(t, ctrl, 2, 1, true)
+	rects = receiveUpdate(t, ctrl)
+	if len(rects) != 2 || rects[0].enc != -239 || rects[1].enc != -232 {
+		t.Fatalf("shape plus synthesized pos: %+v", rects)
+	}
+	if rects[1].x != 1 || rects[1].y != 0 {
+		t.Fatalf("pos after shape: %+v", rects[1])
 	}
 }
 

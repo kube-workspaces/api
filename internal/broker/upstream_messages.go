@@ -15,11 +15,11 @@ type captureState struct {
 	pixels        []byte
 	covered       []byte
 	missing       int
-	// cursor accumulates the latest remote-pointer shape and position, and
-	// cursorDirty marks an unpublished change for the capture loop. Cursor
+	// cursor accumulates this message's server-sent pointer event, and
+	// cursorDirty marks it unpublished for the capture loop. Cursor
 	// rectangles never touch framebuffer coverage: they describe the
 	// pointer, not pixels.
-	cursor      cursorState
+	cursor      cursorUpdate
 	cursorDirty bool
 }
 
@@ -82,12 +82,8 @@ func (s *captureState) update(r io.Reader) (bool, error) {
 				return false, errors.New("upstream cursor shape outside bounds")
 			}
 			pixelBudget -= w * h
-			s.cursor.hasShape = true
-			s.cursor.hotX, s.cursor.hotY = x, y
-			s.cursor.w, s.cursor.h = w, h
-			if w == 0 || h == 0 {
-				s.cursor.pixels, s.cursor.mask = nil, nil
-			} else {
+			shape := &cursorShape{hotX: x, hotY: y, w: w, h: h}
+			if w > 0 && h > 0 {
 				px, err := readBytes(r, w*h*4)
 				if err != nil {
 					return false, err
@@ -96,8 +92,9 @@ func (s *captureState) update(r io.Reader) (bool, error) {
 				if err != nil {
 					return false, err
 				}
-				s.cursor.pixels, s.cursor.mask = px, mask
+				shape.pixels, shape.mask = px, mask
 			}
+			s.cursor.shape = shape
 			s.cursorDirty = true
 			continue
 		}
@@ -106,8 +103,7 @@ func (s *captureState) update(r io.Reader) (bool, error) {
 			if x > s.width || y > s.height {
 				return false, errors.New("upstream cursor position outside bounds")
 			}
-			s.cursor.hasPos = true
-			s.cursor.posX, s.cursor.posY = x, y
+			s.cursor.pos = &cursorPos{x: x, y: y}
 			s.cursorDirty = true
 			continue
 		}

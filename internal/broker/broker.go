@@ -5,6 +5,7 @@ package broker
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"sync"
@@ -136,26 +137,49 @@ func (b *Broker) current() (*frame, <-chan struct{}, error) {
 	return b.frame, b.changed, nil
 }
 
-// publishCursor records a new remote-pointer snapshot. It wakes waiters
-// through the same changed channel as publish: serve loops re-check both
-// the frame and the cursor versions.
-func (b *Broker) publishCursor(cur cursorState) {
+// cursorUpdate is one remote-pointer event from either producer: the
+// console (shape and/or position rectangles) or the controller's own input
+// stream (synthesized positions). Each half merges independently into the
+// master snapshot, so a server-sent shape never wipes a synthesized
+// position and vice versa.
+type cursorUpdate struct {
+	shape *cursorShape
+	pos   *cursorPos
+}
+
+type cursorShape struct {
+	hotX, hotY int
+	w, h       int
+	pixels     []byte
+	mask       []byte
+}
+
+type cursorPos struct {
+	x, y int
+}
+
+// publishCursor merges one pointer event into the master snapshot. It wakes
+// waiters through the same changed channel as publish: serve loops re-check
+// both the frame and the cursor versions.
+func (b *Broker) publishCursor(up cursorUpdate) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed {
 		return
 	}
-	// Copy the pixel/mask slices so the snapshot stays immutable even
-	// though the capture side reuses its scratch buffers.
-	cp := cursorState{
-		hasShape: cur.hasShape,
-		hotX:     cur.hotX, hotY: cur.hotY, w: cur.w, h: cur.h,
-		pixels: append([]byte(nil), cur.pixels...),
-		mask:   append([]byte(nil), cur.mask...),
-		hasPos: cur.hasPos,
-		posX:   cur.posX, posY: cur.posY,
+	// Deep-copy the pixel/mask slices so the snapshot stays immutable even
+	// though producers reuse their buffers.
+	if up.shape != nil {
+		b.cursor.hasShape = true
+		b.cursor.hotX, b.cursor.hotY = up.shape.hotX, up.shape.hotY
+		b.cursor.w, b.cursor.h = up.shape.w, up.shape.h
+		b.cursor.pixels = append([]byte(nil), up.shape.pixels...)
+		b.cursor.mask = append([]byte(nil), up.shape.mask...)
 	}
-	b.cursor = cp
+	if up.pos != nil {
+		b.cursor.hasPos = true
+		b.cursor.posX, b.cursor.posY = up.pos.x, up.pos.y
+	}
 	b.cursorVersion++
 	close(b.changed)
 	b.changed = make(chan struct{})
@@ -186,6 +210,9 @@ func writeAll(w io.Writer, data []byte) error {
 
 // forward writes a controller's guest-mutating RFB message to the upstream.
 // It shares capture's write lock so upstream messages never interleave.
+// Absolute pointer moves double as the cursor position observers see: the
+// console does not echo client-driven moves, so the broker publishes them
+// itself, preserving any known shape. Observer input never reaches here.
 func (b *Broker) forward(p []byte) error {
 	if b.upstream == nil {
 		return ErrClosed
@@ -195,5 +222,14 @@ func (b *Broker) forward(p []byte) error {
 	if err := b.upstream.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 		return err
 	}
-	return writeAll(b.upstream, p)
+	if err := writeAll(b.upstream, p); err != nil {
+		return err
+	}
+	if len(p) >= 6 && p[0] == 5 {
+		b.publishCursor(cursorUpdate{pos: &cursorPos{
+			x: int(binary.BigEndian.Uint16(p[2:])),
+			y: int(binary.BigEndian.Uint16(p[4:])),
+		}})
+	}
+	return nil
 }

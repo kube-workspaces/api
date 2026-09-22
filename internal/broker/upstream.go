@@ -109,7 +109,9 @@ func (b *Broker) capture() error {
 			}
 			if s.cursorDirty {
 				s.cursorDirty = false
-				b.publishCursor(s.cursor)
+				up := s.cursor
+				s.cursor = cursorUpdate{}
+				b.publishCursor(up)
 			}
 			if changed && s.missing == 0 {
 				b.publish(s.width, s.height, s.pixels)
