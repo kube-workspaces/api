@@ -113,6 +113,10 @@ Additional endpoints (logs, events, pod, proxy, admin) are implemented directly 
 # Regenerate code from design
 go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design
 
+# Sync the embedded OpenAPI copy served at /openapi3.{json,yaml}
+# (go:embed cannot reference ../gen, so this is a manual copy)
+cp gen/http/openapi3.json gen/http/openapi3.yaml cmd/kube_workspaces/
+
 # Build
 go build -o bin/kube-workspaces-api ./cmd/kube_workspaces/
 

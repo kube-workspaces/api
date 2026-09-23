@@ -43,3 +43,39 @@ jobs:
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  openapi-drift:
+    name: OpenAPI spec drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # gen/ is the source of truth (produced by goa gen from design/design.go).
+      # cmd/kube_workspaces/openapi3.{json,yaml} is the embedded copy served at
+      # /openapi3.{json,yaml} (go:embed cannot reference ../gen, so it is a
+      # manual copy). Fail if either step was skipped, so the served spec can
+      # never silently fall behind the design again.
+      - name: Regenerate and check for drift
+        run: |
+          go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design
+          if ! git diff --exit-code -- gen/; then
+            echo "::error::gen/ differs after goa gen — run 'go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design' and commit the result."
+            exit 1
+          fi
+          for ext in json yaml; do
+            if ! diff -q "gen/http/openapi3.$ext" "cmd/kube_workspaces/openapi3.$ext"; then
+              echo "::error::cmd/kube_workspaces/openapi3.$ext differs from gen/http/openapi3.$ext — copy it over and commit."
+              exit 1
+            fi
+          done
+          if [ -e openapi3.json ] || [ -e openapi3.yaml ]; then
+            echo "::error::stale repo-root openapi3 copy has reappeared — it was deleted; gen/ is the source of truth."
+            exit 1
+          fi

@@ -32,6 +32,12 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
 
 - Go version: 1.26 (see `go.mod`)
 - Goa code generation: After editing `design/design.go`, run the goa gen command above. Hand-written implementations go in root `.go` files and `cmd/kube_workspaces/http.go`, NOT in `gen/`.
+- OpenAPI serving: `gen/http/openapi3.{json,yaml}` is the source of truth.
+  `cmd/kube_workspaces/openapi3.{json,yaml}` is the `go:embed`ed copy served at
+  `/openapi3.{json,yaml}` (`go:embed` cannot reference `../gen`, so it is a
+  manual copy — sync it with `cp gen/http/openapi3.{json,yaml} cmd/kube_workspaces/`
+  after every regen). The old repo-root `openapi3.json` was deleted (2026-09-23);
+  do not re-add it. CI (`openapi-drift`) enforces all of this.
 - All API fetch calls from the frontend must include `credentials: "include"` (httpOnly cookies).
 - Admin endpoints check `auth.IsAdmin(r.Context())` which returns true when auth is disabled.
 - Auth is opt-in. When `AuthConfig.spec.enabled` is false, auth middleware is a no-op.
