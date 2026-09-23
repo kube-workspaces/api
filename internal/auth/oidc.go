@@ -48,8 +48,10 @@ type OIDCHandler struct {
 	provider *ConfigProvider
 	// codes holds authorization codes for in-flight RFC 8252 native logins
 	// (see native.go) and for browser-session grants (see browsersession.go).
-	// Empty for ordinary browser logins.
-	codes *nativeCodeStore
+	// Empty for ordinary browser logins. Backed by K8s Secrets when a dynamic
+	// client is available so any replica can redeem (see codestore.go);
+	// in-memory otherwise.
+	codes CodeStore
 	// nativeLimiter rate-limits POST /auth/native/token by client IP.
 	nativeLimiter *ipRateLimiter
 	// browserSessionLimiter rate-limits GET /auth/browser-session by client IP.
@@ -58,9 +60,17 @@ type OIDCHandler struct {
 
 // NewOIDCHandler creates a new OIDC handler.
 func NewOIDCHandler(provider *ConfigProvider) *OIDCHandler {
+	return NewOIDCHandlerWithCodes(provider, newNativeCodeStore(nativeCodeTTL, nativeCodeMaxEntries))
+}
+
+// NewOIDCHandlerWithCodes creates a handler with an explicit code store. The
+// HTTP wiring passes a K8s-backed store when cluster access exists so native
+// and browser-session codes redeem on any replica; tests pass the in-memory
+// store (or a fake-backed K8s store) directly.
+func NewOIDCHandlerWithCodes(provider *ConfigProvider, codes CodeStore) *OIDCHandler {
 	return &OIDCHandler{
 		provider:              provider,
-		codes:                 newNativeCodeStore(nativeCodeTTL, nativeCodeMaxEntries),
+		codes:                 codes,
 		nativeLimiter:         newIPRateLimiter(10, time.Minute),
 		browserSessionLimiter: newIPRateLimiter(10, time.Minute),
 	}

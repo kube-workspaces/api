@@ -53,9 +53,13 @@ type Config struct {
 	// PreviousSigningKey is the signing key that was in use before the current
 	// one. It is retained (for up to one TokenExpiry after a rotation) so that
 	// sessions minted with it keep validating while key rotation settles.
-	PreviousSigningKey      []byte
-	TokenExpiry             time.Duration
-	RefreshExpiry           time.Duration
+	PreviousSigningKey []byte
+	TokenExpiry        time.Duration
+	RefreshExpiry      time.Duration
+	// DeviceTokenExpiry is the lifetime of long-lived revocable device tokens
+	// (spec.session.deviceTokenExpiry, default 90d). Session tokens keep using
+	// TokenExpiry.
+	DeviceTokenExpiry time.Duration
 	PersonalNamespaces      PersonalNamespacesConfig
 	Registration            RegistrationConfig
 	AdminEmails             []string
@@ -108,6 +112,15 @@ func NewConfigProvider(dynamicClient dynamic.Interface) *ConfigProvider {
 		dynamicClient: dynamicClient,
 		cacheDuration: 30 * time.Second,
 	}
+}
+
+// DynamicClient exposes the underlying dynamic client for stores that persist
+// alongside the config (auth codes, device tokens). May be nil in tests.
+func (p *ConfigProvider) DynamicClient() dynamic.Interface {
+	if p == nil {
+		return nil
+	}
+	return p.dynamicClient
 }
 
 // GetConfig returns the current auth configuration, fetching from Kubernetes if needed.
@@ -182,8 +195,9 @@ func (p *ConfigProvider) loadFromCluster(ctx context.Context) (*Config, error) {
 	}
 
 	cfg := &Config{
-		Enabled:     false,
-		TokenExpiry: 24 * time.Hour,
+		Enabled:           false,
+		TokenExpiry:       24 * time.Hour,
+		DeviceTokenExpiry: defaultDeviceTokenExpiry,
 	}
 
 	// Parse spec.enabled
@@ -225,6 +239,15 @@ func (p *ConfigProvider) loadFromCluster(ctx context.Context) (*Config, error) {
 		if d, err := time.ParseDuration(tokenExpiry); err == nil {
 			cfg.TokenExpiry = d
 		}
+	}
+	deviceExpiry, _, _ := unstructured.NestedString(obj.Object, "spec", "session", "deviceTokenExpiry")
+	if deviceExpiry != "" {
+		if d, err := time.ParseDuration(deviceExpiry); err == nil {
+			cfg.DeviceTokenExpiry = d
+		}
+	}
+	if cfg.DeviceTokenExpiry <= 0 {
+		cfg.DeviceTokenExpiry = defaultDeviceTokenExpiry
 	}
 
 	// Parse personal namespaces config

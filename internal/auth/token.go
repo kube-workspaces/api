@@ -46,8 +46,13 @@ type SessionToken struct {
 	DisplayName string   `json:"displayName,omitempty"`
 	Role        string   `json:"role"`
 	Groups      []string `json:"groups,omitempty"`
-	IssuedAt    int64    `json:"iat"`
-	ExpiresAt   int64    `json:"exp"`
+	// Type is empty for short-lived session tokens and "device" for
+	// long-lived revocable device tokens (see device.go).
+	Type string `json:"typ,omitempty"`
+	// JTI is the device id for device tokens; empty otherwise.
+	JTI       string `json:"jti,omitempty"`
+	IssuedAt  int64  `json:"iat"`
+	ExpiresAt int64  `json:"exp"`
 }
 
 // CreateSessionToken creates a signed session token for the given user.
@@ -144,6 +149,19 @@ func validateSessionTokenWithKeys(tokenStr string, signingKeys [][]byte) (*Sessi
 	}
 
 	return &token, nil
+}
+
+// signPayload signs an already-marshalled token payload with the shared HMAC
+// idiom (base64url(json) + "." + base64url(HMAC-SHA256)).
+func signPayload(payload, signingKey []byte) (encodedPayload, signature string, err error) {
+	if len(signingKey) == 0 {
+		return "", "", fmt.Errorf("session signing key is not configured")
+	}
+	encodedPayload = base64.RawURLEncoding.EncodeToString(payload)
+	mac := hmac.New(sha256.New, signingKey)
+	mac.Write([]byte(encodedPayload))
+	signature = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return encodedPayload, signature, nil
 }
 
 // UserFromContext extracts the authenticated user from the request context.

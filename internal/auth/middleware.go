@@ -101,6 +101,12 @@ func validateAndGetUser(ctx context.Context, tokenStr string, cfg *Config, provi
 		return nil, fmt.Errorf("invalid session: %w", err)
 	}
 
+	// Long-lived device tokens are revocable: the backing Secret must exist
+	// and be unrevoked. Session tokens skip this check.
+	if isDeviceRevoked(ctx, provider, token) {
+		return nil, fmt.Errorf("device token has been revoked")
+	}
+
 	// Check if user is in admin emails list (override role)
 	role := token.Role
 	for _, adminEmail := range cfg.AdminEmails {
