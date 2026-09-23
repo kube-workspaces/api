@@ -7,6 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -75,6 +76,13 @@ func getConfig() (*rest.Config, error) {
 // ListWorkspaces lists all workspace CRs in a namespace.
 func (c *WorkspaceClient) ListWorkspaces(ctx context.Context, namespace string) (*unstructured.UnstructuredList, error) {
 	return c.dynamic.Resource(workspaceGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+}
+
+// WatchWorkspaces opens a change stream over workspace CRs in a namespace.
+// An empty namespace watches all namespaces (the `?namespace=_all` case).
+// The caller must Stop the returned watcher; it also ends with ctx.
+func (c *WorkspaceClient) WatchWorkspaces(ctx context.Context, namespace string, opts metav1.ListOptions) (watch.Interface, error) {
+	return c.dynamic.Resource(workspaceGVR).Namespace(namespace).Watch(ctx, opts)
 }
 
 // GetWorkspace gets a workspace CR by name.

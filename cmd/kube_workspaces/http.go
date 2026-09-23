@@ -167,8 +167,10 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 
 	// --- Authentication & Authorization ---
 	authProvider := auth.NewConfigProvider(dynClient)
-	oidcHandler := auth.NewOIDCHandler(authProvider)
+	oidcHandler := auth.NewOIDCHandlerWithCodes(authProvider, auth.NewK8sCodeStore(authProvider.DynamicClient()))
 	localAuthHandler := auth.NewLocalAuthHandler(authProvider)
+	deviceStore := auth.NewDeviceStore(authProvider.DynamicClient())
+	deviceHandler := auth.NewDeviceHandler(authProvider, deviceStore)
 
 	// --- Platform Configuration ---
 	platformProvider := platform.NewConfigProvider(dynClient)
@@ -191,6 +193,12 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	mux.Handle("POST", "/auth/browser-session/grant", oidcHandler.HandleBrowserSessionGrant)
 	mux.Handle("GET", "/auth/browser-session", oidcHandler.HandleBrowserSessionRedeem)
 	mux.Handle("POST", "/auth/change-password", localAuthHandler.HandleChangePassword)
+	// Long-lived revocable device tokens for native clients (see device.go).
+	// Creation/listing/revocation require an existing session; validation
+	// happens in the auth middleware via the backing Secret.
+	mux.Handle("POST", "/auth/device/create", deviceHandler.HandleDeviceCreate)
+	mux.Handle("GET", "/auth/device/list", deviceHandler.HandleDeviceList)
+	mux.Handle("POST", "/auth/device/revoke", deviceHandler.HandleDeviceRevoke)
 
 	// Platform version endpoint (public). Reports this build plus the image each
 	// component is actually running, so "what is deployed here?" can be answered
@@ -1499,6 +1507,52 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		json.NewEncoder(w).Encode(resp)
 	})
 
+	// Live workspace list: GET /v1/workspaces/watch?namespace=<ns|_all>
+	// Server-Sent Events carrying the same payload as GET /v1/workspaces as
+	// `event: snapshot` — immediately, then on every Workspace CR change
+	// (debounced) — so clients stop polling the list. Authentication rides the
+	// existing middleware; per-snapshot namespace filtering is the list
+	// endpoint's own. See watch.go.
+	mux.Handle("GET", "/v1/workspaces/watch", func(w http.ResponseWriter, r *http.Request) {
+		ns := r.URL.Query().Get("namespace")
+		if ns == "" {
+			ns = "workspaces"
+		}
+		payload := &workspaces.ListPayload{Namespace: ns}
+		list := workspaceListSnapshot(workspacesEndpoints.List, payload)
+		watchNs := ns
+		if watchNs == "_all" {
+			watchNs = ""
+		}
+		changes := func(ctx context.Context) (<-chan struct{}, error) {
+			watcher, err := wsClient.WatchWorkspaces(ctx, watchNs, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			ch := make(chan struct{}, 1)
+			go func() {
+				defer watcher.Stop()
+				defer close(ch)
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case _, ok := <-watcher.ResultChan():
+						if !ok {
+							return
+						}
+						select {
+						case ch <- struct{}{}:
+						default:
+						}
+					}
+				}
+			}()
+			return ch, nil
+		}
+		WorkspaceWatchHandler(list, changes, defaultWatchTimings)(w, r)
+	})
+
 	// displayOwnerForward, set when the display store exists, routes Goa
 	// display membership/control calls to the pod owning the workspace's
 	// generation (see the comment where it is assigned).
@@ -1540,6 +1594,8 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		vmConsoleHandler := exec.VMConsoleHandler(execOpts)
 		vmVNCHandler := exec.VMVNCHandler(execOpts)
 		sshHandler := exec.SSHHandler(&exec.SSHOptions{Clientset: execClientset})
+		tcpHandler := exec.TCPHandler(&exec.TCPOptions{Clientset: execClientset})
+		screenshotHandler := exec.ScreenshotHandler(execOpts)
 		sharedDisplay := exec.NewSharedDisplay(execOpts)
 
 		// The display membership registry is in-memory per replica, so the
@@ -1900,6 +1956,74 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				return
 			}
 			wasInUse := exec.TakeOverSSHConsole(ns, name)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
+		})
+
+		// VNC screenshot: GET /v1/workspaces/{name}/vnc/screenshot
+		// One-shot PNG of the VM display for client workspace thumbnails. Holds
+		// only the capture lease so it never evicts the viewer; a held console
+		// answers 409. VM workspaces only, editor/admin.
+		mux.Handle("GET", "/v1/workspaces/{name}/vnc/screenshot", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "VNC is only available for VM workspaces"})
+				return
+			}
+			screenshotHandler(w, r)
+		})
+
+		// Generic TCP bridge: GET /v1/workspaces/{name}/tcp?port=N
+		// Upgrades to WebSocket and bridges raw binary frames to guest TCP port
+		// N via the launcher pod masquerade path. Tier 1 fallback, own-key SSH
+		// and ad-hoc port forwarding. VM workspaces only, editor/admin,
+		// single-session per (workspace, port) with 409 + status/takeover.
+		mux.Handle("GET", "/v1/workspaces/{name}/tcp", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if workspaceType(r.Context(), wsClient, ns, name) != "vm" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "tcp bridge is only available for VM workspaces"})
+				return
+			}
+			tcpHandler(w, r)
+		})
+		mux.Handle("GET", "/v1/workspaces/{name}/tcp/status", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			port, err := exec.ParseTCPPort(r.URL.Query().Get("port"))
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"inUse": exec.TCPInUse(ns, name, port)})
+		})
+		mux.Handle("POST", "/v1/workspaces/{name}/tcp/takeover", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			port, err := exec.ParseTCPPort(r.URL.Query().Get("port"))
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			wasInUse := exec.TakeOverTCP(ns, name, port)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{"ok": true, "wasInUse": wasInUse})
 		})
