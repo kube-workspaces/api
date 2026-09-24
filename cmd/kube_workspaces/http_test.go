@@ -1,10 +1,17 @@
 package main
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/kube-workspaces/api/internal/k8s"
 )
 
 // TestResolveShellLogic tests the core logic of shell resolution by
@@ -12,11 +19,11 @@ import (
 // This tests the logic without requiring real Kubernetes clients.
 func TestResolveShellLogic(t *testing.T) {
 	tests := []struct {
-		name        string
-		wsObj       map[string]interface{} // workspace spec (nil = not found)
-		imageShell  string                 // Image CR defaultShell value
-		imageFound  bool                   // whether image CR exists
-		expected    string
+		name       string
+		wsObj      map[string]interface{} // workspace spec (nil = not found)
+		imageShell string                 // Image CR defaultShell value
+		imageFound bool                   // whether image CR exists
+		expected   string
 	}{
 		{
 			name:     "workspace not found returns empty",
@@ -237,9 +244,9 @@ func readyPod(phase corev1.PodPhase, image string, ready, waitingReason string) 
 
 func TestSummarizeComponent(t *testing.T) {
 	tests := []struct {
-		name   string
-		pods   []corev1.Pod
-		want   componentStatus
+		name string
+		pods []corev1.Pod
+		want componentStatus
 	}{
 		{
 			name: "single running ready pod is healthy",
@@ -322,6 +329,188 @@ func TestSummarizeComponent(t *testing.T) {
 			got := summarizeComponent(tt.pods)
 			if got != tt.want {
 				t.Errorf("summarizeComponent() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// execPod builds a pod fixture for the pod-resolution tests. Labels and the
+// PodReady condition are what resolveWorkspacePod keys off; deleting mirrors
+// a terminating pod that still reports a Running phase.
+func execPod(name string, labels map[string]string, phase corev1.PodPhase, ready, deleting bool) *corev1.Pod {
+	pod := &corev1.Pod{}
+	pod.Name = name
+	pod.Namespace = "test"
+	pod.Labels = labels
+	pod.Status.Phase = phase
+	if ready {
+		pod.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
+	}
+	if deleting {
+		now := metav1.Now()
+		pod.DeletionTimestamp = &now
+	}
+	return pod
+}
+
+func TestResolveWorkspacePod(t *testing.T) {
+	ctx := context.Background()
+	scratchLabels := map[string]string{"workspace-name": "alpha"}
+
+	tests := []struct {
+		name    string
+		wsType  string
+		pods    []*corev1.Pod
+		want    string
+		wantErr string
+	}{
+		{
+			name:   "container uses the statefulset pod name",
+			wsType: "container",
+			want:   "alpha-0",
+		},
+		{
+			name:   "scratch picks the ready pod over a running one",
+			wsType: "scratch",
+			pods: []*corev1.Pod{
+				execPod("alpha-6f8c2", scratchLabels, corev1.PodRunning, false, false),
+				execPod("alpha-77b9d", scratchLabels, corev1.PodRunning, true, false),
+			},
+			want: "alpha-77b9d",
+		},
+		{
+			name:   "scratch picks the ready pod even if listed after",
+			wsType: "scratch",
+			pods: []*corev1.Pod{
+				execPod("alpha-b", scratchLabels, corev1.PodRunning, true, false),
+				execPod("alpha-a", scratchLabels, corev1.PodRunning, false, false),
+			},
+			want: "alpha-b",
+		},
+		{
+			name:   "scratch accepts a running pod before it is ready",
+			wsType: "scratch",
+			pods:   []*corev1.Pod{execPod("alpha-6f8c2", scratchLabels, corev1.PodRunning, false, false)},
+			want:   "alpha-6f8c2",
+		},
+		{
+			name:    "scratch skips a terminating pod",
+			wsType:  "scratch",
+			pods:    []*corev1.Pod{execPod("alpha-6f8c2", scratchLabels, corev1.PodRunning, true, true)},
+			wantErr: "no running pod found",
+		},
+		{
+			name:    "scratch with only pending pods errors",
+			wsType:  "scratch",
+			pods:    []*corev1.Pod{execPod("alpha-6f8c2", scratchLabels, corev1.PodPending, false, false)},
+			wantErr: "no running pod found",
+		},
+		{
+			name:    "scratch with no pods errors",
+			wsType:  "scratch",
+			wantErr: "no running pod found",
+		},
+		{
+			name:   "vm picks the kubevirt launcher pod",
+			wsType: "vm",
+			pods: []*corev1.Pod{execPod("virt-launcher-alpha-xyz", map[string]string{
+				"vm.kubevirt.io/name": "alpha",
+			}, corev1.PodRunning, true, false)},
+			want: "virt-launcher-alpha-xyz",
+		},
+		{
+			name:    "vm without a running pod reports its own error",
+			wsType:  "vm",
+			wantErr: "no running VM pod found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var objs []runtime.Object
+			for _, p := range tt.pods {
+				objs = append(objs, p)
+			}
+			core := k8s.NewCoreClientFor(fake.NewSimpleClientset(objs...))
+			got, err := resolveWorkspacePod(ctx, core, "test", "alpha", tt.wsType)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("resolveWorkspacePod() = %q, want error containing %q", got, tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("resolveWorkspacePod() error = %q, want it to contain %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveWorkspacePod() unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("resolveWorkspacePod() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunningWorkspacePod(t *testing.T) {
+	tests := []struct {
+		name string
+		pods []*corev1.Pod
+		want string
+		ok   bool
+	}{
+		{
+			name: "ready beats merely running regardless of order",
+			pods: []*corev1.Pod{
+				execPod("a", nil, corev1.PodRunning, false, false),
+				execPod("b", nil, corev1.PodRunning, true, false),
+			},
+			want: "b",
+			ok:   true,
+		},
+		{
+			name: "first ready pod wins",
+			pods: []*corev1.Pod{
+				execPod("a", nil, corev1.PodRunning, true, false),
+				execPod("b", nil, corev1.PodRunning, true, false),
+			},
+			want: "a",
+			ok:   true,
+		},
+		{
+			name: "running without readiness is still a candidate",
+			pods: []*corev1.Pod{execPod("a", nil, corev1.PodRunning, false, false)},
+			want: "a",
+			ok:   true,
+		},
+		{
+			name: "terminating ready pod is rejected",
+			pods: []*corev1.Pod{execPod("a", nil, corev1.PodRunning, true, true)},
+			ok:   false,
+		},
+		{
+			name: "pending pod is rejected",
+			pods: []*corev1.Pod{execPod("a", nil, corev1.PodPending, false, false)},
+			ok:   false,
+		},
+		{
+			name: "empty list is rejected",
+			ok:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pods := &corev1.PodList{}
+			for _, p := range tt.pods {
+				pods.Items = append(pods.Items, *p)
+			}
+			got, ok := runningWorkspacePod(pods)
+			if ok != tt.ok {
+				t.Fatalf("runningWorkspacePod() ok = %v, want %v", ok, tt.ok)
+			}
+			if ok && got != tt.want {
+				t.Errorf("runningWorkspacePod() = %q, want %q", got, tt.want)
 			}
 		})
 	}

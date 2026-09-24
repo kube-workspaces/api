@@ -2408,23 +2408,68 @@ func workspaceType(ctx context.Context, wsClient *k8s.WorkspaceClient, namespace
 // Container workspaces use the StatefulSet convention ({name}-0); scratch and
 // vm workspaces resolve their pod by label (Deployment pods have generated
 // names; KubeVirt launcher pods are labelled vm.kubevirt.io/name).
+//
+// The label selectors can name several pods — a deployment mid-rollout, a VM
+// being deleted — so the caller gets a pod that is actually running, a ready
+// one in preference to one that is merely up. Nothing is chosen from a
+// pending, terminating or evicted set.
 func resolveWorkspacePod(ctx context.Context, coreClient *k8s.CoreClient, namespace, name, wsType string) (string, error) {
+	var selector, missing string
 	switch wsType {
 	case "vm":
-		pods, err := coreClient.ListPods(ctx, namespace, "vm.kubevirt.io/name="+name)
-		if err == nil && len(pods.Items) > 0 {
-			return pods.Items[0].Name, nil
-		}
-		return "", fmt.Errorf("no running VM pod found for workspace %s/%s (is the VM started?)", namespace, name)
+		selector = "vm.kubevirt.io/name=" + name
+		missing = fmt.Sprintf("no running VM pod found for workspace %s/%s (is the VM started?)", namespace, name)
 	case "scratch":
-		pods, err := coreClient.ListPods(ctx, namespace, "workspace-name="+name)
-		if err == nil && len(pods.Items) > 0 {
-			return pods.Items[0].Name, nil
-		}
-		return "", fmt.Errorf("no running pod found for workspace %s/%s", namespace, name)
+		selector = "workspace-name=" + name
+		missing = fmt.Sprintf("no running pod found for workspace %s/%s", namespace, name)
 	default:
 		return name + "-0", nil
 	}
+
+	pods, err := coreClient.ListPods(ctx, namespace, selector)
+	if err == nil {
+		if pod, ok := runningWorkspacePod(pods); ok {
+			return pod, nil
+		}
+	}
+	return "", fmt.Errorf("%s", missing)
+}
+
+// runningWorkspacePod picks a live exec target from a pod list: any running
+// pod is a candidate, with a ready one preferred over one that is merely
+// running (a freshly started scratch pod may not have cleared its readiness
+// probe yet, and a pod that has passed it is the safer session to hold).
+func runningWorkspacePod(pods *corev1.PodList) (string, bool) {
+	var running string
+	for i := range pods.Items {
+		p := &pods.Items[i]
+		// A terminating pod keeps its Running phase until its containers
+		// stop; opening a session into one would die the moment the
+		// rollout finishes, so it is not a candidate at all.
+		if p.Status.Phase != corev1.PodRunning || p.DeletionTimestamp != nil {
+			continue
+		}
+		if running == "" {
+			running = p.Name
+		}
+		if podConditionTrue(p, corev1.PodReady) {
+			return p.Name, true
+		}
+	}
+	if running != "" {
+		return running, true
+	}
+	return "", false
+}
+
+// podConditionTrue reports whether p carries the named condition as True.
+func podConditionTrue(p *corev1.Pod, typ corev1.PodConditionType) bool {
+	for i := range p.Status.Conditions {
+		if c := &p.Status.Conditions[i]; c.Type == typ && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveShell determines the shell to use for exec, based on Image CR defaultShell field.

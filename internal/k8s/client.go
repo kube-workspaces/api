@@ -51,6 +51,12 @@ func NewCoreClient() (*CoreClient, error) {
 	return &CoreClient{clientset: clientset}, nil
 }
 
+// NewCoreClientFor wraps an injected clientset, for tests and embedded use,
+// mirroring [NewWorkspaceClientFor].
+func NewCoreClientFor(clientset kubernetes.Interface) *CoreClient {
+	return &CoreClient{clientset: clientset}
+}
+
 // GetPod returns a pod by name and namespace.
 func (c *CoreClient) GetPod(ctx context.Context, namespace, name string) (*corev1.Pod, error) {
 	return c.clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
