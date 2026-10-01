@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	workspacessvr "github.com/kube-workspaces/api/gen/http/workspaces/server"
+	"github.com/kube-workspaces/api/gen/workspaces"
 )
 
 // This file implements a live workspace list over Server-Sent Events:
@@ -175,6 +178,12 @@ func workspaceListSnapshot(listEndpoint func(context.Context, any) (any, error),
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(res)
+		items, ok := res.([]*workspaces.Workspace)
+		if !ok {
+			return nil, fmt.Errorf("unexpected workspace list result %T", res)
+		}
+		// Service result types have no JSON tags. Use the same generated HTTP
+		// body as GET /v1/workspaces, including snake_case nested fields.
+		return json.Marshal(workspacessvr.NewListResponseBody(items))
 	}
 }

@@ -3,14 +3,70 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	workspacessvr "github.com/kube-workspaces/api/gen/http/workspaces/server"
+	"github.com/kube-workspaces/api/gen/workspaces"
+	goahttp "goa.design/goa/v3/http"
 )
+
+func TestWorkspaceSnapshotMatchesListHTTPWireFormat(t *testing.T) {
+	state, started, created := "running", "2026-10-01T00:00:00Z", "2026-09-01T00:00:00Z"
+	items := []*workspaces.Workspace{{
+		Name: "vm", Namespace: "team", Type: "vm", Image: "example/image", ReadyReplicas: 1, CreatedAt: &created,
+		ContainerState: &workspaces.ContainerState{State: &state, StartedAt: &started},
+		Conditions:     []*workspaces.WorkspaceCondition{{LastTransitionTime: &started}},
+		VolumeMounts:   []*workspaces.VolumeMount{{Name: "data", MountPath: "/data"}},
+		RemoteDesktop:  &workspaces.ImageRemoteDesktop{Protocol: "selkies", Port: 8080, Path: "/desktop"},
+	}}
+	for _, result := range [][]*workspaces.Workspace{items, nil} {
+		payload := &workspaces.ListPayload{Namespace: "team"}
+		endpoint := func(_ context.Context, value any) (any, error) {
+			if value != payload {
+				t.Fatal("snapshot lost list filtering payload")
+			}
+			return result, nil
+		}
+		snapshot, err := workspaceListSnapshot(endpoint, payload)(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := httptest.NewRecorder()
+		if err := workspacessvr.EncodeListResponse(goahttp.ResponseEncoder)(context.Background(), rec, result); err != nil {
+			t.Fatal(err)
+		}
+		var got, want any
+		if err := json.Unmarshal(snapshot, &got); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &want); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("SSE differs from GET list transport: snapshot=%s, list=%s", snapshot, rec.Body.Bytes())
+		}
+		if len(result) == 0 && string(snapshot) != "[]" {
+			t.Fatalf("empty snapshot = %s, want []", snapshot)
+		}
+		if len(result) > 0 {
+			var decoded []map[string]any
+			if err := json.Unmarshal(snapshot, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if decoded[0]["name"] != "vm" || decoded[0]["ready_replicas"] != float64(1) || decoded[0]["remote_desktop"] == nil || decoded[0]["container_state"] == nil || decoded[0]["volume_mounts"] == nil {
+				t.Fatal("required snake_case fields missing")
+			}
+		}
+	}
+}
 
 // sseClient reads event frames (terminated by a blank line) from a live SSE
 // stream until ctx ends.
