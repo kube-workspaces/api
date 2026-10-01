@@ -17,7 +17,7 @@ import (
 // image join per tick per client) and 5 s stale by construction. The watch
 // route sends the same payload as `list` as `event: snapshot` — first
 // immediately, then again whenever a Workspace CR changes — so clients render
-// updates in ~100 ms with zero polling.
+// updates after a 250 ms debounce with zero polling while healthy.
 //
 // Shape, deliberately minimal:
 //
@@ -59,7 +59,14 @@ var defaultWatchTimings = watchTimings{
 // handler then polls). Both are re-invoked as needed over the stream's life.
 func WorkspaceWatchHandler(list func(ctx context.Context) ([]byte, error), changes func(ctx context.Context) (<-chan struct{}, error), timings watchTimings) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		// Establish the watch before listing so a change between the initial
+		// snapshot and watch setup cannot be missed.
+		changed, err := changes(ctx)
+		if err != nil {
+			changed = nil
+		}
 
 		// Snapshot before committing to 200: a broken lister must still be
 		// able to answer 500.
@@ -78,93 +85,86 @@ func WorkspaceWatchHandler(list func(ctx context.Context) ([]byte, error), chang
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
 		w.WriteHeader(http.StatusOK)
-		writeSnapshot(w, first)
+		if err := writeSnapshot(w, first); err != nil {
+			return
+		}
 		flusher.Flush()
 
-		changed, err := changes(ctx)
-		polling := err != nil
-		var pollTicker *time.Ticker
-		var pollCh <-chan time.Time
-		if polling {
-			pollTicker = time.NewTicker(timings.poll)
-			defer pollTicker.Stop()
-			pollCh = pollTicker.C
-		}
+		// This ticker stays active to retry failed/closed upstream watches.
+		// It only lists while disconnected; a healthy watch never polls.
+		pollTicker := time.NewTicker(timings.poll)
+		defer pollTicker.Stop()
 		heartbeat := time.NewTicker(timings.heartbeat)
 		defer heartbeat.Stop()
+		var debounce *time.Timer
+		var debounceCh <-chan time.Time
+		defer func() {
+			if debounce != nil {
+				debounce.Stop()
+			}
+		}()
+		snapshot := func() bool {
+			snap, err := list(ctx)
+			if err != nil {
+				// Reconnect through middleware rather than keeping an apparently
+				// healthy stream of stale data after listing/auth failures.
+				return false
+			}
+			if err := writeSnapshot(w, snap); err != nil {
+				return false
+			}
+			flusher.Flush()
+			return true
+		}
 
 		for {
-			if !polling && changed == nil {
-				// The server closed the watch stream; re-establish it, falling
-				// back to polling if it stays down.
-				retry := time.NewTicker(time.Second)
-			retryLoop:
-				for {
-					select {
-					case <-ctx.Done():
-						retry.Stop()
-						return
-					case <-retry.C:
-						if ch, err := changes(ctx); err == nil {
-							changed = ch
-							retry.Stop()
-							break retryLoop
-						}
-					}
-				}
-			}
 			select {
 			case <-ctx.Done():
 				return
 			case <-heartbeat.C:
-				_, _ = fmt.Fprint(w, ": heartbeat\n\n")
+				if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+					return
+				}
 				flusher.Flush()
-			case <-pollCh:
-				if snap, err := list(ctx); err == nil {
-					writeSnapshot(w, snap)
-					flusher.Flush()
+			case <-pollTicker.C:
+				if changed != nil {
+					continue
+				}
+				if ch, err := changes(ctx); err == nil {
+					changed = ch
+				}
+				// Always re-list across a watch gap, even when reconnect succeeds.
+				if !snapshot() {
+					return
 				}
 			case _, ok := <-changed:
 				if !ok {
 					changed = nil
 					continue
 				}
-				// Debounce: a rollout touches several objects at once; one
-				// snapshot per burst, not one per object.
-				timer := time.NewTimer(timings.debounce)
-			debounce:
-				for {
-					select {
-					case _, ok := <-changed:
-						if !ok {
-							changed = nil
-							if !timer.Stop() {
-								<-timer.C
-							}
-							break debounce
-						}
-						if !timer.Stop() {
-							<-timer.C
-						}
-						timer.Reset(timings.debounce)
-					case <-timer.C:
-						break debounce
-					case <-ctx.Done():
-						timer.Stop()
-						return
+				// Coalesce bursts without starving heartbeats or snapshots under
+				// continuous activity: bound the delay from the first event.
+				if debounceCh == nil {
+					if debounce == nil {
+						debounce = time.NewTimer(timings.debounce)
+					} else {
+						debounce.Reset(timings.debounce)
 					}
+					debounceCh = debounce.C
 				}
-				if snap, err := list(ctx); err == nil {
-					writeSnapshot(w, snap)
-					flusher.Flush()
+			case <-debounceCh:
+				debounceCh = nil
+				if !snapshot() {
+					return
 				}
 			}
 		}
 	}
 }
 
-func writeSnapshot(w http.ResponseWriter, payload []byte) {
-	_, _ = fmt.Fprintf(w, "event: snapshot\ndata: %s\n\n", payload)
+func writeSnapshot(w http.ResponseWriter, payload []byte) error {
+	_, err := fmt.Fprintf(w, "event: snapshot\ndata: %s\n\n", payload)
+	return err
 }
 
 // workspaceListSnapshot calls the Goa list endpoint and serialises the result

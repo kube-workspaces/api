@@ -341,7 +341,8 @@ func (h *DeviceHandler) HandleDeviceCreate(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// HandleDeviceList returns the caller's device registrations (admins see all).
+// HandleDeviceList returns the caller's device registrations (admins see all,
+// unless ?scope=own is supplied by the profile UI).
 func (h *DeviceHandler) HandleDeviceList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	cfg, err := h.provider.GetConfig(ctx)
@@ -359,7 +360,7 @@ func (h *DeviceHandler) HandleDeviceList(w http.ResponseWriter, r *http.Request)
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
-	devices, err := h.devices.List(ctx, caller.Email, IsAdmin(r.Context()))
+	devices, err := h.devices.List(ctx, caller.Email, IsAdmin(r.Context()) && r.URL.Query().Get("scope") != "own")
 	if err != nil {
 		http.Error(w, "device tokens are unavailable", http.StatusServiceUnavailable)
 		return

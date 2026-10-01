@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -86,5 +88,48 @@ func TestSessionTokenSkipsRevocationCheck(t *testing.T) {
 	}
 	if isDeviceRevoked(context.Background(), provider, claims) {
 		t.Fatal("session token hit the device revocation check")
+	}
+}
+
+func TestDeviceListOwnScopeFiltersAdministratorProfile(t *testing.T) {
+	dyn := newFakeDynamicClient(t)
+	provider := &ConfigProvider{dynamicClient: dyn, config: testDeviceConfig(), lastFetch: time.Now(), cacheDuration: time.Hour}
+	store := NewDeviceStore(dyn)
+	ctx := context.Background()
+	for _, email := range []string{"admin@example.com", "other@example.com"} {
+		if err := store.Register(ctx, email, "laptop", email, time.Now(), time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	token, err := CreateSessionToken("admin@example.com", "", "admin", nil, []byte(testSigningKey), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, own := range []bool{false, true} {
+		path := "/auth/device/list"
+		if own {
+			path += "?scope=own"
+		}
+		req := httptest.NewRequest("GET", path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req = req.WithContext(ContextWithUser(req.Context(), &UserInfo{Email: "admin@example.com", Role: "admin"}))
+		rec := httptest.NewRecorder()
+		NewDeviceHandler(provider, store).HandleDeviceList(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("list status=%d", rec.Code)
+		}
+		var out struct {
+			Devices []DeviceInfo `json:"devices"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		want := 2
+		if own {
+			want = 1
+		}
+		if len(out.Devices) != want {
+			t.Fatalf("own=%t got %d devices, want %d", own, len(out.Devices), want)
+		}
 	}
 }

@@ -161,3 +161,63 @@ func TestWatchListErrorIs500(t *testing.T) {
 		t.Fatalf("status = %d, want 500", rec.Code)
 	}
 }
+
+func TestWatchRecoversFromInitialFailureAndClosedWatch(t *testing.T) {
+	for _, initialFailure := range []bool{true, false} {
+		t.Run(fmt.Sprintf("initial_failure=%t", initialFailure), func(t *testing.T) {
+			var available atomic.Bool
+			var calls atomic.Int32
+			firstWatch := make(chan struct{})
+			recovered := make(chan struct{}, 1)
+			connected := make(chan struct{}, 1)
+			var attempts atomic.Int32
+			changes := func(context.Context) (<-chan struct{}, error) {
+				attempt := attempts.Add(1)
+				if attempt == 1 && !initialFailure {
+					return firstWatch, nil
+				}
+				if !available.Load() {
+					return nil, fmt.Errorf("unavailable")
+				}
+				connected <- struct{}{}
+				return recovered, nil
+			}
+			list := func(context.Context) ([]byte, error) { return []byte(fmt.Sprintf(`[%d]`, calls.Add(1))), nil }
+			timings := fastTimings()
+			timings.heartbeat = 3 * time.Millisecond
+			c := dialSSE(t, WorkspaceWatchHandler(list, changes, timings))
+			defer c.cancel()
+			c.next(t)
+			if !initialFailure {
+				close(firstWatch)
+			}
+			// Both heartbeat and polling must keep running during an outage.
+			heartbeat, snapshot := false, false
+			for !heartbeat || !snapshot {
+				frame := c.next(t)
+				heartbeat = heartbeat || strings.Contains(frame, ": heartbeat")
+				snapshot = snapshot || strings.Contains(frame, "event: snapshot")
+			}
+			available.Store(true)
+			select {
+			case <-connected:
+			case <-time.After(time.Second):
+				t.Fatal("upstream watch was never re-established")
+			}
+			// Allow the gap snapshot to complete, then prove the fallback stops
+			// listing while the recovered watch is healthy.
+			time.Sleep(timings.poll)
+			before := calls.Load()
+			time.Sleep(2 * timings.poll)
+			if after := calls.Load(); after != before {
+				t.Fatalf("healthy recovered watch still polls: %d -> %d", before, after)
+			}
+			recovered <- struct{}{}
+			for {
+				if strings.Contains(c.next(t), fmt.Sprintf("data: [%d]", before+1)) {
+					break
+				}
+			}
+		})
+	}
+}
