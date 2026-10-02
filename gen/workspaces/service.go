@@ -188,7 +188,8 @@ type Toleration struct {
 	Effect *string
 }
 
-// Volume mount for a workspace container
+// Container PVC mount, or reusable CDI VM data disk with an absolute guest
+// mount path
 type VolumeMount struct {
 	// Volume/PVC name
 	Name string

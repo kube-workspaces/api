@@ -18,6 +18,8 @@ import (
 // CreateRequestBody is the type of the "volumes" service "create" endpoint
 // HTTP request body.
 type CreateRequestBody struct {
+	// Volume type: container PVC or reusable CDI blank VM disk
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
 	// PVC name
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Target namespace
@@ -37,6 +39,8 @@ type ListResponseBody []*VolumeResponse
 // GetResponseBody is the type of the "volumes" service "get" endpoint HTTP
 // response body.
 type GetResponseBody struct {
+	// Volume type: pvc or vm-disk
+	Type string `form:"type" json:"type" xml:"type"`
 	// PVC name
 	Name string `form:"name" json:"name" xml:"name"`
 	// Kubernetes namespace
@@ -58,6 +62,8 @@ type GetResponseBody struct {
 // CreateResponseBody is the type of the "volumes" service "create" endpoint
 // HTTP response body.
 type CreateResponseBody struct {
+	// Volume type: pvc or vm-disk
+	Type string `form:"type" json:"type" xml:"type"`
 	// PVC name
 	Name string `form:"name" json:"name" xml:"name"`
 	// Kubernetes namespace
@@ -78,6 +84,8 @@ type CreateResponseBody struct {
 
 // VolumeResponse is used to define fields on response body types.
 type VolumeResponse struct {
+	// Volume type: pvc or vm-disk
+	Type string `form:"type" json:"type" xml:"type"`
 	// PVC name
 	Name string `form:"name" json:"name" xml:"name"`
 	// Kubernetes namespace
@@ -122,6 +130,12 @@ func NewGetResponseBody(res *volumesviews.VolumeView) *GetResponseBody {
 		Phase:        *res.Phase,
 		CreatedAt:    res.CreatedAt,
 	}
+	if res.Type != nil {
+		body.Type = *res.Type
+	}
+	if res.Type == nil {
+		body.Type = "pvc"
+	}
 	if res.Labels != nil {
 		body.Labels = make(map[string]string, len(res.Labels))
 		for key, val := range res.Labels {
@@ -144,6 +158,12 @@ func NewCreateResponseBody(res *volumesviews.VolumeView) *CreateResponseBody {
 		AccessMode:   res.AccessMode,
 		Phase:        *res.Phase,
 		CreatedAt:    res.CreatedAt,
+	}
+	if res.Type != nil {
+		body.Type = *res.Type
+	}
+	if res.Type == nil {
+		body.Type = "pvc"
 	}
 	if res.Labels != nil {
 		body.Labels = make(map[string]string, len(res.Labels))
@@ -180,11 +200,17 @@ func NewCreateVolumePayload(body *CreateRequestBody) *volumes.CreateVolumePayloa
 		Size:         *body.Size,
 		StorageClass: body.StorageClass,
 	}
+	if body.Type != nil {
+		v.Type = *body.Type
+	}
 	if body.Namespace != nil {
 		v.Namespace = *body.Namespace
 	}
 	if body.AccessMode != nil {
 		v.AccessMode = *body.AccessMode
+	}
+	if body.Type == nil {
+		v.Type = "pvc"
 	}
 	if body.Namespace == nil {
 		v.Namespace = "workspaces"
@@ -212,6 +238,11 @@ func ValidateCreateRequestBody(body *CreateRequestBody) (err error) {
 	}
 	if body.Size == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("size", "body"))
+	}
+	if body.Type != nil {
+		if !(*body.Type == "pvc" || *body.Type == "vm-disk") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.type", *body.Type, []any{"pvc", "vm-disk"}))
+		}
 	}
 	if body.Name != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.name", *body.Name, "^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?$"))

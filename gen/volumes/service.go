@@ -43,6 +43,8 @@ var MethodNames = [4]string{"list", "get", "create", "delete"}
 
 // CreateVolumePayload is the payload type of the volumes service create method.
 type CreateVolumePayload struct {
+	// Volume type: container PVC or reusable CDI blank VM disk
+	Type string
 	// PVC name
 	Name string
 	// Target namespace
@@ -79,6 +81,8 @@ type ListPayload struct {
 
 // Volume is the result type of the volumes service get method.
 type Volume struct {
+	// Volume type: pvc or vm-disk
+	Type string
 	// PVC name
 	Name string
 	// Kubernetes namespace
@@ -176,6 +180,9 @@ func newVolume(vres *volumesviews.VolumeView) *Volume {
 		AccessMode:   vres.AccessMode,
 		CreatedAt:    vres.CreatedAt,
 	}
+	if vres.Type != nil {
+		res.Type = *vres.Type
+	}
 	if vres.Name != nil {
 		res.Name = *vres.Name
 	}
@@ -187,6 +194,9 @@ func newVolume(vres *volumesviews.VolumeView) *Volume {
 	}
 	if vres.Phase != nil {
 		res.Phase = *vres.Phase
+	}
+	if vres.Type == nil {
+		res.Type = "pvc"
 	}
 	if vres.Labels != nil {
 		res.Labels = make(map[string]string, len(vres.Labels))
@@ -203,6 +213,7 @@ func newVolume(vres *volumesviews.VolumeView) *Volume {
 // the "default" view.
 func newVolumeView(res *Volume) *volumesviews.VolumeView {
 	vres := &volumesviews.VolumeView{
+		Type:         &res.Type,
 		Name:         &res.Name,
 		Namespace:    &res.Namespace,
 		Size:         &res.Size,

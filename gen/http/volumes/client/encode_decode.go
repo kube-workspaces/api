@@ -380,6 +380,12 @@ func unmarshalVolumeResponseToVolumesVolume(v *VolumeResponse) *volumes.Volume {
 		Phase:        *v.Phase,
 		CreatedAt:    v.CreatedAt,
 	}
+	if v.Type != nil {
+		res.Type = *v.Type
+	}
+	if v.Type == nil {
+		res.Type = "pvc"
+	}
 	if v.Labels != nil {
 		res.Labels = make(map[string]string, len(v.Labels))
 		for key, val := range v.Labels {

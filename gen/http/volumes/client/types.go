@@ -16,6 +16,8 @@ import (
 // CreateRequestBody is the type of the "volumes" service "create" endpoint
 // HTTP request body.
 type CreateRequestBody struct {
+	// Volume type: container PVC or reusable CDI blank VM disk
+	Type string `form:"type" json:"type" xml:"type"`
 	// PVC name
 	Name string `form:"name" json:"name" xml:"name"`
 	// Target namespace
@@ -31,6 +33,8 @@ type CreateRequestBody struct {
 // GetResponseBody is the type of the "volumes" service "get" endpoint HTTP
 // response body.
 type GetResponseBody struct {
+	// Volume type: pvc or vm-disk
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
 	// PVC name
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Kubernetes namespace
@@ -52,6 +56,8 @@ type GetResponseBody struct {
 // CreateResponseBody is the type of the "volumes" service "create" endpoint
 // HTTP response body.
 type CreateResponseBody struct {
+	// Volume type: pvc or vm-disk
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
 	// PVC name
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Kubernetes namespace
@@ -72,6 +78,8 @@ type CreateResponseBody struct {
 
 // VolumeResponse is used to define fields on response body types.
 type VolumeResponse struct {
+	// Volume type: pvc or vm-disk
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
 	// PVC name
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Kubernetes namespace
@@ -94,11 +102,18 @@ type VolumeResponse struct {
 // "create" endpoint of the "volumes" service.
 func NewCreateRequestBody(p *volumes.CreateVolumePayload) *CreateRequestBody {
 	body := &CreateRequestBody{
+		Type:         p.Type,
 		Name:         p.Name,
 		Namespace:    p.Namespace,
 		Size:         p.Size,
 		StorageClass: p.StorageClass,
 		AccessMode:   p.AccessMode,
+	}
+	{
+		var zero string
+		if body.Type == zero {
+			body.Type = "pvc"
+		}
 	}
 	{
 		var zero string
@@ -134,6 +149,7 @@ func NewListVolumeOK(body []*VolumeResponse) []*volumes.Volume {
 // "OK" response.
 func NewGetVolumeOK(body *GetResponseBody) *volumesviews.VolumeView {
 	v := &volumesviews.VolumeView{
+		Type:         body.Type,
 		Name:         body.Name,
 		Namespace:    body.Namespace,
 		Size:         body.Size,
@@ -165,6 +181,7 @@ func NewGetNotFound(body string) volumes.NotFound {
 // from a HTTP "Created" response.
 func NewCreateVolumeCreated(body *CreateResponseBody) *volumesviews.VolumeView {
 	v := &volumesviews.VolumeView{
+		Type:         body.Type,
 		Name:         body.Name,
 		Namespace:    body.Namespace,
 		Size:         body.Size,
@@ -220,6 +237,11 @@ func ValidateVolumeResponse(body *VolumeResponse) (err error) {
 	}
 	if body.Phase == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("phase", "body"))
+	}
+	if body.Type != nil {
+		if !(*body.Type == "pvc" || *body.Type == "vm-disk") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.type", *body.Type, []any{"pvc", "vm-disk"}))
+		}
 	}
 	return
 }

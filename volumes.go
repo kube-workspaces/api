@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 
 	volumes "github.com/kube-workspaces/api/gen/volumes"
 	"github.com/kube-workspaces/api/internal/auth"
@@ -17,8 +19,9 @@ import (
 
 // volumes service implementation.
 type volumessrvc struct {
-	clientset    *kubernetes.Clientset
-	authProvider *auth.ConfigProvider
+	clientset     kubernetes.Interface
+	dynamicClient dynamic.Interface
+	authProvider  *auth.ConfigProvider
 }
 
 // NewVolumes returns the volumes service implementation.
@@ -27,7 +30,11 @@ func NewVolumes(authProvider *auth.ConfigProvider) volumes.Service {
 	if err != nil {
 		panic(fmt.Sprintf("failed to create kubernetes client: %v", err))
 	}
-	return &volumessrvc{clientset: clientset, authProvider: authProvider}
+	dynamicClient, err := k8s.NewDynamicClient()
+	if err != nil {
+		panic(fmt.Sprintf("failed to create dynamic client: %v", err))
+	}
+	return &volumessrvc{clientset: clientset, dynamicClient: dynamicClient, authProvider: authProvider}
 }
 
 // List all volumes
@@ -54,6 +61,9 @@ func (s *volumessrvc) List(ctx context.Context, p *volumes.ListPayload) (res []*
 	res = make([]*volumes.Volume, 0, len(pvcList.Items))
 	for i := range pvcList.Items {
 		res = append(res, pvcToVolume(&pvcList.Items[i]))
+	}
+	if err := s.appendVMDisks(ctx, ns, &res); err != nil {
+		return nil, err
 	}
 
 	// Filter if listing across all namespaces
@@ -96,6 +106,11 @@ func (s *volumessrvc) isNamespaceRestricted(ctx context.Context) bool {
 func (s *volumessrvc) Get(ctx context.Context, p *volumes.GetPayload) (res *volumes.Volume, err error) {
 	log.Printf(ctx, "volumes.get name=%s namespace=%s", p.Name, p.Namespace)
 
+	if disk, err := s.getVMDataVolume(ctx, p.Namespace, p.Name); err != nil {
+		return nil, err
+	} else if disk != nil {
+		return dataVolumeToVolume(disk), nil
+	}
 	pvc, err := s.clientset.CoreV1().PersistentVolumeClaims(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, volumes.NotFound(fmt.Sprintf("volume %s/%s not found", p.Namespace, p.Name))
@@ -109,6 +124,18 @@ const managedLabel = "kubeworkspaces.io/managed"
 // Create a new volume (PVC) — idempotent: returns existing PVC if already present.
 func (s *volumessrvc) Create(ctx context.Context, p *volumes.CreateVolumePayload) (res *volumes.Volume, err error) {
 	log.Printf(ctx, "volumes.create name=%s namespace=%s size=%s", p.Name, p.Namespace, p.Size)
+	quantity, parseErr := resource.ParseQuantity(p.Size)
+	if parseErr != nil || quantity.Sign() <= 0 {
+		return nil, fmt.Errorf("storage size must be a positive Kubernetes quantity")
+	}
+	if p.Type == "vm-disk" {
+		return s.createVMDataVolume(ctx, p)
+	}
+	if disk, err := s.getVMDataVolume(ctx, p.Namespace, p.Name); err != nil {
+		return nil, err
+	} else if disk != nil {
+		return nil, fmt.Errorf("volume is a VM disk; its type cannot be changed")
+	}
 
 	accessMode := corev1.ReadWriteOnce
 	switch p.AccessMode {
@@ -127,6 +154,9 @@ func (s *volumessrvc) Create(ctx context.Context, p *volumes.CreateVolumePayload
 
 	// Check if PVC already exists
 	existing, getErr := s.clientset.CoreV1().PersistentVolumeClaims(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
+	if getErr != nil && !apierrors.IsNotFound(getErr) {
+		return nil, getErr
+	}
 	if getErr == nil {
 		// PVC exists — update it
 		existing.Spec.AccessModes = []corev1.PersistentVolumeAccessMode{accessMode}
@@ -179,6 +209,14 @@ func (s *volumessrvc) Create(ctx context.Context, p *volumes.CreateVolumePayload
 // Delete a volume
 func (s *volumessrvc) Delete(ctx context.Context, p *volumes.DeletePayload) (err error) {
 	log.Printf(ctx, "volumes.delete name=%s namespace=%s", p.Name, p.Namespace)
+	if disk, err := s.getVMDataVolume(ctx, p.Namespace, p.Name); err != nil {
+		return err
+	} else if disk != nil {
+		if err := s.ensureVMDataVolumeUnused(ctx, disk); err != nil {
+			return err
+		}
+		return s.dynamicClient.Resource(vmDataVolumeGVR).Namespace(p.Namespace).Delete(ctx, p.Name, metav1.DeleteOptions{})
+	}
 
 	err = s.clientset.CoreV1().PersistentVolumeClaims(p.Namespace).Delete(ctx, p.Name, metav1.DeleteOptions{})
 	if err != nil {
@@ -189,6 +227,7 @@ func (s *volumessrvc) Delete(ctx context.Context, p *volumes.DeletePayload) (err
 
 func pvcToVolume(pvc *corev1.PersistentVolumeClaim) *volumes.Volume {
 	vol := &volumes.Volume{
+		Type:      "pvc",
 		Name:      pvc.Name,
 		Namespace: pvc.Namespace,
 		Phase:     string(pvc.Status.Phase),

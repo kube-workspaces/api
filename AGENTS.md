@@ -46,7 +46,9 @@ go run goa.design/goa/v3/cmd/goa gen github.com/kube-workspaces/api/design  # re
 - VM access WebSocket bridges live in `internal/exec/` (`vmconsole.go` serial
   console, `vmvnc.go` noVNC display, `ssh.go` web SSH). All are single-session
   via `session.go`'s registry with an idle TTL and take-over consent; `PUT`
-  workspace updates and `shared_memory`/`volume_mounts` are rejected for `vm`.
+  workspace updates and `shared_memory` are rejected for `vm`. VM `volume_mounts`
+  reference reusable CDI data disks created through Volumes with `type: vm-disk`;
+  container PVCs cannot be converted. Guest mounting requires cloud-init.
 - Shared display sessions (`display.go` service, routes
   `/v1/workspaces/{name}/display*`): Goa-designed membership/control API backed
   by `internal/display.Sessions`. The stream route

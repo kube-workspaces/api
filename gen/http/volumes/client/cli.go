@@ -59,7 +59,10 @@ func BuildCreatePayload(volumesCreateBody string) (*volumes.CreateVolumePayload,
 	{
 		err = json.Unmarshal([]byte(volumesCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"access_mode\": \"ReadWriteOnce\",\n      \"name\": \"my-data\",\n      \"namespace\": \"workspaces\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"access_mode\": \"ReadWriteOnce\",\n      \"name\": \"my-data\",\n      \"namespace\": \"workspaces\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\",\n      \"type\": \"vm-disk\"\n   }'")
+		}
+		if !(body.Type == "pvc" || body.Type == "vm-disk") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.type", body.Type, []any{"pvc", "vm-disk"}))
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.name", body.Name, "^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?$"))
 		if utf8.RuneCountInString(body.Name) > 63 {
@@ -73,11 +76,18 @@ func BuildCreatePayload(volumesCreateBody string) (*volumes.CreateVolumePayload,
 		}
 	}
 	v := &volumes.CreateVolumePayload{
+		Type:         body.Type,
 		Name:         body.Name,
 		Namespace:    body.Namespace,
 		Size:         body.Size,
 		StorageClass: body.StorageClass,
 		AccessMode:   body.AccessMode,
+	}
+	{
+		var zero string
+		if v.Type == zero {
+			v.Type = "pvc"
+		}
 	}
 	{
 		var zero string

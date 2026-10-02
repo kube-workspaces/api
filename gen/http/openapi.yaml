@@ -933,7 +933,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Ea nobis doloremque maiores molestias totam.
+                    example: Et libero perspiciatis suscipit aliquam non.
                 description: Default command-line args
                 example:
                     - --bind-addr
@@ -1041,7 +1041,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Aut repudiandae neque.
+                    example: Ea nobis doloremque maiores molestias totam.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -1050,7 +1050,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Et libero perspiciatis suscipit aliquam non.
+                    example: Quia rerum dolores perspiciatis qui.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -1093,8 +1093,8 @@ definitions:
                 inject_base_tag: false
                 needs_noop_sw: false
                 preserve_path_prefix: false
-                rewrite_host_absolute_paths: true
-                tls_insecure: false
+                rewrite_host_absolute_paths: false
+                tls_insecure: true
                 websocket_paths:
                     - /websockify
             remote_desktop:
@@ -1174,12 +1174,21 @@ definitions:
                 type: string
                 description: Storage class name
                 example: standard
+            type:
+                type: string
+                description: 'Volume type: container PVC or reusable CDI blank VM disk'
+                default: pvc
+                example: pvc
+                enum:
+                    - pvc
+                    - vm-disk
         example:
             access_mode: ReadWriteOnce
             name: my-data
             namespace: workspaces
             size: 10Gi
             storage_class: standard
+            type: vm-disk
         required:
             - name
             - size
@@ -1224,7 +1233,7 @@ definitions:
                     nvidia.com/gpu: "true"
                 additionalProperties:
                     type: string
-                    example: Consequatur et aut.
+                    example: Alias dolore.
             shared_memory:
                 type: boolean
                 description: Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML frameworks)
@@ -1340,7 +1349,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Quia rerum dolores perspiciatis qui.
+                    example: Aut iste saepe quo.
                 description: Supported display transports
                 example:
                     - rfb
@@ -1413,7 +1422,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Saepe quo ut deleniti iusto.
+                    example: Voluptas minima illum aut sed.
                 description: Supported display transports
                 example:
                     - rfb
@@ -1554,10 +1563,6 @@ definitions:
                       id: 97f8c4b7a2
                       joined_at: "2026-09-19T15:04:05Z"
                       role: observer
-                    - connected: false
-                      id: 97f8c4b7a2
-                      joined_at: "2026-09-19T15:04:05Z"
-                      role: observer
             participants:
                 type: integer
                 description: Total participant count (controller + observers)
@@ -1578,14 +1583,6 @@ definitions:
             enabled: false
             epoch: 8f2ac64d91
             observers:
-                - connected: false
-                  id: 97f8c4b7a2
-                  joined_at: "2026-09-19T15:04:05Z"
-                  role: observer
-                - connected: false
-                  id: 97f8c4b7a2
-                  joined_at: "2026-09-19T15:04:05Z"
-                  role: observer
                 - connected: false
                   id: 97f8c4b7a2
                   joined_at: "2026-09-19T15:04:05Z"
@@ -1648,7 +1645,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Assumenda illum quia cum.
+                    example: Dicta tenetur perferendis eius.
                 description: Default command-line args injected at workspace creation
                 example:
                     - --bind-addr
@@ -1755,7 +1752,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Ipsum delectus.
+                    example: Alias delectus quam repudiandae.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -1764,7 +1761,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Voluptatem inventore dicta tenetur perferendis eius.
+                    example: Aut repudiandae neque.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -1806,7 +1803,7 @@ definitions:
             proxy_config:
                 custom_request_headers:
                     x-tenant: workspaces
-                inject_base_tag: true
+                inject_base_tag: false
                 needs_noop_sw: false
                 preserve_path_prefix: false
                 rewrite_host_absolute_paths: true
@@ -1893,22 +1890,22 @@ definitions:
                     x-tenant: workspaces
                 additionalProperties:
                     type: string
-                    example: Repudiandae molestiae voluptatem nemo dolor id nemo.
+                    example: Repudiandae facere provident.
             inject_base_tag:
                 type: boolean
                 description: Inject a <base> tag into HTML responses to fix relative path resolution
                 default: false
-                example: false
+                example: true
             needs_noop_sw:
                 type: boolean
                 description: Serve a no-op ServiceWorker at /sw.js to prevent SW registration errors
                 default: false
-                example: false
+                example: true
             preserve_path_prefix:
                 type: boolean
                 description: Forward the full proxy path (including /proxy/{ns}/{name}) to the pod instead of stripping it. Required for apps configured with a base URL matching the proxy prefix.
                 default: false
-                example: true
+                example: false
             rewrite_host_absolute_paths:
                 type: boolean
                 description: Rewrite requests with absolute paths that escape the proxy prefix using Referer header
@@ -1918,12 +1915,12 @@ definitions:
                 type: boolean
                 description: Connect to backend over HTTPS with skip-verify (for self-signed certs)
                 default: false
-                example: true
+                example: false
             websocket_paths:
                 type: array
                 items:
                     type: string
-                    example: Corporis saepe magni alias.
+                    example: Nemo dolor id nemo sint dignissimos.
                 description: Paths that use WebSocket (informational, all paths support WS transparently)
                 example:
                     - /websockify
@@ -1931,9 +1928,9 @@ definitions:
         example:
             custom_request_headers:
                 x-tenant: workspaces
-            inject_base_tag: true
+            inject_base_tag: false
             needs_noop_sw: true
-            preserve_path_prefix: true
+            preserve_path_prefix: false
             rewrite_host_absolute_paths: true
             tls_insecure: false
             websocket_paths:
@@ -1974,12 +1971,12 @@ definitions:
                 type: string
                 description: Initial role. Defaults to observer
                 default: observer
-                example: observer
+                example: controller
                 enum:
                     - observer
                     - controller
         example:
-            role: observer
+            role: controller
     Namespace:
         title: 'Mediatype identifier: application/vnd.namespace+json; view=default'
         type: object
@@ -2135,7 +2132,7 @@ definitions:
                     workspace: my-workspace
                 additionalProperties:
                     type: string
-                    example: Alias dolore.
+                    example: Delectus quas.
             name:
                 type: string
                 description: PVC name
@@ -2156,6 +2153,14 @@ definitions:
                 type: string
                 description: Storage class
                 example: standard
+            type:
+                type: string
+                description: 'Volume type: pvc or vm-disk'
+                default: pvc
+                example: vm-disk
+                enum:
+                    - pvc
+                    - vm-disk
         description: A persistent volume claim (default view)
         example:
             access_mode: ReadWriteOnce
@@ -2168,6 +2173,7 @@ definitions:
             phase: Bound
             size: 10Gi
             storage_class: standard
+            type: pvc
         required:
             - name
             - namespace
@@ -2185,7 +2191,7 @@ definitions:
                 type: string
                 description: Volume/PVC name
                 example: my-workspace-data
-        description: Volume mount for a workspace container
+        description: Container PVC mount, or reusable CDI VM data disk with an absolute guest mount path
         example:
             mount_path: /home/coder
             name: my-workspace-data

@@ -246,6 +246,7 @@ func EncodeDeleteError(encoder func(context.Context, http.ResponseWriter) goahtt
 // from a value of type *volumes.Volume.
 func marshalVolumesVolumeToVolumeResponse(v *volumes.Volume) *VolumeResponse {
 	res := &VolumeResponse{
+		Type:         v.Type,
 		Name:         v.Name,
 		Namespace:    v.Namespace,
 		Size:         v.Size,
@@ -253,6 +254,12 @@ func marshalVolumesVolumeToVolumeResponse(v *volumes.Volume) *VolumeResponse {
 		AccessMode:   v.AccessMode,
 		Phase:        v.Phase,
 		CreatedAt:    v.CreatedAt,
+	}
+	{
+		var zero string
+		if res.Type == zero {
+			res.Type = "pvc"
+		}
 	}
 	if v.Labels != nil {
 		res.Labels = make(map[string]string, len(v.Labels))

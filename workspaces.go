@@ -155,13 +155,23 @@ func (s *workspacessrvc) Create(ctx context.Context, p *workspaces.CreateWorkspa
 	// via KubeVirt. GPU requests are supported: the requested GPU resource is
 	// recorded in the container limits and the controller translates it into a
 	// KubeVirt `domain.devices.gpus` passthrough device. shared_memory and
-	// volume mounts are still container-only and rejected for VMs.
+	// volume mounts reference reusable CDI disks for VMs.
 	if p.Type == "vm" {
 		if p.SharedMemory {
 			return nil, workspaces.Invalid("shared_memory is not supported for vm workspaces")
 		}
 		if len(p.VolumeMounts) > 0 {
-			return nil, workspaces.Invalid("volume_mounts are not supported for vm workspaces yet")
+			img, err := s.imageClient.GetImageByRef(ctx, p.Container.Image)
+			if err != nil || img == nil || (!img.DefaultCloudInit && img.DefaultUserData == "") {
+				return nil, workspaces.Invalid("VM disk mounting requires an Image with cloud-init support")
+			}
+			client, err := k8s.NewDynamicClient()
+			if err != nil {
+				return nil, err
+			}
+			if err := validateVMVolumeMounts(ctx, client, p); err != nil {
+				return nil, workspaces.Invalid(err.Error())
+			}
 		}
 	}
 

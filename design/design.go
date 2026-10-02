@@ -87,7 +87,7 @@ var EnvVar = Type("EnvVar", func() {
 })
 
 var VolumeMount = Type("VolumeMount", func() {
-	Description("Volume mount for a workspace container")
+	Description("Container PVC mount, or reusable CDI VM data disk with an absolute guest mount path")
 	Attribute("name", String, "Volume/PVC name", func() {
 		Example("my-workspace-data")
 	})
@@ -237,6 +237,10 @@ var WorkspaceResult = ResultType("application/vnd.workspace+json", func() {
 
 var CreateVolumePayload = Type("CreateVolumePayload", func() {
 	Description("Payload for creating a new PVC")
+	Attribute("type", String, "Volume type: container PVC or reusable CDI blank VM disk", func() {
+		Enum("pvc", "vm-disk")
+		Default("pvc")
+	})
 	Attribute("name", String, "PVC name", func() {
 		Pattern(`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`)
 		MaxLength(63)
@@ -264,6 +268,10 @@ var CreateVolumePayload = Type("CreateVolumePayload", func() {
 var VolumeResult = ResultType("application/vnd.volume+json", func() {
 	Description("A persistent volume claim")
 	Attributes(func() {
+		Attribute("type", String, "Volume type: pvc or vm-disk", func() {
+			Enum("pvc", "vm-disk")
+			Default("pvc")
+		})
 		Attribute("name", String, "PVC name", func() {
 			Example("my-workspace-data")
 		})

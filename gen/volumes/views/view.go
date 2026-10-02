@@ -21,6 +21,8 @@ type Volume struct {
 
 // VolumeView is a type that runs validations on a projected type.
 type VolumeView struct {
+	// Volume type: pvc or vm-disk
+	Type *string
 	// PVC name
 	Name *string
 	// Kubernetes namespace
@@ -43,6 +45,7 @@ var (
 	// VolumeMap is a map indexing the attribute names of Volume by view name.
 	VolumeMap = map[string][]string{
 		"default": {
+			"type",
 			"name",
 			"namespace",
 			"size",
@@ -80,6 +83,11 @@ func ValidateVolumeView(result *VolumeView) (err error) {
 	}
 	if result.Phase == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("phase", "result"))
+	}
+	if result.Type != nil {
+		if !(*result.Type == "pvc" || *result.Type == "vm-disk") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.type", *result.Type, []any{"pvc", "vm-disk"}))
+		}
 	}
 	return
 }
