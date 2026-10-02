@@ -23,7 +23,19 @@ const vmDiskOwnerAnnotation = "kubeworkspaces.io/disk-workspace"
 var vmDataVolumeGVR = schema.GroupVersionResource{Group: "cdi.kubevirt.io", Version: "v1beta1", Resource: "datavolumes"}
 var vmWorkspaceGVR = schema.GroupVersionResource{Group: "kubeworkspaces.io", Version: "v1alpha1", Resource: "workspaces"}
 
+func (s *volumessrvc) vmDataVolumesInstalled(ctx context.Context) (bool, error) {
+	crds := schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
+	_, err := s.dynamicClient.Resource(crds).Get(ctx, "datavolumes.cdi.kubevirt.io", metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (s *volumessrvc) getVMDataVolume(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error) {
+	if installed, err := s.vmDataVolumesInstalled(ctx); err != nil || !installed {
+		return nil, err
+	}
 	disk, err := s.dynamicClient.Resource(vmDataVolumeGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil, nil
@@ -57,6 +69,9 @@ func dataVolumeToVolume(disk *unstructured.Unstructured) *volumes.Volume {
 }
 
 func (s *volumessrvc) appendVMDisks(ctx context.Context, namespace string, items *[]*volumes.Volume) error {
+	if installed, err := s.vmDataVolumesInstalled(ctx); err != nil || !installed {
+		return err
+	}
 	disks, err := s.dynamicClient.Resource(vmDataVolumeGVR).Namespace(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: vmDiskTypeLabel + "=vm-disk",
 	})
@@ -82,6 +97,11 @@ func (s *volumessrvc) appendVMDisks(ctx context.Context, namespace string, items
 }
 
 func (s *volumessrvc) createVMDataVolume(ctx context.Context, p *volumes.CreateVolumePayload) (*volumes.Volume, error) {
+	if installed, err := s.vmDataVolumesInstalled(ctx); err != nil {
+		return nil, err
+	} else if !installed {
+		return nil, volumes.Invalid("VM disks require CDI to be installed")
+	}
 	if p.AccessMode != "" && p.AccessMode != "ReadWriteOnce" {
 		return nil, fmt.Errorf("VM data disks require ReadWriteOnce")
 	}

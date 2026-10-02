@@ -13,14 +13,49 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 )
 
 func testVolumeService(objects ...runtime.Object) *volumessrvc {
+	objects = append(objects, &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "apiextensions.k8s.io/v1", "kind": "CustomResourceDefinition",
+		"metadata": map[string]interface{}{"name": "datavolumes.cdi.kubevirt.io"},
+	}})
 	return &volumessrvc{clientset: kubernetesfake.NewSimpleClientset(),
 		dynamicClient: dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
 			vmDataVolumeGVR: "DataVolumeList", vmWorkspaceGVR: "WorkspaceList",
 			{Group: "kubevirt.io", Version: "v1", Resource: "virtualmachineinstances"}: "VirtualMachineInstanceList",
 		}, objects...),
+	}
+}
+
+func TestVolumesWithoutCDI(t *testing.T) {
+	ctx := context.Background()
+	s := testVolumeService()
+	crds := schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
+	if err := s.dynamicClient.Resource(crds).Delete(ctx, "datavolumes.cdi.kubevirt.io", metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	s.dynamicClient.(*dynamicfake.FakeDynamicClient).PrependReactor("*", "datavolumes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		t.Fatal("container-only clusters must not query the unauthorized CDI API")
+		return false, nil, nil
+	})
+	payload := &volumes.CreateVolumePayload{Name: "container-data", Namespace: "test", Size: "1Gi", Type: "pvc"}
+	if _, err := s.Create(ctx, payload); err != nil {
+		t.Fatal(err)
+	}
+	if items, err := s.List(ctx, &volumes.ListPayload{Namespace: "test"}); err != nil || len(items) != 1 {
+		t.Fatalf("container PVC list must work without CDI: %v %v", items, err)
+	}
+	if _, err := s.Get(ctx, &volumes.GetPayload{Name: payload.Name, Namespace: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, &volumes.DeletePayload{Name: payload.Name, Namespace: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	payload.Type = "vm-disk"
+	if _, err := s.Create(ctx, payload); err == nil {
+		t.Fatal("VM disk creation must report the missing prerequisite")
 	}
 }
 
