@@ -697,21 +697,26 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		json.NewEncoder(w).Encode(updated)
 	})
 
-	// Admin: list CustomResourceDefinitions used by kube-workspaces
+	// Admin: list installed kube-workspaces and KubeVirt CustomResourceDefinitions.
 	mux.Handle("GET", "/admin/crds/definitions", func(w http.ResponseWriter, r *http.Request) {
-		crdNames := []string{"workspaces.kubeworkspaces.io", "images.kubeworkspaces.io", "users.kubeworkspaces.io", "authconfigs.kubeworkspaces.io", "platformconfigs.kubeworkspaces.io", "poddefaults.kubeworkspaces.io", "sshkeys.kubeworkspaces.io"}
+		list, err := crdClient.ListCRDs(r.Context())
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
 		type crdVersion struct {
 			Name    string `json:"name"`
 			Served  bool   `json:"served"`
 			Storage bool   `json:"storage"`
 		}
-		var items []interface{}
-		for _, crdName := range crdNames {
-			item, err := crdClient.GetCRD(r.Context(), crdName)
-			if err != nil {
+		items := make([]interface{}, 0)
+		for _, item := range list.Items {
+			group, _, _ := unstructured.NestedString(item.Object, "spec", "group")
+			if group != "kubeworkspaces.io" && group != "kubevirt.io" && !strings.HasSuffix(group, ".kubevirt.io") {
 				continue
 			}
-			group, _, _ := unstructured.NestedString(item.Object, "spec", "group")
 			kind, _, _ := unstructured.NestedString(item.Object, "spec", "names", "kind")
 			plural, _, _ := unstructured.NestedString(item.Object, "spec", "names", "plural")
 			scope, _, _ := unstructured.NestedString(item.Object, "spec", "scope")
@@ -726,7 +731,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				}
 			}
 			summary := map[string]interface{}{
-				"name":     crdName,
+				"name":     item.GetName(),
 				"group":    group,
 				"kind":     kind,
 				"plural":   plural,
