@@ -92,6 +92,14 @@ type VolumeMountView struct {
 	Name *string
 	// Mount path in container
 	MountPath *string
+	// Volume mount type for VMs: 'disk' (virtio disk) or 'cdrom' (optical disc).
+	// Empty/omitted defaults to 'disk' for VM volume mounts.
+	Type *string
+	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
+	// 'disk' type.
+	Bus *string
+	// Whether the disk is read-only (for CD-ROMs, typically true).
+	Readonly *bool
 }
 
 // ImageRemoteDesktopView is a type that runs validations on a projected type.
@@ -213,6 +221,16 @@ func ValidateVolumeMountView(result *VolumeMountView) (err error) {
 	}
 	if result.MountPath == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("mount_path", "result"))
+	}
+	if result.Type != nil {
+		if !(*result.Type == "disk" || *result.Type == "cdrom") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.type", *result.Type, []any{"disk", "cdrom"}))
+		}
+	}
+	if result.Bus != nil {
+		if !(*result.Bus == "sata" || *result.Bus == "ide" || *result.Bus == "virtio" || *result.Bus == "scsi" || *result.Bus == "usb") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.bus", *result.Bus, []any{"sata", "ide", "virtio", "scsi", "usb"}))
+		}
 	}
 	return
 }

@@ -91,6 +91,13 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 		if !(body.Type == "container" || body.Type == "vm" || body.Type == "scratch") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.type", body.Type, []any{"container", "vm", "scratch"}))
 		}
+		for _, e := range body.VolumeMounts {
+			if e != nil {
+				if err2 := ValidateVolumeMountRequestBody(e); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		}
 		for _, e := range body.Tolerations {
 			if e != nil {
 				if err2 := ValidateTolerationRequestBody(e); err2 != nil {

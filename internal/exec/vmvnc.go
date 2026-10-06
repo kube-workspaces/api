@@ -60,8 +60,6 @@ func (l *throughputLogger) logStats(now time.Time) {
 	l.bytesSent = 0
 }
 
-var throughputLoggerInstance *throughputLogger
-
 // vncUpgrader negotiates the RFB WebSocket with the browser client. noVNC and
 // virtctl-style clients advertise one of these subprotocols; the upgrader must
 // echo a match or the browser abandons the handshake.

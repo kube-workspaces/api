@@ -400,6 +400,14 @@ type VolumeMountResponse struct {
 	Name string `form:"name" json:"name" xml:"name"`
 	// Mount path in container
 	MountPath string `form:"mount_path" json:"mount_path" xml:"mount_path"`
+	// Volume mount type for VMs: 'disk' (virtio disk) or 'cdrom' (optical disc).
+	// Empty/omitted defaults to 'disk' for VM volume mounts.
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
+	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
+	// 'disk' type.
+	Bus *string `form:"bus,omitempty" json:"bus,omitempty" xml:"bus,omitempty"`
+	// Whether the disk is read-only (for CD-ROMs, typically true).
+	Readonly bool `form:"readonly" json:"readonly" xml:"readonly"`
 }
 
 // ImageRemoteDesktopResponse is used to define fields on response body types.
@@ -445,6 +453,14 @@ type VolumeMountResponseBody struct {
 	Name string `form:"name" json:"name" xml:"name"`
 	// Mount path in container
 	MountPath string `form:"mount_path" json:"mount_path" xml:"mount_path"`
+	// Volume mount type for VMs: 'disk' (virtio disk) or 'cdrom' (optical disc).
+	// Empty/omitted defaults to 'disk' for VM volume mounts.
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
+	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
+	// 'disk' type.
+	Bus *string `form:"bus,omitempty" json:"bus,omitempty" xml:"bus,omitempty"`
+	// Whether the disk is read-only (for CD-ROMs, typically true).
+	Readonly bool `form:"readonly" json:"readonly" xml:"readonly"`
 }
 
 // ImageRemoteDesktopResponseBody is used to define fields on response body
@@ -498,6 +514,14 @@ type VolumeMountRequestBody struct {
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Mount path in container
 	MountPath *string `form:"mount_path,omitempty" json:"mount_path,omitempty" xml:"mount_path,omitempty"`
+	// Volume mount type for VMs: 'disk' (virtio disk) or 'cdrom' (optical disc).
+	// Empty/omitted defaults to 'disk' for VM volume mounts.
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
+	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
+	// 'disk' type.
+	Bus *string `form:"bus,omitempty" json:"bus,omitempty" xml:"bus,omitempty"`
+	// Whether the disk is read-only (for CD-ROMs, typically true).
+	Readonly *bool `form:"readonly,omitempty" json:"readonly,omitempty" xml:"readonly,omitempty"`
 }
 
 // EnvVarRequestBody is used to define fields on request body types.
@@ -1079,6 +1103,16 @@ func ValidateVolumeMountRequestBody(body *VolumeMountRequestBody) (err error) {
 	}
 	if body.MountPath == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("mount_path", "body"))
+	}
+	if body.Type != nil {
+		if !(*body.Type == "disk" || *body.Type == "cdrom") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.type", *body.Type, []any{"disk", "cdrom"}))
+		}
+	}
+	if body.Bus != nil {
+		if !(*body.Bus == "sata" || *body.Bus == "ide" || *body.Bus == "virtio" || *body.Bus == "scsi" || *body.Bus == "usb") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.bus", *body.Bus, []any{"sata", "ide", "virtio", "scsi", "usb"}))
+		}
 	}
 	return
 }

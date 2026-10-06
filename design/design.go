@@ -94,6 +94,18 @@ var VolumeMount = Type("VolumeMount", func() {
 	Attribute("mount_path", String, "Mount path in container", func() {
 		Example("/home/coder")
 	})
+	Attribute("type", String, "Volume mount type for VMs: 'disk' (virtio disk) or 'cdrom' (optical disc). Empty/omitted defaults to 'disk' for VM volume mounts.", func() {
+		Enum("disk", "cdrom")
+		Example("disk")
+	})
+	Attribute("bus", String, "Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for 'disk' type.", func() {
+		Enum("sata", "ide", "virtio", "scsi", "usb")
+		Example("sata")
+	})
+	Attribute("readonly", Boolean, "Whether the disk is read-only (for CD-ROMs, typically true).", func() {
+		Default(true)
+		Example(true)
+	})
 	Required("name", "mount_path")
 })
 
