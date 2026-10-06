@@ -97,6 +97,22 @@ var VolumeMount = Type("VolumeMount", func() {
 	Required("name", "mount_path")
 })
 
+var VMOptions = Type("VMOptions", func() {
+	Description("Namespaced Windows root import settings; credentials remain in Kubernetes Secrets")
+	Attribute("import_secret_name", String, "Same-namespace CDI accessKeyId/secretKey Secret")
+	Attribute("import_cert_config_map_name", String, "Same-namespace registry CA ConfigMap")
+	Attribute("storage_class_name", String, "Persistent root StorageClass; empty uses cluster default")
+	Attribute("root_disk_size", String, "Persistent Windows root capacity, at least 80Gi")
+})
+
+var WorkspaceInitialCredentials = Type("WorkspaceInitialCredentials", func() {
+	Description("Per-workspace initial Windows account, visible only to namespace editors/admins")
+	Attribute("username", String)
+	Attribute("password", String)
+	Attribute("cache_control", String)
+	Required("username", "password", "cache_control")
+})
+
 var CreateWorkspacePayload = Type("CreateWorkspacePayload", func() {
 	Description("Payload for creating a new workspace")
 	Attribute("name", String, "Workspace name", func() {
@@ -114,6 +130,7 @@ var CreateWorkspacePayload = Type("CreateWorkspacePayload", func() {
 		Example("container")
 	})
 	Attribute("container", WorkspaceContainer, "Main container spec")
+	Attribute("vm_options", VMOptions, "Windows private root import settings")
 	Attribute("volume_mounts", ArrayOf(VolumeMount), "Volumes to mount", func() {
 		Example([]map[string]interface{}{{"name": "my-workspace-data", "mount_path": "/home/coder"}})
 	})
@@ -229,6 +246,8 @@ var WorkspaceResult = ResultType("application/vnd.workspace+json", func() {
 			Example([]map[string]interface{}{{"name": "my-workspace-data", "mount_path": "/home/coder"}})
 		})
 		Attribute("remote_desktop", ImageRemoteDesktop, "Remote desktop agent configuration (Tier 1)")
+		Attribute("vm_profile", String, "Resolved guest profile; windows11-amd64-v1 uses display-only native provisioning")
+		Attribute("provisioned", Boolean, "Windows native setup and bootstrap removal have completed")
 	})
 	Required("name", "namespace", "image", "type", "ready_replicas", "stopped")
 })
@@ -380,6 +399,11 @@ var CreateImagePayload = Type("CreateImagePayload", func() {
 	Attribute("workspace_types", ArrayOf(String), "Workspace types this image supports (container, vm, scratch). Empty means container-only", func() {
 		Example([]string{"container"})
 	})
+	Attribute("vm_profile", String, "Controller-supported VM guest profile", func() { Enum("windows11-amd64-v1") })
+	Attribute("persistent_root_disk", Boolean, "Import a per-workspace persistent root disk")
+	Attribute("persistent_root_disk_size", String, "Persistent root capacity")
+	Attribute("memory_limit", String, "Guest memory default")
+	Attribute("memory_request", String, "Guest memory request default")
 	Required("name", "image", "default_port")
 })
 
@@ -536,6 +560,11 @@ var ImageResult = ResultType("application/vnd.image+json", func() {
 		Attribute("workspace_types", ArrayOf(String), "Workspace types this image supports (container, vm, scratch). Empty means container-only", func() {
 			Example([]string{"container"})
 		})
+		Attribute("vm_profile", String, "Controller-supported guest profile")
+		Attribute("persistent_root_disk", Boolean)
+		Attribute("persistent_root_disk_size", String)
+		Attribute("memory_limit", String)
+		Attribute("memory_request", String)
 	})
 	Required("cr_name", "name", "image", "default_port")
 })
@@ -767,6 +796,26 @@ var ControlResult = ResultType("application/vnd.display-control+json", func() {
 
 var _ = Service("workspaces", func() {
 	Description("Workspace management service")
+	Method("credentials", func() {
+		Description("Retrieve this Windows workspace's unique initial credentials; namespace editors/admins only")
+		Payload(func() {
+			Attribute("name", String)
+			Attribute("namespace", String, func() { Default("workspaces") })
+			Required("name")
+		})
+		Result(WorkspaceInitialCredentials)
+		Error("forbidden", String)
+		Error("not_found", String)
+		Error("unavailable", String)
+		HTTP(func() {
+			GET("/v1/workspaces/{name}/credentials")
+			Param("namespace")
+			Response(StatusOK, func() { Header("cache_control:Cache-Control") })
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+			Response("unavailable", StatusServiceUnavailable)
+		})
+	})
 
 	Method("list", func() {
 		Description("List all workspaces")

@@ -16,6 +16,26 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
+// BuildCredentialsPayload builds the payload for the workspaces credentials
+// endpoint from CLI flags.
+func BuildCredentialsPayload(workspacesCredentialsName string, workspacesCredentialsNamespace string) (*workspaces.CredentialsPayload, error) {
+	var name string
+	{
+		name = workspacesCredentialsName
+	}
+	var namespace string
+	{
+		if workspacesCredentialsNamespace != "" {
+			namespace = workspacesCredentialsNamespace
+		}
+	}
+	v := &workspaces.CredentialsPayload{}
+	v.Name = name
+	v.Namespace = namespace
+
+	return v, nil
+}
+
 // BuildListPayload builds the payload for the workspaces list endpoint from
 // CLI flags.
 func BuildListPayload(workspacesListNamespace string) (*workspaces.ListPayload, error) {
@@ -59,7 +79,7 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 	{
 		err = json.Unmarshal([]byte(workspacesCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 8080\n      },\n      \"env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"image_pull_policy\": \"IfNotPresent\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"nvidia.com/gpu\": \"true\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 8080\n      },\n      \"env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"image_pull_policy\": \"IfNotPresent\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"nvidia.com/gpu\": \"true\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"vm_options\": {\n         \"import_cert_config_map_name\": \"Hic labore tenetur culpa at quae.\",\n         \"import_secret_name\": \"Consequatur ducimus voluptatem amet labore enim praesentium.\",\n         \"root_disk_size\": \"Natus magnam.\",\n         \"storage_class_name\": \"Nobis ipsum qui reiciendis non sit repudiandae.\"\n      },\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
 		}
 		if body.Container == nil {
 			err = goa.MergeErrors(err, goa.MissingFieldError("container", "body"))
@@ -106,6 +126,9 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 	}
 	if body.Container != nil {
 		v.Container = marshalWorkspaceContainerRequestBodyToWorkspacesWorkspaceContainer(body.Container)
+	}
+	if body.VMOptions != nil {
+		v.VMOptions = marshalVMOptionsRequestBodyToWorkspacesVMOptions(body.VMOptions)
 	}
 	if body.VolumeMounts != nil {
 		v.VolumeMounts = make([]*workspaces.VolumeMount, len(body.VolumeMounts))

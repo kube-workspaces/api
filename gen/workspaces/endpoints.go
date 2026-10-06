@@ -15,32 +15,35 @@ import (
 
 // Endpoints wraps the "workspaces" service endpoints.
 type Endpoints struct {
-	List   goa.Endpoint
-	Get    goa.Endpoint
-	Create goa.Endpoint
-	Delete goa.Endpoint
-	Start  goa.Endpoint
-	Stop   goa.Endpoint
-	Reset  goa.Endpoint
-	Clone  goa.Endpoint
+	Credentials goa.Endpoint
+	List        goa.Endpoint
+	Get         goa.Endpoint
+	Create      goa.Endpoint
+	Delete      goa.Endpoint
+	Start       goa.Endpoint
+	Stop        goa.Endpoint
+	Reset       goa.Endpoint
+	Clone       goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "workspaces" service with endpoints.
 func NewEndpoints(s Service) *Endpoints {
 	return &Endpoints{
-		List:   NewListEndpoint(s),
-		Get:    NewGetEndpoint(s),
-		Create: NewCreateEndpoint(s),
-		Delete: NewDeleteEndpoint(s),
-		Start:  NewStartEndpoint(s),
-		Stop:   NewStopEndpoint(s),
-		Reset:  NewResetEndpoint(s),
-		Clone:  NewCloneEndpoint(s),
+		Credentials: NewCredentialsEndpoint(s),
+		List:        NewListEndpoint(s),
+		Get:         NewGetEndpoint(s),
+		Create:      NewCreateEndpoint(s),
+		Delete:      NewDeleteEndpoint(s),
+		Start:       NewStartEndpoint(s),
+		Stop:        NewStopEndpoint(s),
+		Reset:       NewResetEndpoint(s),
+		Clone:       NewCloneEndpoint(s),
 	}
 }
 
 // Use applies the given middleware to all the "workspaces" service endpoints.
 func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
+	e.Credentials = m(e.Credentials)
 	e.List = m(e.List)
 	e.Get = m(e.Get)
 	e.Create = m(e.Create)
@@ -49,6 +52,15 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Stop = m(e.Stop)
 	e.Reset = m(e.Reset)
 	e.Clone = m(e.Clone)
+}
+
+// NewCredentialsEndpoint returns an endpoint function that calls the method
+// "credentials" of service "workspaces".
+func NewCredentialsEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*CredentialsPayload)
+		return s.Credentials(ctx, p)
+	}
 }
 
 // NewListEndpoint returns an endpoint function that calls the method "list" of

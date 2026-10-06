@@ -15,6 +15,9 @@ import (
 
 // Workspace management service
 type Service interface {
+	// Retrieve this Windows workspace's unique initial credentials; namespace
+	// editors/admins only
+	Credentials(context.Context, *CredentialsPayload) (res *WorkspaceInitialCredentials, err error)
 	// List all workspaces
 	List(context.Context, *ListPayload) (res []*Workspace, err error)
 	// Get a workspace by name
@@ -48,7 +51,7 @@ const ServiceName = "workspaces"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [8]string{"list", "get", "create", "delete", "start", "stop", "reset", "clone"}
+var MethodNames = [9]string{"credentials", "list", "get", "create", "delete", "start", "stop", "reset", "clone"}
 
 // ClonePayload is the payload type of the workspaces service clone method.
 type ClonePayload struct {
@@ -97,6 +100,8 @@ type CreateWorkspacePayload struct {
 	Type string
 	// Main container spec
 	Container *WorkspaceContainer
+	// Windows private root import settings
+	VMOptions *VMOptions
 	// Volumes to mount
 	VolumeMounts []*VolumeMount
 	// Custom environment variables to inject into the workspace container
@@ -110,6 +115,13 @@ type CreateWorkspacePayload struct {
 	SharedMemory bool
 	// Image pull policy for the workspace container (Always, IfNotPresent, Never)
 	ImagePullPolicy string
+}
+
+// CredentialsPayload is the payload type of the workspaces service credentials
+// method.
+type CredentialsPayload struct {
+	Name      string
+	Namespace string
 }
 
 // DeletePayload is the payload type of the workspaces service delete method.
@@ -188,6 +200,19 @@ type Toleration struct {
 	Effect *string
 }
 
+// Namespaced Windows root import settings; credentials remain in Kubernetes
+// Secrets
+type VMOptions struct {
+	// Same-namespace CDI accessKeyId/secretKey Secret
+	ImportSecretName *string
+	// Same-namespace registry CA ConfigMap
+	ImportCertConfigMapName *string
+	// Persistent root StorageClass; empty uses cluster default
+	StorageClassName *string
+	// Persistent Windows root capacity, at least 80Gi
+	RootDiskSize *string
+}
+
 // Container PVC mount, or reusable CDI VM data disk with an absolute guest
 // mount path
 type VolumeMount struct {
@@ -231,6 +256,11 @@ type Workspace struct {
 	VolumeMounts []*VolumeMount
 	// Remote desktop agent configuration (Tier 1)
 	RemoteDesktop *ImageRemoteDesktop
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool
 }
 
 // Condition of a workspace
@@ -269,14 +299,25 @@ type WorkspaceContainer struct {
 	GpuVendor string
 }
 
+// WorkspaceInitialCredentials is the result type of the workspaces service
+// credentials method.
+type WorkspaceInitialCredentials struct {
+	Username     string
+	Password     string
+	CacheControl string
+}
+
 // Workspace already exists
 type AlreadyExists string
+
+type Forbidden string
 
 // Invalid workspace specification
 type Invalid string
 
-// Workspace not found
 type NotFound string
+
+type Unavailable string
 
 // Error returns an error description.
 func (e AlreadyExists) Error() string {
@@ -293,6 +334,23 @@ func (e AlreadyExists) ErrorName() string {
 // GoaErrorName returns the error name.
 func (e AlreadyExists) GoaErrorName() string {
 	return "already_exists"
+}
+
+// Error returns an error description.
+func (e Forbidden) Error() string {
+	return ""
+}
+
+// ErrorName returns the error name.
+//
+// Deprecated: Use GoaErrorName - https://github.com/goadesign/goa/issues/3105
+func (e Forbidden) ErrorName() string {
+	return e.GoaErrorName()
+}
+
+// GoaErrorName returns the error name.
+func (e Forbidden) GoaErrorName() string {
+	return "forbidden"
 }
 
 // Error returns an error description.
@@ -314,7 +372,7 @@ func (e Invalid) GoaErrorName() string {
 
 // Error returns an error description.
 func (e NotFound) Error() string {
-	return "Workspace not found"
+	return ""
 }
 
 // ErrorName returns the error name.
@@ -327,6 +385,23 @@ func (e NotFound) ErrorName() string {
 // GoaErrorName returns the error name.
 func (e NotFound) GoaErrorName() string {
 	return "not_found"
+}
+
+// Error returns an error description.
+func (e Unavailable) Error() string {
+	return ""
+}
+
+// ErrorName returns the error name.
+//
+// Deprecated: Use GoaErrorName - https://github.com/goadesign/goa/issues/3105
+func (e Unavailable) ErrorName() string {
+	return e.GoaErrorName()
+}
+
+// GoaErrorName returns the error name.
+func (e Unavailable) GoaErrorName() string {
+	return "unavailable"
 }
 
 // NewWorkspace initializes result type Workspace from viewed result type
@@ -351,6 +426,8 @@ func newWorkspace(vres *workspacesviews.WorkspaceView) *Workspace {
 		CPULimit:      vres.CPULimit,
 		MemoryLimit:   vres.MemoryLimit,
 		CreatedAt:     vres.CreatedAt,
+		VMProfile:     vres.VMProfile,
+		Provisioned:   vres.Provisioned,
 	}
 	if vres.Name != nil {
 		res.Name = *vres.Name
@@ -418,6 +495,8 @@ func newWorkspaceView(res *Workspace) *workspacesviews.WorkspaceView {
 		ReadyReplicas: &res.ReadyReplicas,
 		Stopped:       &res.Stopped,
 		CreatedAt:     res.CreatedAt,
+		VMProfile:     res.VMProfile,
+		Provisioned:   res.Provisioned,
 	}
 	if res.ContainerState != nil {
 		vres.ContainerState = transformContainerStateToWorkspacesviewsContainerStateView(res.ContainerState)

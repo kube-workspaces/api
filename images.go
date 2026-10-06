@@ -190,6 +190,26 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 		}
 		spec["remoteDesktop"] = rd
 	}
+	if p.VMProfile != nil {
+		spec["vmProfile"] = *p.VMProfile
+	}
+	if p.PersistentRootDisk != nil {
+		spec["persistentRootDisk"] = *p.PersistentRootDisk
+	}
+	if p.PersistentRootDiskSize != nil {
+		spec["persistentRootDiskSize"] = *p.PersistentRootDiskSize
+	}
+	if p.MemoryLimit != nil {
+		spec["memoryLimit"] = *p.MemoryLimit
+	}
+	if p.MemoryRequest != nil {
+		spec["memoryRequest"] = *p.MemoryRequest
+	}
+	if p.VMProfile != nil && *p.VMProfile == windowsVMProfile {
+		if p.PersistentRootDisk == nil || !*p.PersistentRootDisk || !windowsRootDigest.MatchString(p.Image) || p.DefaultCredentials != nil || (p.DefaultPassword != nil && *p.DefaultPassword != "") || (p.DefaultCloudInit != nil && *p.DefaultCloudInit) || (p.DefaultUserData != nil && *p.DefaultUserData != "") || p.RemoteDesktop != nil {
+			return nil, images.Invalid("Windows images require a pinned generalised persistent root with native provisioning and no shared password/cloud-init/guest streaming")
+		}
+	}
 
 	_, err = s.imageClient.CreateImage(ctx, crName, spec)
 	if err != nil {
@@ -208,24 +228,29 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 // imageToResult converts an internal Image to the API result type.
 func imageToResult(img *k8s.Image) *images.Image {
 	result := &images.Image{
-		CrName:           img.Name,
-		Name:             img.DisplayName,
-		Image:            img.Image,
-		Description:      strPtr(img.Description),
-		Category:         strPtr(img.Category),
-		DefaultPort:      int(img.DefaultPort),
-		DefaultPath:      strPtr(img.DefaultPath),
-		Icon:             strPtr(img.Icon),
-		Privileged:       boolPtr(img.Privileged),
-		HomepageURL:      strPtr(img.HomepageURL),
-		SourceURL:        strPtr(img.SourceURL),
-		ImageHomepageURL: strPtr(img.ImageHomepageURL),
-		DefaultUser:      strPtr(img.DefaultUser),
-		DefaultPassword:  strPtr(img.DefaultPassword),
-		DefaultUserData:  strPtr(img.DefaultUserData),
-		DefaultHomedir:   strPtr(img.DefaultHomedir),
-		DefaultShell:     strPtr(img.DefaultShell),
-		DefaultUID:       img.DefaultUID,
+		CrName:                 img.Name,
+		Name:                   img.DisplayName,
+		Image:                  img.Image,
+		Description:            strPtr(img.Description),
+		Category:               strPtr(img.Category),
+		DefaultPort:            int(img.DefaultPort),
+		DefaultPath:            strPtr(img.DefaultPath),
+		Icon:                   strPtr(img.Icon),
+		Privileged:             boolPtr(img.Privileged),
+		HomepageURL:            strPtr(img.HomepageURL),
+		SourceURL:              strPtr(img.SourceURL),
+		ImageHomepageURL:       strPtr(img.ImageHomepageURL),
+		DefaultUser:            strPtr(img.DefaultUser),
+		DefaultPassword:        strPtr(img.DefaultPassword),
+		DefaultUserData:        strPtr(img.DefaultUserData),
+		DefaultHomedir:         strPtr(img.DefaultHomedir),
+		DefaultShell:           strPtr(img.DefaultShell),
+		DefaultUID:             img.DefaultUID,
+		VMProfile:              strPtr(img.VMProfile),
+		PersistentRootDisk:     boolPtr(img.PersistentRootDisk),
+		PersistentRootDiskSize: strPtr(img.PersistentRootDiskSize),
+		MemoryLimit:            strPtr(img.MemoryLimit),
+		MemoryRequest:          strPtr(img.MemoryRequest),
 	}
 	if img.DefaultCloudInit {
 		result.DefaultCloudInit = boolPtr(true)

@@ -17,6 +17,10 @@ import (
 
 // Client lists the workspaces service endpoint HTTP clients.
 type Client struct {
+	// Credentials Doer is the HTTP client used to make requests to the credentials
+	// endpoint.
+	CredentialsDoer goahttp.Doer
+
 	// List Doer is the HTTP client used to make requests to the list endpoint.
 	ListDoer goahttp.Doer
 
@@ -61,6 +65,7 @@ func NewClient(
 	restoreBody bool,
 ) *Client {
 	return &Client{
+		CredentialsDoer:     doer,
 		ListDoer:            doer,
 		GetDoer:             doer,
 		CreateDoer:          doer,
@@ -74,6 +79,30 @@ func NewClient(
 		host:                host,
 		decoder:             dec,
 		encoder:             enc,
+	}
+}
+
+// Credentials returns an endpoint that makes HTTP requests to the workspaces
+// service credentials server.
+func (c *Client) Credentials() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeCredentialsRequest(c.encoder)
+		decodeResponse = DecodeCredentialsResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildCredentialsRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.CredentialsDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("workspaces", "credentials", err)
+		}
+		return decodeResponse(resp)
 	}
 }
 

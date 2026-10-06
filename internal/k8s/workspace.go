@@ -3,6 +3,8 @@ package k8s
 import (
 	"context"
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -88,6 +90,18 @@ func (c *WorkspaceClient) WatchWorkspaces(ctx context.Context, namespace string,
 // GetWorkspace gets a workspace CR by name.
 func (c *WorkspaceClient) GetWorkspace(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error) {
 	return c.dynamic.Resource(workspaceGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+func (c *WorkspaceClient) GetInitialCredentialSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error) {
+	obj, err := c.dynamic.Resource(schema.GroupVersionResource{Version: "v1", Resource: "secrets"}).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	secret := &corev1.Secret{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, secret); err != nil {
+		return nil, err
+	}
+	return secret, nil
 }
 
 // CreateWorkspace creates a new workspace CR.

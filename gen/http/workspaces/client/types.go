@@ -26,6 +26,8 @@ type CreateRequestBody struct {
 	Type string `form:"type" json:"type" xml:"type"`
 	// Main container spec
 	Container *WorkspaceContainerRequestBody `form:"container" json:"container" xml:"container"`
+	// Windows private root import settings
+	VMOptions *VMOptionsRequestBody `form:"vm_options,omitempty" json:"vm_options,omitempty" xml:"vm_options,omitempty"`
 	// Volumes to mount
 	VolumeMounts []*VolumeMountRequestBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 	// Custom environment variables to inject into the workspace container
@@ -58,6 +60,13 @@ type CloneRequestBody struct {
 	CPULimit *string `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty" xml:"cpu_limit,omitempty"`
 	// Override the memory limit on the clone
 	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+}
+
+// CredentialsResponseBody is the type of the "workspaces" service
+// "credentials" endpoint HTTP response body.
+type CredentialsResponseBody struct {
+	Username *string `form:"username,omitempty" json:"username,omitempty" xml:"username,omitempty"`
+	Password *string `form:"password,omitempty" json:"password,omitempty" xml:"password,omitempty"`
 }
 
 // GetResponseBody is the type of the "workspaces" service "get" endpoint HTTP
@@ -95,6 +104,11 @@ type GetResponseBody struct {
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 	// Remote desktop agent configuration (Tier 1)
 	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 }
 
 // CreateResponseBody is the type of the "workspaces" service "create" endpoint
@@ -132,6 +146,11 @@ type CreateResponseBody struct {
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 	// Remote desktop agent configuration (Tier 1)
 	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 }
 
 // StartResponseBody is the type of the "workspaces" service "start" endpoint
@@ -169,6 +188,11 @@ type StartResponseBody struct {
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 	// Remote desktop agent configuration (Tier 1)
 	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 }
 
 // StopResponseBody is the type of the "workspaces" service "stop" endpoint
@@ -206,6 +230,11 @@ type StopResponseBody struct {
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 	// Remote desktop agent configuration (Tier 1)
 	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 }
 
 // ResetResponseBody is the type of the "workspaces" service "reset" endpoint
@@ -243,6 +272,11 @@ type ResetResponseBody struct {
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 	// Remote desktop agent configuration (Tier 1)
 	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 }
 
 // CloneResponseBody is the type of the "workspaces" service "clone" endpoint
@@ -280,6 +314,11 @@ type CloneResponseBody struct {
 	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 	// Remote desktop agent configuration (Tier 1)
 	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 }
 
 // WorkspaceResponse is used to define fields on response body types.
@@ -316,6 +355,11 @@ type WorkspaceResponse struct {
 	VolumeMounts []*VolumeMountResponse `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 	// Remote desktop agent configuration (Tier 1)
 	RemoteDesktop *ImageRemoteDesktopResponse `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 }
 
 // ContainerStateResponse is used to define fields on response body types.
@@ -430,6 +474,18 @@ type WorkspaceContainerRequestBody struct {
 	GpuVendor string `form:"gpu_vendor" json:"gpu_vendor" xml:"gpu_vendor"`
 }
 
+// VMOptionsRequestBody is used to define fields on request body types.
+type VMOptionsRequestBody struct {
+	// Same-namespace CDI accessKeyId/secretKey Secret
+	ImportSecretName *string `form:"import_secret_name,omitempty" json:"import_secret_name,omitempty" xml:"import_secret_name,omitempty"`
+	// Same-namespace registry CA ConfigMap
+	ImportCertConfigMapName *string `form:"import_cert_config_map_name,omitempty" json:"import_cert_config_map_name,omitempty" xml:"import_cert_config_map_name,omitempty"`
+	// Persistent root StorageClass; empty uses cluster default
+	StorageClassName *string `form:"storage_class_name,omitempty" json:"storage_class_name,omitempty" xml:"storage_class_name,omitempty"`
+	// Persistent Windows root capacity, at least 80Gi
+	RootDiskSize *string `form:"root_disk_size,omitempty" json:"root_disk_size,omitempty" xml:"root_disk_size,omitempty"`
+}
+
 // VolumeMountRequestBody is used to define fields on request body types.
 type VolumeMountRequestBody struct {
 	// Volume/PVC name
@@ -482,6 +538,9 @@ func NewCreateRequestBody(p *workspaces.CreateWorkspacePayload) *CreateRequestBo
 	}
 	if p.Container != nil {
 		body.Container = marshalWorkspacesWorkspaceContainerToWorkspaceContainerRequestBody(p.Container)
+	}
+	if p.VMOptions != nil {
+		body.VMOptions = marshalWorkspacesVMOptionsToVMOptionsRequestBody(p.VMOptions)
 	}
 	if p.VolumeMounts != nil {
 		body.VolumeMounts = make([]*VolumeMountRequestBody, len(p.VolumeMounts))
@@ -551,6 +610,42 @@ func NewCloneRequestBody(p *workspaces.ClonePayload) *CloneRequestBody {
 	return body
 }
 
+// NewCredentialsWorkspaceInitialCredentialsOK builds a "workspaces" service
+// "credentials" endpoint result from a HTTP "OK" response.
+func NewCredentialsWorkspaceInitialCredentialsOK(body *CredentialsResponseBody, cacheControl string) *workspaces.WorkspaceInitialCredentials {
+	v := &workspaces.WorkspaceInitialCredentials{
+		Username: *body.Username,
+		Password: *body.Password,
+	}
+	v.CacheControl = cacheControl
+
+	return v
+}
+
+// NewCredentialsForbidden builds a workspaces service credentials endpoint
+// forbidden error.
+func NewCredentialsForbidden(body string) workspaces.Forbidden {
+	v := workspaces.Forbidden(body)
+
+	return v
+}
+
+// NewCredentialsNotFound builds a workspaces service credentials endpoint
+// not_found error.
+func NewCredentialsNotFound(body string) workspaces.NotFound {
+	v := workspaces.NotFound(body)
+
+	return v
+}
+
+// NewCredentialsUnavailable builds a workspaces service credentials endpoint
+// unavailable error.
+func NewCredentialsUnavailable(body string) workspaces.Unavailable {
+	v := workspaces.Unavailable(body)
+
+	return v
+}
+
 // NewListWorkspaceOK builds a "workspaces" service "list" endpoint result from
 // a HTTP "OK" response.
 func NewListWorkspaceOK(body []*WorkspaceResponse) []*workspaces.Workspace {
@@ -582,6 +677,8 @@ func NewGetWorkspaceOK(body *GetResponseBody) *workspacesviews.WorkspaceView {
 		ReadyReplicas: body.ReadyReplicas,
 		Stopped:       body.Stopped,
 		CreatedAt:     body.CreatedAt,
+		VMProfile:     body.VMProfile,
+		Provisioned:   body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -636,6 +733,8 @@ func NewCreateWorkspaceCreated(body *CreateResponseBody) *workspacesviews.Worksp
 		ReadyReplicas: body.ReadyReplicas,
 		Stopped:       body.Stopped,
 		CreatedAt:     body.CreatedAt,
+		VMProfile:     body.VMProfile,
+		Provisioned:   body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -706,6 +805,8 @@ func NewStartWorkspaceOK(body *StartResponseBody) *workspacesviews.WorkspaceView
 		ReadyReplicas: body.ReadyReplicas,
 		Stopped:       body.Stopped,
 		CreatedAt:     body.CreatedAt,
+		VMProfile:     body.VMProfile,
+		Provisioned:   body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -760,6 +861,8 @@ func NewStopWorkspaceOK(body *StopResponseBody) *workspacesviews.WorkspaceView {
 		ReadyReplicas: body.ReadyReplicas,
 		Stopped:       body.Stopped,
 		CreatedAt:     body.CreatedAt,
+		VMProfile:     body.VMProfile,
+		Provisioned:   body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -814,6 +917,8 @@ func NewResetWorkspaceOK(body *ResetResponseBody) *workspacesviews.WorkspaceView
 		ReadyReplicas: body.ReadyReplicas,
 		Stopped:       body.Stopped,
 		CreatedAt:     body.CreatedAt,
+		VMProfile:     body.VMProfile,
+		Provisioned:   body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -875,6 +980,8 @@ func NewCloneWorkspaceCreated(body *CloneResponseBody) *workspacesviews.Workspac
 		ReadyReplicas: body.ReadyReplicas,
 		Stopped:       body.Stopped,
 		CreatedAt:     body.CreatedAt,
+		VMProfile:     body.VMProfile,
+		Provisioned:   body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -926,6 +1033,18 @@ func NewCloneNotFound(body string) workspaces.NotFound {
 	v := workspaces.NotFound(body)
 
 	return v
+}
+
+// ValidateCredentialsResponseBody runs the validations defined on
+// CredentialsResponseBody
+func ValidateCredentialsResponseBody(body *CredentialsResponseBody) (err error) {
+	if body.Username == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("username", "body"))
+	}
+	if body.Password == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("password", "body"))
+	}
+	return
 }
 
 // ValidateWorkspaceResponse runs the validations defined on WorkspaceResponse

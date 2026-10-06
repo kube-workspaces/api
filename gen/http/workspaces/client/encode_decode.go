@@ -20,6 +20,132 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
+// BuildCredentialsRequest instantiates a HTTP request object with method and
+// path set to call the "workspaces" service "credentials" endpoint
+func (c *Client) BuildCredentialsRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		name string
+	)
+	{
+		p, ok := v.(*workspaces.CredentialsPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("workspaces", "credentials", "*workspaces.CredentialsPayload", v)
+		}
+		name = p.Name
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: CredentialsWorkspacesPath(name)}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("workspaces", "credentials", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeCredentialsRequest returns an encoder for requests sent to the
+// workspaces credentials server.
+func EncodeCredentialsRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*workspaces.CredentialsPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("workspaces", "credentials", "*workspaces.CredentialsPayload", v)
+		}
+		values := req.URL.Query()
+		values.Add("namespace", p.Namespace)
+		req.URL.RawQuery = values.Encode()
+		return nil
+	}
+}
+
+// DecodeCredentialsResponse returns a decoder for responses returned by the
+// workspaces credentials endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+// DecodeCredentialsResponse may return the following errors:
+//   - "forbidden" (type workspaces.Forbidden): http.StatusForbidden
+//   - "not_found" (type workspaces.NotFound): http.StatusNotFound
+//   - "unavailable" (type workspaces.Unavailable): http.StatusServiceUnavailable
+//   - error: internal error
+func DecodeCredentialsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body CredentialsResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("workspaces", "credentials", err)
+			}
+			err = ValidateCredentialsResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("workspaces", "credentials", err)
+			}
+			var (
+				cacheControl string
+			)
+			cacheControlRaw := resp.Header.Get("Cache-Control")
+			if cacheControlRaw == "" {
+				err = goa.MergeErrors(err, goa.MissingFieldError("cache_control", "header"))
+			}
+			cacheControl = cacheControlRaw
+			if err != nil {
+				return nil, goahttp.ErrValidationError("workspaces", "credentials", err)
+			}
+			res := NewCredentialsWorkspaceInitialCredentialsOK(&body, cacheControl)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("workspaces", "credentials", err)
+			}
+			return nil, NewCredentialsForbidden(body)
+		case http.StatusNotFound:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("workspaces", "credentials", err)
+			}
+			return nil, NewCredentialsNotFound(body)
+		case http.StatusServiceUnavailable:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("workspaces", "credentials", err)
+			}
+			return nil, NewCredentialsUnavailable(body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("workspaces", "credentials", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildListRequest instantiates a HTTP request object with method and path set
 // to call the "workspaces" service "list" endpoint
 func (c *Client) BuildListRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -801,6 +927,8 @@ func unmarshalWorkspaceResponseToWorkspacesWorkspace(v *WorkspaceResponse) *work
 		ReadyReplicas: *v.ReadyReplicas,
 		Stopped:       *v.Stopped,
 		CreatedAt:     v.CreatedAt,
+		VMProfile:     v.VMProfile,
+		Provisioned:   v.Provisioned,
 	}
 	if v.ContainerState != nil {
 		res.ContainerState = unmarshalContainerStateResponseToWorkspacesContainerState(v.ContainerState)
@@ -1022,6 +1150,22 @@ func marshalWorkspacesWorkspaceContainerToWorkspaceContainerRequestBody(v *works
 	return res
 }
 
+// marshalWorkspacesVMOptionsToVMOptionsRequestBody builds a value of type
+// *VMOptionsRequestBody from a value of type *workspaces.VMOptions.
+func marshalWorkspacesVMOptionsToVMOptionsRequestBody(v *workspaces.VMOptions) *VMOptionsRequestBody {
+	if v == nil {
+		return nil
+	}
+	res := &VMOptionsRequestBody{
+		ImportSecretName:        v.ImportSecretName,
+		ImportCertConfigMapName: v.ImportCertConfigMapName,
+		StorageClassName:        v.StorageClassName,
+		RootDiskSize:            v.RootDiskSize,
+	}
+
+	return res
+}
+
 // marshalWorkspacesVolumeMountToVolumeMountRequestBody builds a value of type
 // *VolumeMountRequestBody from a value of type *workspaces.VolumeMount.
 func marshalWorkspacesVolumeMountToVolumeMountRequestBody(v *workspaces.VolumeMount) *VolumeMountRequestBody {
@@ -1122,6 +1266,22 @@ func marshalWorkspaceContainerRequestBodyToWorkspacesWorkspaceContainer(v *Works
 		if res.GpuVendor == zero {
 			res.GpuVendor = "nvidia.com/gpu"
 		}
+	}
+
+	return res
+}
+
+// marshalVMOptionsRequestBodyToWorkspacesVMOptions builds a value of type
+// *workspaces.VMOptions from a value of type *VMOptionsRequestBody.
+func marshalVMOptionsRequestBodyToWorkspacesVMOptions(v *VMOptionsRequestBody) *workspaces.VMOptions {
+	if v == nil {
+		return nil
+	}
+	res := &workspaces.VMOptions{
+		ImportSecretName:        v.ImportSecretName,
+		ImportCertConfigMapName: v.ImportCertConfigMapName,
+		StorageClassName:        v.StorageClassName,
+		RootDiskSize:            v.RootDiskSize,
 	}
 
 	return res

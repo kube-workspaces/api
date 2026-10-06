@@ -464,6 +464,48 @@ paths:
                         type: string
             schemes:
                 - http
+    /v1/workspaces/{name}/credentials:
+        get:
+            tags:
+                - workspaces
+            summary: credentials workspaces
+            description: Retrieve this Windows workspace's unique initial credentials; namespace editors/admins only
+            operationId: workspaces#credentials
+            parameters:
+                - name: namespace
+                  in: query
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  required: true
+                  type: string
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/WorkspaceInitialCredentials'
+                        required:
+                            - username
+                            - password
+                    headers:
+                        Cache-Control:
+                            type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+                "503":
+                    description: Service Unavailable response.
+                    schema:
+                        type: string
+            schemes:
+                - http
     /v1/workspaces/{name}/display:
         get:
             tags:
@@ -933,7 +975,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Et libero perspiciatis suscipit aliquam non.
+                    example: Architecto quod hic ut incidunt autem.
                 description: Default command-line args
                 example:
                     - --bind-addr
@@ -1020,10 +1062,26 @@ definitions:
                       url: https://github.com/coder/code-server
                     - title: Docker Hub
                       url: https://hub.docker.com/r/codercom/code-server
+            memory_limit:
+                type: string
+                description: Guest memory default
+                example: Voluptates voluptatem.
+            memory_request:
+                type: string
+                description: Guest memory request default
+                example: Amet doloribus provident voluptates.
             name:
                 type: string
                 description: Display name
                 example: Code Server (VS Code)
+            persistent_root_disk:
+                type: boolean
+                description: Import a per-workspace persistent root disk
+                example: false
+            persistent_root_disk_size:
+                type: string
+                description: Persistent root capacity
+                example: Maxime et odit.
             privileged:
                 type: boolean
                 description: Run container in privileged mode
@@ -1041,16 +1099,22 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Ea nobis doloremque maiores molestias totam.
+                    example: Molestias et distinctio autem.
                 description: Tags for filtering/searching images
                 example:
                     - development
                     - vscode
+            vm_profile:
+                type: string
+                description: Controller-supported VM guest profile
+                example: windows11-amd64-v1
+                enum:
+                    - windows11-amd64-v1
             workspace_types:
                 type: array
                 items:
                     type: string
-                    example: Quia rerum dolores perspiciatis qui.
+                    example: In aut cum illum fugit aut illo.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -1085,15 +1149,19 @@ definitions:
                   url: https://github.com/coder/code-server
                 - title: Docker Hub
                   url: https://hub.docker.com/r/codercom/code-server
+            memory_limit: Cupiditate fugiat iusto omnis et debitis qui.
+            memory_request: Qui natus et accusantium.
             name: Code Server (VS Code)
+            persistent_root_disk: true
+            persistent_root_disk_size: Sed quam.
             privileged: false
             proxy_config:
                 custom_request_headers:
                     x-tenant: workspaces
                 inject_base_tag: false
                 needs_noop_sw: false
-                preserve_path_prefix: false
-                rewrite_host_absolute_paths: false
+                preserve_path_prefix: true
+                rewrite_host_absolute_paths: true
                 tls_insecure: true
                 websocket_paths:
                     - /websockify
@@ -1105,6 +1173,7 @@ definitions:
             tags:
                 - development
                 - vscode
+            vm_profile: windows11-amd64-v1
             workspace_types:
                 - container
         required:
@@ -1178,7 +1247,7 @@ definitions:
                 type: string
                 description: 'Volume type: container PVC or reusable CDI blank VM disk'
                 default: pvc
-                example: pvc
+                example: vm-disk
                 enum:
                     - pvc
                     - vm-disk
@@ -1233,7 +1302,7 @@ definitions:
                     nvidia.com/gpu: "true"
                 additionalProperties:
                     type: string
-                    example: Alias dolore.
+                    example: Et ratione molestiae corrupti rerum dolorum enim.
             shared_memory:
                 type: boolean
                 description: Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML frameworks)
@@ -1258,6 +1327,8 @@ definitions:
                     - container
                     - vm
                     - scratch
+            vm_options:
+                $ref: '#/definitions/VMOptions'
             volume_mounts:
                 type: array
                 items:
@@ -1292,6 +1363,11 @@ definitions:
                   operator: Equal
                   value: "true"
             type: container
+            vm_options:
+                import_cert_config_map_name: Hic labore tenetur culpa at quae.
+                import_secret_name: Consequatur ducimus voluptatem amet labore enim praesentium.
+                root_disk_size: Natus magnam.
+                storage_class_name: Nobis ipsum qui reiciendis non sit repudiandae.
             volume_mounts:
                 - mount_path: /home/coder
                   name: my-workspace-data
@@ -1349,7 +1425,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Aut iste saepe quo.
+                    example: Iste voluptatem et quia.
                 description: Supported display transports
                 example:
                     - rfb
@@ -1422,7 +1498,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Voluptas minima illum aut sed.
+                    example: Quibusdam aliquam velit.
                 description: Supported display transports
                 example:
                     - rfb
@@ -1563,6 +1639,14 @@ definitions:
                       id: 97f8c4b7a2
                       joined_at: "2026-09-19T15:04:05Z"
                       role: observer
+                    - connected: false
+                      id: 97f8c4b7a2
+                      joined_at: "2026-09-19T15:04:05Z"
+                      role: observer
+                    - connected: false
+                      id: 97f8c4b7a2
+                      joined_at: "2026-09-19T15:04:05Z"
+                      role: observer
             participants:
                 type: integer
                 description: Total participant count (controller + observers)
@@ -1645,7 +1729,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Dicta tenetur perferendis eius.
+                    example: Perspiciatis odit et aliquam.
                 description: Default command-line args injected at workspace creation
                 example:
                     - --bind-addr
@@ -1732,10 +1816,22 @@ definitions:
                       url: https://github.com/coder/code-server
                     - title: Docker Hub
                       url: https://hub.docker.com/r/codercom/code-server
+            memory_limit:
+                type: string
+                example: Ad assumenda.
+            memory_request:
+                type: string
+                example: Iusto aliquid.
             name:
                 type: string
                 description: Display name
                 example: Code Server (VS Code)
+            persistent_root_disk:
+                type: boolean
+                example: true
+            persistent_root_disk_size:
+                type: string
+                example: Soluta qui possimus.
             privileged:
                 type: boolean
                 description: Run container in privileged mode
@@ -1752,16 +1848,20 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Alias delectus quam repudiandae.
+                    example: Consequatur et commodi sint porro.
                 description: Tags for filtering/searching images
                 example:
                     - development
                     - vscode
+            vm_profile:
+                type: string
+                description: Controller-supported guest profile
+                example: Itaque tenetur nam suscipit accusamus.
             workspace_types:
                 type: array
                 items:
                     type: string
-                    example: Aut repudiandae neque.
+                    example: Nemo totam corrupti dignissimos.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -1798,16 +1898,20 @@ definitions:
                   url: https://github.com/coder/code-server
                 - title: Docker Hub
                   url: https://hub.docker.com/r/codercom/code-server
+            memory_limit: Beatae cupiditate et in harum.
+            memory_request: Minus quam doloremque dolor error.
             name: Code Server (VS Code)
+            persistent_root_disk: true
+            persistent_root_disk_size: Molestiae consequatur.
             privileged: false
             proxy_config:
                 custom_request_headers:
                     x-tenant: workspaces
                 inject_base_tag: false
-                needs_noop_sw: false
+                needs_noop_sw: true
                 preserve_path_prefix: false
-                rewrite_host_absolute_paths: true
-                tls_insecure: true
+                rewrite_host_absolute_paths: false
+                tls_insecure: false
                 websocket_paths:
                     - /websockify
             remote_desktop:
@@ -1818,6 +1922,7 @@ definitions:
             tags:
                 - development
                 - vscode
+            vm_profile: Ipsum ut et.
             workspace_types:
                 - container
         required:
@@ -1890,7 +1995,7 @@ definitions:
                     x-tenant: workspaces
                 additionalProperties:
                     type: string
-                    example: Repudiandae facere provident.
+                    example: Accusamus facere at molestiae beatae.
             inject_base_tag:
                 type: boolean
                 description: Inject a <base> tag into HTML responses to fix relative path resolution
@@ -1900,7 +2005,7 @@ definitions:
                 type: boolean
                 description: Serve a no-op ServiceWorker at /sw.js to prevent SW registration errors
                 default: false
-                example: true
+                example: false
             preserve_path_prefix:
                 type: boolean
                 description: Forward the full proxy path (including /proxy/{ns}/{name}) to the pod instead of stripping it. Required for apps configured with a base URL matching the proxy prefix.
@@ -1920,7 +2025,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Nemo dolor id nemo sint dignissimos.
+                    example: Et qui consequatur.
                 description: Paths that use WebSocket (informational, all paths support WS transparently)
                 example:
                     - /websockify
@@ -1928,11 +2033,11 @@ definitions:
         example:
             custom_request_headers:
                 x-tenant: workspaces
-            inject_base_tag: false
+            inject_base_tag: true
             needs_noop_sw: true
-            preserve_path_prefix: false
+            preserve_path_prefix: true
             rewrite_host_absolute_paths: true
-            tls_insecure: false
+            tls_insecure: true
             websocket_paths:
                 - /websockify
     ImageRemoteDesktop:
@@ -1976,7 +2081,7 @@ definitions:
                     - observer
                     - controller
         example:
-            role: controller
+            role: observer
     Namespace:
         title: 'Mediatype identifier: application/vnd.namespace+json; view=default'
         type: object
@@ -2112,6 +2217,32 @@ definitions:
             value: "true"
         required:
             - key
+    VMOptions:
+        title: VMOptions
+        type: object
+        properties:
+            import_cert_config_map_name:
+                type: string
+                description: Same-namespace registry CA ConfigMap
+                example: Quo ut rerum cum repudiandae est tempore.
+            import_secret_name:
+                type: string
+                description: Same-namespace CDI accessKeyId/secretKey Secret
+                example: Suscipit debitis incidunt.
+            root_disk_size:
+                type: string
+                description: Persistent Windows root capacity, at least 80Gi
+                example: Id autem odio quibusdam voluptatem.
+            storage_class_name:
+                type: string
+                description: Persistent root StorageClass; empty uses cluster default
+                example: Eos perferendis doloremque illum magni quas.
+        description: Namespaced Windows root import settings; credentials remain in Kubernetes Secrets
+        example:
+            import_cert_config_map_name: Excepturi maiores et nemo.
+            import_secret_name: Nobis blanditiis fuga voluptas sequi nesciunt fugiat.
+            root_disk_size: Voluptatum voluptatem veniam provident.
+            storage_class_name: Odit quo cumque.
     Volume:
         title: 'Mediatype identifier: application/vnd.volume+json; view=default'
         type: object
@@ -2132,7 +2263,7 @@ definitions:
                     workspace: my-workspace
                 additionalProperties:
                     type: string
-                    example: Delectus quas.
+                    example: Eum modi accusamus voluptatem.
             name:
                 type: string
                 description: PVC name
@@ -2173,7 +2304,7 @@ definitions:
             phase: Bound
             size: 10Gi
             storage_class: standard
-            type: pvc
+            type: vm-disk
         required:
             - name
             - namespace
@@ -2252,6 +2383,10 @@ definitions:
                 description: Container port
                 example: 8080
                 format: int64
+            provisioned:
+                type: boolean
+                description: Windows native setup and bootstrap removal have completed
+                example: true
             ready_replicas:
                 type: integer
                 description: Number of ready replicas
@@ -2272,6 +2407,10 @@ definitions:
                     - container
                     - vm
                     - scratch
+            vm_profile:
+                type: string
+                description: Resolved guest profile; windows11-amd64-v1 uses display-only native provisioning
+                example: Sed eum sint voluptatem.
             volume_mounts:
                 type: array
                 items:
@@ -2302,6 +2441,7 @@ definitions:
             name: my-workspace
             namespace: workspaces
             port: 8080
+            provisioned: false
             ready_replicas: 1
             remote_desktop:
                 path: /
@@ -2309,6 +2449,7 @@ definitions:
                 protocol: selkies
             stopped: false
             type: container
+            vm_profile: Doloremque eum aperiam explicabo sunt.
             volume_mounts:
                 - mount_path: /home/coder
                   name: my-workspace-data
@@ -2411,6 +2552,22 @@ definitions:
         required:
             - name
             - image
+    WorkspaceInitialCredentials:
+        title: WorkspaceInitialCredentials
+        type: object
+        properties:
+            password:
+                type: string
+                example: Illum debitis illo explicabo.
+            username:
+                type: string
+                example: Ad accusantium rem quos.
+        example:
+            password: Nihil molestias laborum odio.
+            username: Earum eaque ea.
+        required:
+            - username
+            - password
     WorkspacesCloneRequestBody:
         title: WorkspacesCloneRequestBody
         type: object

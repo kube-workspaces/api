@@ -51,7 +51,12 @@ type Image struct {
 	// (container, vm, scratch). Empty means container-only.
 	WorkspaceTypes []string
 	// RemoteDesktop configuration for this image (Tier 1 transport).
-	RemoteDesktop *ImageRemoteDesktop
+	RemoteDesktop          *ImageRemoteDesktop
+	VMProfile              string
+	PersistentRootDisk     bool
+	PersistentRootDiskSize string
+	MemoryLimit            string
+	MemoryRequest          string
 }
 
 // ImageRemoteDesktop describes an in-guest remote desktop agent.
@@ -132,6 +137,10 @@ func NewImageClient() (*ImageClient, error) {
 	}
 
 	return &ImageClient{dynamic: dynClient}, nil
+}
+
+func NewImageClientFor(client dynamic.Interface) *ImageClient {
+	return &ImageClient{dynamic: client}
 }
 
 // ListImages lists all Image CRs (cluster-scoped).
@@ -275,6 +284,11 @@ func parseImage(obj *unstructured.Unstructured) (*Image, error) {
 	img.DefaultUserData = strField(spec, "defaultUserData")
 	img.DefaultHomedir = strField(spec, "defaultHomedir")
 	img.DefaultShell = strField(spec, "defaultShell")
+	img.VMProfile = strField(spec, "vmProfile")
+	img.PersistentRootDisk = boolField(spec, "persistentRootDisk")
+	img.PersistentRootDiskSize = strField(spec, "persistentRootDiskSize")
+	img.MemoryLimit = strField(spec, "memoryLimit")
+	img.MemoryRequest = strField(spec, "memoryRequest")
 
 	if links, ok := spec["links"].([]interface{}); ok {
 		for _, l := range links {

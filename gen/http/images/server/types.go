@@ -76,6 +76,16 @@ type CreateRequestBody struct {
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
+	// Controller-supported VM guest profile
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Import a per-workspace persistent root disk
+	PersistentRootDisk *bool `form:"persistent_root_disk,omitempty" json:"persistent_root_disk,omitempty" xml:"persistent_root_disk,omitempty"`
+	// Persistent root capacity
+	PersistentRootDiskSize *string `form:"persistent_root_disk_size,omitempty" json:"persistent_root_disk_size,omitempty" xml:"persistent_root_disk_size,omitempty"`
+	// Guest memory default
+	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	// Guest memory request default
+	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
 }
 
 // ListResponseBody is the type of the "images" service "list" endpoint HTTP
@@ -147,6 +157,12 @@ type CreateResponseBody struct {
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
+	// Controller-supported guest profile
+	VMProfile              *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	PersistentRootDisk     *bool   `form:"persistent_root_disk,omitempty" json:"persistent_root_disk,omitempty" xml:"persistent_root_disk,omitempty"`
+	PersistentRootDiskSize *string `form:"persistent_root_disk_size,omitempty" json:"persistent_root_disk_size,omitempty" xml:"persistent_root_disk_size,omitempty"`
+	MemoryLimit            *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	MemoryRequest          *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
 }
 
 // ImageResponse is used to define fields on response body types.
@@ -213,6 +229,12 @@ type ImageResponse struct {
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
+	// Controller-supported guest profile
+	VMProfile              *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	PersistentRootDisk     *bool   `form:"persistent_root_disk,omitempty" json:"persistent_root_disk,omitempty" xml:"persistent_root_disk,omitempty"`
+	PersistentRootDiskSize *string `form:"persistent_root_disk_size,omitempty" json:"persistent_root_disk_size,omitempty" xml:"persistent_root_disk_size,omitempty"`
+	MemoryLimit            *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	MemoryRequest          *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
 }
 
 // ImageProxyConfigResponse is used to define fields on response body types.
@@ -399,26 +421,31 @@ func NewListResponseBody(res []*images.Image) ListResponseBody {
 // "create" endpoint of the "images" service.
 func NewCreateResponseBody(res *imagesviews.ImageView) *CreateResponseBody {
 	body := &CreateResponseBody{
-		CrName:              *res.CrName,
-		Name:                *res.Name,
-		Image:               *res.Image,
-		Description:         res.Description,
-		Category:            res.Category,
-		DefaultPort:         *res.DefaultPort,
-		DefaultPath:         res.DefaultPath,
-		Icon:                res.Icon,
-		DefaultUID:          res.DefaultUID,
-		DefaultSharedMemory: res.DefaultSharedMemory,
-		Privileged:          res.Privileged,
-		HomepageURL:         res.HomepageURL,
-		SourceURL:           res.SourceURL,
-		ImageHomepageURL:    res.ImageHomepageURL,
-		DefaultUser:         res.DefaultUser,
-		DefaultPassword:     res.DefaultPassword,
-		DefaultCloudInit:    res.DefaultCloudInit,
-		DefaultUserData:     res.DefaultUserData,
-		DefaultHomedir:      res.DefaultHomedir,
-		DefaultShell:        res.DefaultShell,
+		CrName:                 *res.CrName,
+		Name:                   *res.Name,
+		Image:                  *res.Image,
+		Description:            res.Description,
+		Category:               res.Category,
+		DefaultPort:            *res.DefaultPort,
+		DefaultPath:            res.DefaultPath,
+		Icon:                   res.Icon,
+		DefaultUID:             res.DefaultUID,
+		DefaultSharedMemory:    res.DefaultSharedMemory,
+		Privileged:             res.Privileged,
+		HomepageURL:            res.HomepageURL,
+		SourceURL:              res.SourceURL,
+		ImageHomepageURL:       res.ImageHomepageURL,
+		DefaultUser:            res.DefaultUser,
+		DefaultPassword:        res.DefaultPassword,
+		DefaultCloudInit:       res.DefaultCloudInit,
+		DefaultUserData:        res.DefaultUserData,
+		DefaultHomedir:         res.DefaultHomedir,
+		DefaultShell:           res.DefaultShell,
+		VMProfile:              res.VMProfile,
+		PersistentRootDisk:     res.PersistentRootDisk,
+		PersistentRootDiskSize: res.PersistentRootDiskSize,
+		MemoryLimit:            res.MemoryLimit,
+		MemoryRequest:          res.MemoryRequest,
 	}
 	if res.Tags != nil {
 		body.Tags = make([]string, len(res.Tags))
@@ -473,24 +500,29 @@ func NewCreateResponseBody(res *imagesviews.ImageView) *CreateResponseBody {
 // NewCreateImagePayload builds a images service create endpoint payload.
 func NewCreateImagePayload(body *CreateRequestBody) *images.CreateImagePayload {
 	v := &images.CreateImagePayload{
-		Name:                *body.Name,
-		Image:               *body.Image,
-		Description:         body.Description,
-		Category:            body.Category,
-		DefaultPort:         *body.DefaultPort,
-		DefaultPath:         body.DefaultPath,
-		Icon:                body.Icon,
-		HomepageURL:         body.HomepageURL,
-		SourceURL:           body.SourceURL,
-		ImageHomepageURL:    body.ImageHomepageURL,
-		DefaultUser:         body.DefaultUser,
-		DefaultPassword:     body.DefaultPassword,
-		DefaultCloudInit:    body.DefaultCloudInit,
-		DefaultUserData:     body.DefaultUserData,
-		DefaultHomedir:      body.DefaultHomedir,
-		DefaultShell:        body.DefaultShell,
-		DefaultUID:          body.DefaultUID,
-		DefaultSharedMemory: body.DefaultSharedMemory,
+		Name:                   *body.Name,
+		Image:                  *body.Image,
+		Description:            body.Description,
+		Category:               body.Category,
+		DefaultPort:            *body.DefaultPort,
+		DefaultPath:            body.DefaultPath,
+		Icon:                   body.Icon,
+		HomepageURL:            body.HomepageURL,
+		SourceURL:              body.SourceURL,
+		ImageHomepageURL:       body.ImageHomepageURL,
+		DefaultUser:            body.DefaultUser,
+		DefaultPassword:        body.DefaultPassword,
+		DefaultCloudInit:       body.DefaultCloudInit,
+		DefaultUserData:        body.DefaultUserData,
+		DefaultHomedir:         body.DefaultHomedir,
+		DefaultShell:           body.DefaultShell,
+		DefaultUID:             body.DefaultUID,
+		DefaultSharedMemory:    body.DefaultSharedMemory,
+		VMProfile:              body.VMProfile,
+		PersistentRootDisk:     body.PersistentRootDisk,
+		PersistentRootDiskSize: body.PersistentRootDiskSize,
+		MemoryLimit:            body.MemoryLimit,
+		MemoryRequest:          body.MemoryRequest,
 	}
 	if body.Privileged != nil {
 		v.Privileged = *body.Privileged
@@ -577,6 +609,11 @@ func ValidateCreateRequestBody(body *CreateRequestBody) (err error) {
 	if body.RemoteDesktop != nil {
 		if err2 := ValidateImageRemoteDesktopRequestBody(body.RemoteDesktop); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.VMProfile != nil {
+		if !(*body.VMProfile == "windows11-amd64-v1") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.vm_profile", *body.VMProfile, []any{"windows11-amd64-v1"}))
 		}
 	}
 	return

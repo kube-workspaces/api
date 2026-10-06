@@ -19,6 +19,83 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
+// EncodeCredentialsResponse returns an encoder for responses returned by the
+// workspaces credentials endpoint.
+func EncodeCredentialsResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*workspaces.WorkspaceInitialCredentials)
+		enc := encoder(ctx, w)
+		body := NewCredentialsResponseBody(res)
+		w.Header().Set("Cache-Control", res.CacheControl)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeCredentialsRequest returns a decoder for requests sent to the
+// workspaces credentials endpoint.
+func DecodeCredentialsRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*workspaces.CredentialsPayload, error) {
+	return func(r *http.Request) (*workspaces.CredentialsPayload, error) {
+		var payload *workspaces.CredentialsPayload
+		var (
+			name      string
+			namespace string
+
+			params = mux.Vars(r)
+		)
+		name = params["name"]
+		namespaceRaw := r.URL.Query().Get("namespace")
+		if namespaceRaw != "" {
+			namespace = namespaceRaw
+		} else {
+			namespace = "workspaces"
+		}
+		payload = NewCredentialsPayload(name, namespace)
+
+		return payload, nil
+	}
+}
+
+// EncodeCredentialsError returns an encoder for errors returned by the
+// credentials workspaces endpoint.
+func EncodeCredentialsError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "forbidden":
+			var res workspaces.Forbidden
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		case "not_found":
+			var res workspaces.NotFound
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "unavailable":
+			var res workspaces.Unavailable
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeListResponse returns an encoder for responses returned by the
 // workspaces list endpoint.
 func EncodeListResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -542,6 +619,8 @@ func marshalWorkspacesWorkspaceToWorkspaceResponse(v *workspaces.Workspace) *Wor
 		ReadyReplicas: v.ReadyReplicas,
 		Stopped:       v.Stopped,
 		CreatedAt:     v.CreatedAt,
+		VMProfile:     v.VMProfile,
+		Provisioned:   v.Provisioned,
 	}
 	if v.ContainerState != nil {
 		res.ContainerState = marshalWorkspacesContainerStateToContainerStateResponse(v.ContainerState)
@@ -758,6 +837,22 @@ func unmarshalWorkspaceContainerRequestBodyToWorkspacesWorkspaceContainer(v *Wor
 	}
 	if v.GpuVendor == nil {
 		res.GpuVendor = "nvidia.com/gpu"
+	}
+
+	return res
+}
+
+// unmarshalVMOptionsRequestBodyToWorkspacesVMOptions builds a value of type
+// *workspaces.VMOptions from a value of type *VMOptionsRequestBody.
+func unmarshalVMOptionsRequestBodyToWorkspacesVMOptions(v *VMOptionsRequestBody) *workspaces.VMOptions {
+	if v == nil {
+		return nil
+	}
+	res := &workspaces.VMOptions{
+		ImportSecretName:        v.ImportSecretName,
+		ImportCertConfigMapName: v.ImportCertConfigMapName,
+		StorageClassName:        v.StorageClassName,
+		RootDiskSize:            v.RootDiskSize,
 	}
 
 	return res

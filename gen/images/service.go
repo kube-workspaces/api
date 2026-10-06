@@ -99,6 +99,16 @@ type CreateImagePayload struct {
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string
+	// Controller-supported VM guest profile
+	VMProfile *string
+	// Import a per-workspace persistent root disk
+	PersistentRootDisk *bool
+	// Persistent root capacity
+	PersistentRootDiskSize *string
+	// Guest memory default
+	MemoryLimit *string
+	// Guest memory request default
+	MemoryRequest *string
 }
 
 // Image is the result type of the images service create method.
@@ -165,6 +175,12 @@ type Image struct {
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string
+	// Controller-supported guest profile
+	VMProfile              *string
+	PersistentRootDisk     *bool
+	PersistentRootDiskSize *string
+	MemoryLimit            *string
+	MemoryRequest          *string
 }
 
 // Default login credentials for a workspace image
@@ -277,22 +293,27 @@ func NewViewedImage(res *Image, view string) *imagesviews.Image {
 // newImage converts projected type Image to service type Image.
 func newImage(vres *imagesviews.ImageView) *Image {
 	res := &Image{
-		Description:         vres.Description,
-		Category:            vres.Category,
-		DefaultPath:         vres.DefaultPath,
-		Icon:                vres.Icon,
-		DefaultUID:          vres.DefaultUID,
-		DefaultSharedMemory: vres.DefaultSharedMemory,
-		Privileged:          vres.Privileged,
-		HomepageURL:         vres.HomepageURL,
-		SourceURL:           vres.SourceURL,
-		ImageHomepageURL:    vres.ImageHomepageURL,
-		DefaultUser:         vres.DefaultUser,
-		DefaultPassword:     vres.DefaultPassword,
-		DefaultCloudInit:    vres.DefaultCloudInit,
-		DefaultUserData:     vres.DefaultUserData,
-		DefaultHomedir:      vres.DefaultHomedir,
-		DefaultShell:        vres.DefaultShell,
+		Description:            vres.Description,
+		Category:               vres.Category,
+		DefaultPath:            vres.DefaultPath,
+		Icon:                   vres.Icon,
+		DefaultUID:             vres.DefaultUID,
+		DefaultSharedMemory:    vres.DefaultSharedMemory,
+		Privileged:             vres.Privileged,
+		HomepageURL:            vres.HomepageURL,
+		SourceURL:              vres.SourceURL,
+		ImageHomepageURL:       vres.ImageHomepageURL,
+		DefaultUser:            vres.DefaultUser,
+		DefaultPassword:        vres.DefaultPassword,
+		DefaultCloudInit:       vres.DefaultCloudInit,
+		DefaultUserData:        vres.DefaultUserData,
+		DefaultHomedir:         vres.DefaultHomedir,
+		DefaultShell:           vres.DefaultShell,
+		VMProfile:              vres.VMProfile,
+		PersistentRootDisk:     vres.PersistentRootDisk,
+		PersistentRootDiskSize: vres.PersistentRootDiskSize,
+		MemoryLimit:            vres.MemoryLimit,
+		MemoryRequest:          vres.MemoryRequest,
 	}
 	if vres.CrName != nil {
 		res.CrName = *vres.CrName
@@ -360,26 +381,31 @@ func newImage(vres *imagesviews.ImageView) *Image {
 // the "default" view.
 func newImageView(res *Image) *imagesviews.ImageView {
 	vres := &imagesviews.ImageView{
-		CrName:              &res.CrName,
-		Name:                &res.Name,
-		Image:               &res.Image,
-		Description:         res.Description,
-		Category:            res.Category,
-		DefaultPort:         &res.DefaultPort,
-		DefaultPath:         res.DefaultPath,
-		Icon:                res.Icon,
-		DefaultUID:          res.DefaultUID,
-		DefaultSharedMemory: res.DefaultSharedMemory,
-		Privileged:          res.Privileged,
-		HomepageURL:         res.HomepageURL,
-		SourceURL:           res.SourceURL,
-		ImageHomepageURL:    res.ImageHomepageURL,
-		DefaultUser:         res.DefaultUser,
-		DefaultPassword:     res.DefaultPassword,
-		DefaultCloudInit:    res.DefaultCloudInit,
-		DefaultUserData:     res.DefaultUserData,
-		DefaultHomedir:      res.DefaultHomedir,
-		DefaultShell:        res.DefaultShell,
+		CrName:                 &res.CrName,
+		Name:                   &res.Name,
+		Image:                  &res.Image,
+		Description:            res.Description,
+		Category:               res.Category,
+		DefaultPort:            &res.DefaultPort,
+		DefaultPath:            res.DefaultPath,
+		Icon:                   res.Icon,
+		DefaultUID:             res.DefaultUID,
+		DefaultSharedMemory:    res.DefaultSharedMemory,
+		Privileged:             res.Privileged,
+		HomepageURL:            res.HomepageURL,
+		SourceURL:              res.SourceURL,
+		ImageHomepageURL:       res.ImageHomepageURL,
+		DefaultUser:            res.DefaultUser,
+		DefaultPassword:        res.DefaultPassword,
+		DefaultCloudInit:       res.DefaultCloudInit,
+		DefaultUserData:        res.DefaultUserData,
+		DefaultHomedir:         res.DefaultHomedir,
+		DefaultShell:           res.DefaultShell,
+		VMProfile:              res.VMProfile,
+		PersistentRootDisk:     res.PersistentRootDisk,
+		PersistentRootDiskSize: res.PersistentRootDiskSize,
+		MemoryLimit:            res.MemoryLimit,
+		MemoryRequest:          res.MemoryRequest,
 	}
 	if res.Tags != nil {
 		vres.Tags = make([]string, len(res.Tags))

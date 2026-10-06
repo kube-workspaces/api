@@ -76,6 +76,16 @@ type CreateRequestBody struct {
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
+	// Controller-supported VM guest profile
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Import a per-workspace persistent root disk
+	PersistentRootDisk *bool `form:"persistent_root_disk,omitempty" json:"persistent_root_disk,omitempty" xml:"persistent_root_disk,omitempty"`
+	// Persistent root capacity
+	PersistentRootDiskSize *string `form:"persistent_root_disk_size,omitempty" json:"persistent_root_disk_size,omitempty" xml:"persistent_root_disk_size,omitempty"`
+	// Guest memory default
+	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	// Guest memory request default
+	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
 }
 
 // CreateResponseBody is the type of the "images" service "create" endpoint
@@ -143,6 +153,12 @@ type CreateResponseBody struct {
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
+	// Controller-supported guest profile
+	VMProfile              *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	PersistentRootDisk     *bool   `form:"persistent_root_disk,omitempty" json:"persistent_root_disk,omitempty" xml:"persistent_root_disk,omitempty"`
+	PersistentRootDiskSize *string `form:"persistent_root_disk_size,omitempty" json:"persistent_root_disk_size,omitempty" xml:"persistent_root_disk_size,omitempty"`
+	MemoryLimit            *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	MemoryRequest          *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
 }
 
 // ImageResponse is used to define fields on response body types.
@@ -209,6 +225,12 @@ type ImageResponse struct {
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
+	// Controller-supported guest profile
+	VMProfile              *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	PersistentRootDisk     *bool   `form:"persistent_root_disk,omitempty" json:"persistent_root_disk,omitempty" xml:"persistent_root_disk,omitempty"`
+	PersistentRootDiskSize *string `form:"persistent_root_disk_size,omitempty" json:"persistent_root_disk_size,omitempty" xml:"persistent_root_disk_size,omitempty"`
+	MemoryLimit            *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	MemoryRequest          *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
 }
 
 // ImageProxyConfigResponse is used to define fields on response body types.
@@ -381,25 +403,30 @@ type ImageRemoteDesktopResponseBody struct {
 // "create" endpoint of the "images" service.
 func NewCreateRequestBody(p *images.CreateImagePayload) *CreateRequestBody {
 	body := &CreateRequestBody{
-		Name:                p.Name,
-		Image:               p.Image,
-		Description:         p.Description,
-		Category:            p.Category,
-		DefaultPort:         p.DefaultPort,
-		DefaultPath:         p.DefaultPath,
-		Icon:                p.Icon,
-		Privileged:          p.Privileged,
-		HomepageURL:         p.HomepageURL,
-		SourceURL:           p.SourceURL,
-		ImageHomepageURL:    p.ImageHomepageURL,
-		DefaultUser:         p.DefaultUser,
-		DefaultPassword:     p.DefaultPassword,
-		DefaultCloudInit:    p.DefaultCloudInit,
-		DefaultUserData:     p.DefaultUserData,
-		DefaultHomedir:      p.DefaultHomedir,
-		DefaultShell:        p.DefaultShell,
-		DefaultUID:          p.DefaultUID,
-		DefaultSharedMemory: p.DefaultSharedMemory,
+		Name:                   p.Name,
+		Image:                  p.Image,
+		Description:            p.Description,
+		Category:               p.Category,
+		DefaultPort:            p.DefaultPort,
+		DefaultPath:            p.DefaultPath,
+		Icon:                   p.Icon,
+		Privileged:             p.Privileged,
+		HomepageURL:            p.HomepageURL,
+		SourceURL:              p.SourceURL,
+		ImageHomepageURL:       p.ImageHomepageURL,
+		DefaultUser:            p.DefaultUser,
+		DefaultPassword:        p.DefaultPassword,
+		DefaultCloudInit:       p.DefaultCloudInit,
+		DefaultUserData:        p.DefaultUserData,
+		DefaultHomedir:         p.DefaultHomedir,
+		DefaultShell:           p.DefaultShell,
+		DefaultUID:             p.DefaultUID,
+		DefaultSharedMemory:    p.DefaultSharedMemory,
+		VMProfile:              p.VMProfile,
+		PersistentRootDisk:     p.PersistentRootDisk,
+		PersistentRootDiskSize: p.PersistentRootDiskSize,
+		MemoryLimit:            p.MemoryLimit,
+		MemoryRequest:          p.MemoryRequest,
 	}
 	if p.Tags != nil {
 		body.Tags = make([]string, len(p.Tags))
@@ -476,26 +503,31 @@ func NewListImageOK(body []*ImageResponse) []*images.Image {
 // from a HTTP "Created" response.
 func NewCreateImageCreated(body *CreateResponseBody) *imagesviews.ImageView {
 	v := &imagesviews.ImageView{
-		CrName:              body.CrName,
-		Name:                body.Name,
-		Image:               body.Image,
-		Description:         body.Description,
-		Category:            body.Category,
-		DefaultPort:         body.DefaultPort,
-		DefaultPath:         body.DefaultPath,
-		Icon:                body.Icon,
-		DefaultUID:          body.DefaultUID,
-		DefaultSharedMemory: body.DefaultSharedMemory,
-		Privileged:          body.Privileged,
-		HomepageURL:         body.HomepageURL,
-		SourceURL:           body.SourceURL,
-		ImageHomepageURL:    body.ImageHomepageURL,
-		DefaultUser:         body.DefaultUser,
-		DefaultPassword:     body.DefaultPassword,
-		DefaultCloudInit:    body.DefaultCloudInit,
-		DefaultUserData:     body.DefaultUserData,
-		DefaultHomedir:      body.DefaultHomedir,
-		DefaultShell:        body.DefaultShell,
+		CrName:                 body.CrName,
+		Name:                   body.Name,
+		Image:                  body.Image,
+		Description:            body.Description,
+		Category:               body.Category,
+		DefaultPort:            body.DefaultPort,
+		DefaultPath:            body.DefaultPath,
+		Icon:                   body.Icon,
+		DefaultUID:             body.DefaultUID,
+		DefaultSharedMemory:    body.DefaultSharedMemory,
+		Privileged:             body.Privileged,
+		HomepageURL:            body.HomepageURL,
+		SourceURL:              body.SourceURL,
+		ImageHomepageURL:       body.ImageHomepageURL,
+		DefaultUser:            body.DefaultUser,
+		DefaultPassword:        body.DefaultPassword,
+		DefaultCloudInit:       body.DefaultCloudInit,
+		DefaultUserData:        body.DefaultUserData,
+		DefaultHomedir:         body.DefaultHomedir,
+		DefaultShell:           body.DefaultShell,
+		VMProfile:              body.VMProfile,
+		PersistentRootDisk:     body.PersistentRootDisk,
+		PersistentRootDiskSize: body.PersistentRootDiskSize,
+		MemoryLimit:            body.MemoryLimit,
+		MemoryRequest:          body.MemoryRequest,
 	}
 	if body.Tags != nil {
 		v.Tags = make([]string, len(body.Tags))

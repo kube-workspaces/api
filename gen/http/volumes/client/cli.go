@@ -59,7 +59,7 @@ func BuildCreatePayload(volumesCreateBody string) (*volumes.CreateVolumePayload,
 	{
 		err = json.Unmarshal([]byte(volumesCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"access_mode\": \"ReadWriteOnce\",\n      \"name\": \"my-data\",\n      \"namespace\": \"workspaces\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\",\n      \"type\": \"vm-disk\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"access_mode\": \"ReadWriteOnce\",\n      \"name\": \"my-data\",\n      \"namespace\": \"workspaces\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\",\n      \"type\": \"pvc\"\n   }'")
 		}
 		if !(body.Type == "pvc" || body.Type == "vm-disk") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.type", body.Type, []any{"pvc", "vm-disk"}))

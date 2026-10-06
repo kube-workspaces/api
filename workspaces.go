@@ -150,6 +150,15 @@ func (s *workspacessrvc) Get(ctx context.Context, p *workspaces.GetPayload) (res
 // Create a new workspace
 func (s *workspacessrvc) Create(ctx context.Context, p *workspaces.CreateWorkspacePayload) (res *workspaces.Workspace, err error) {
 	log.Printf(ctx, "workspaces.create name=%s namespace=%s type=%s", p.Name, p.Namespace, p.Type)
+	var windowsProfile map[string]interface{}
+	if img, lookupErr := s.imageClient.GetImageByRef(ctx, p.Container.Image); lookupErr == nil && img.VMProfile == windowsVMProfile {
+		windowsProfile, err = buildWindowsProfile(p, img)
+		if err != nil {
+			return nil, workspaces.Invalid(err.Error())
+		}
+	} else if p.VMOptions != nil {
+		return nil, workspaces.Invalid("vm_options requires a Windows catalog image")
+	}
 
 	// Validate per-type constraints. VM workspaces boot a containerDisk image
 	// via KubeVirt. GPU requests are supported: the requested GPU resource is
@@ -190,6 +199,11 @@ func (s *workspacessrvc) Create(ctx context.Context, p *workspaces.CreateWorkspa
 		applyPodDefaults(ctx, ws, s.podDefaultClient, p.Namespace)
 	} else {
 		log.Printf(ctx, "workspaces.create: podDefaultClient is nil, skipping PodDefaults")
+	}
+	if windowsProfile != nil {
+		if err := applyWindowsProfile(ws, windowsProfile); err != nil {
+			return nil, workspaces.Invalid(err.Error())
+		}
 	}
 
 	// Set action annotations on the CR before creation
@@ -443,6 +457,9 @@ func (s *workspacessrvc) Clone(ctx context.Context, p *workspaces.ClonePayload) 
 		"kubeworkspaces.io/last-action-by",
 		"kubeworkspaces.io/last-action-time",
 		"kubeworkspaces.io/reset",
+		"kubeworkspaces.io/reboot",
+		"kubeworkspaces.io/windows-provisioned-generation",
+		"kubeworkspaces.io/windows-detaching-generation",
 	} {
 		delete(annotations, a)
 	}
@@ -452,6 +469,12 @@ func (s *workspacessrvc) Clone(ctx context.Context, p *workspaces.ClonePayload) 
 	annotations["kubeworkspaces.io/last-action-by"] = actor
 	annotations["kubeworkspaces.io/last-action-time"] = time.Now().UTC().Format(time.RFC3339)
 	clone.SetAnnotations(annotations)
+	if windowsWorkspaceProfile(clone) {
+		if p.Image != nil || p.Port != nil || p.CPULimit != nil || p.MemoryLimit != nil {
+			return nil, workspaces.Invalid("Windows cloning keeps the resolved image/profile; create a new workspace for image or hardware changes")
+		}
+		unstructured.RemoveNestedField(clone.Object, "spec", "vmProfile", "generation")
+	}
 
 	// Apply optional overrides to the main container.
 	containers, found, _ := unstructured.NestedSlice(clone.Object, "spec", "template", "spec", "containers")
@@ -1177,5 +1200,11 @@ func unstructuredToWorkspace(obj *unstructured.Unstructured, rd *k8s.ImageRemote
 		}
 	}
 
+	if windowsWorkspaceProfile(obj) {
+		ws.VMProfile = strPtr(windowsVMProfile)
+		generation, _, _ := unstructured.NestedString(obj.Object, "spec", "vmProfile", "generation")
+		ws.Provisioned = boolPtr(generation != "" && obj.GetAnnotations()["kubeworkspaces.io/windows-provisioned-generation"] == generation && obj.GetAnnotations()["kubeworkspaces.io/windows-detaching-generation"] == "")
+		ws.RemoteDesktop = nil
+	}
 	return ws
 }

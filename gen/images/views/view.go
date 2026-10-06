@@ -83,6 +83,12 @@ type ImageView struct {
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string
+	// Controller-supported guest profile
+	VMProfile              *string
+	PersistentRootDisk     *bool
+	PersistentRootDiskSize *string
+	MemoryLimit            *string
+	MemoryRequest          *string
 }
 
 // ImageProxyConfigView is a type that runs validations on a projected type.
@@ -172,6 +178,11 @@ var (
 			"default_credentials",
 			"remote_desktop",
 			"workspace_types",
+			"vm_profile",
+			"persistent_root_disk",
+			"persistent_root_disk_size",
+			"memory_limit",
+			"memory_request",
 		},
 	}
 )

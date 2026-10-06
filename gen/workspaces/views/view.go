@@ -53,6 +53,11 @@ type WorkspaceView struct {
 	VolumeMounts []*VolumeMountView
 	// Remote desktop agent configuration (Tier 1)
 	RemoteDesktop *ImageRemoteDesktopView
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool
 }
 
 // ContainerStateView is a type that runs validations on a projected type.
@@ -119,6 +124,8 @@ var (
 			"created_at",
 			"volume_mounts",
 			"remote_desktop",
+			"vm_profile",
+			"provisioned",
 		},
 	}
 )

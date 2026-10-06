@@ -15,28 +15,45 @@ import (
 
 // Client is the "workspaces" service client.
 type Client struct {
-	ListEndpoint   goa.Endpoint
-	GetEndpoint    goa.Endpoint
-	CreateEndpoint goa.Endpoint
-	DeleteEndpoint goa.Endpoint
-	StartEndpoint  goa.Endpoint
-	StopEndpoint   goa.Endpoint
-	ResetEndpoint  goa.Endpoint
-	CloneEndpoint  goa.Endpoint
+	CredentialsEndpoint goa.Endpoint
+	ListEndpoint        goa.Endpoint
+	GetEndpoint         goa.Endpoint
+	CreateEndpoint      goa.Endpoint
+	DeleteEndpoint      goa.Endpoint
+	StartEndpoint       goa.Endpoint
+	StopEndpoint        goa.Endpoint
+	ResetEndpoint       goa.Endpoint
+	CloneEndpoint       goa.Endpoint
 }
 
 // NewClient initializes a "workspaces" service client given the endpoints.
-func NewClient(list, get, create, delete_, start, stop, reset, clone goa.Endpoint) *Client {
+func NewClient(credentials, list, get, create, delete_, start, stop, reset, clone goa.Endpoint) *Client {
 	return &Client{
-		ListEndpoint:   list,
-		GetEndpoint:    get,
-		CreateEndpoint: create,
-		DeleteEndpoint: delete_,
-		StartEndpoint:  start,
-		StopEndpoint:   stop,
-		ResetEndpoint:  reset,
-		CloneEndpoint:  clone,
+		CredentialsEndpoint: credentials,
+		ListEndpoint:        list,
+		GetEndpoint:         get,
+		CreateEndpoint:      create,
+		DeleteEndpoint:      delete_,
+		StartEndpoint:       start,
+		StopEndpoint:        stop,
+		ResetEndpoint:       reset,
+		CloneEndpoint:       clone,
 	}
+}
+
+// Credentials calls the "credentials" endpoint of the "workspaces" service.
+// Credentials may return the following errors:
+//   - "forbidden" (type Forbidden)
+//   - "not_found" (type NotFound)
+//   - "unavailable" (type Unavailable)
+//   - error: internal error
+func (c *Client) Credentials(ctx context.Context, p *CredentialsPayload) (res *WorkspaceInitialCredentials, err error) {
+	var ires any
+	ires, err = c.CredentialsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*WorkspaceInitialCredentials), nil
 }
 
 // List calls the "list" endpoint of the "workspaces" service.

@@ -11,6 +11,11 @@ import (
 	"fmt"
 )
 
+// CredentialsWorkspacesPath returns the URL path to the workspaces service credentials HTTP endpoint.
+func CredentialsWorkspacesPath(name string) string {
+	return fmt.Sprintf("/v1/workspaces/%v/credentials", name)
+}
+
 // ListWorkspacesPath returns the URL path to the workspaces service list HTTP endpoint.
 func ListWorkspacesPath() string {
 	return "/v1/workspaces"

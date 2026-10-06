@@ -1879,6 +1879,28 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				return
 			}
 			gvr := schema.GroupVersionResource{Group: "kubevirt.io", Version: "v1", Resource: "virtualmachineinstances"}
+			if ws, err := wsClient.GetWorkspace(r.Context(), ns, name); err == nil {
+				profile, _, _ := unstructured.NestedString(ws.Object, "spec", "vmProfile", "id")
+				if profile == "windows11-amd64-v1" {
+					annotations := ws.GetAnnotations()
+					if annotations == nil {
+						annotations = map[string]string{}
+					}
+					if _, stopped := annotations["kubeworkspaces.io/stopped"]; stopped {
+						http.Error(w, "start the Windows workspace before rebooting", http.StatusConflict)
+						return
+					}
+					annotations["kubeworkspaces.io/reboot"] = time.Now().UTC().Format(time.RFC3339Nano)
+					ws.SetAnnotations(annotations)
+					if _, err := wsClient.UpdateWorkspace(r.Context(), ws); err != nil {
+						http.Error(w, "failed to request graceful Windows reboot", http.StatusInternalServerError)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(map[string]any{"ok": true, "graceful": true})
+					return
+				}
+			}
 			if err := dynClient.Resource(gvr).Namespace(ns).Delete(r.Context(), name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 				log.Printf(r.Context(), "reboot failed for %s/%s: %v", ns, name, err)
 				w.Header().Set("Content-Type", "application/json")
