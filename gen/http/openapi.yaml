@@ -419,6 +419,139 @@ paths:
                         type: string
             schemes:
                 - http
+    /v1/workspaces/{name}/agent/attach:
+        post:
+            tags:
+                - agent
+            summary: attach agent
+            description: Attach a controller to a workspace's guest agent session, minting a short-lived ticket
+            operationId: agent#attach
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+                - name: AttachRequestBody
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/AgentAttachPayload'
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/AgentTicket'
+                "400":
+                    description: Bad Request response.
+                    schema:
+                        type: string
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+            schemes:
+                - http
+    /v1/workspaces/{name}/agent/release:
+        post:
+            tags:
+                - agent
+            summary: release agent
+            description: Release a workspace guest agent session by its server-side id (best-effort; unknown ids report ok)
+            operationId: agent#release
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+                - name: X-KW-Agent-Session
+                  in: header
+                  description: Server-side session identifier from attach
+                  required: true
+                  type: string
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/AgentRelease'
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+            schemes:
+                - http
+    /v1/workspaces/{name}/agent/renew:
+        post:
+            tags:
+                - agent
+            summary: renew agent
+            description: Renew a workspace guest agent session by its server-side id (X-KW-Agent-Session header)
+            operationId: agent#renew
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+                - name: X-KW-Agent-Session
+                  in: header
+                  description: Server-side session identifier from attach
+                  required: true
+                  type: string
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/AgentRenew'
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+            schemes:
+                - http
     /v1/workspaces/{name}/clone:
         post:
             tags:
@@ -932,6 +1065,83 @@ paths:
             schemes:
                 - http
 definitions:
+    AgentAttachPayload:
+        title: AgentAttachPayload
+        type: object
+        properties:
+            participant:
+                type: string
+                description: Viewer-chosen participant label, echoed in session records. Not an authorization boundary
+                example: chris-laptop
+        example:
+            participant: chris-laptop
+    AgentRelease:
+        title: 'Mediatype identifier: application/vnd.agent-release+json; view=default'
+        type: object
+        properties:
+            ok:
+                type: boolean
+                description: 'Whether the session is gone (unknown ids report ok: best-effort release)'
+                example: true
+        description: ReleaseResponseBody result type (default view)
+        example:
+            ok: true
+        required:
+            - ok
+    AgentRenew:
+        title: 'Mediatype identifier: application/vnd.agent-renew+json; view=default'
+        type: object
+        properties:
+            protocol:
+                type: integer
+                description: Agent ticket/API revision
+                example: 1
+                format: int64
+            ttl_ms:
+                type: integer
+                description: Renewed lifetime in milliseconds
+                example: 60000
+                format: int64
+        description: RenewResponseBody result type (default view)
+        example:
+            protocol: 1
+            ttl_ms: 60000
+        required:
+            - ttl_ms
+            - protocol
+    AgentTicket:
+        title: 'Mediatype identifier: application/vnd.agent-ticket+json; view=default'
+        type: object
+        properties:
+            id:
+                type: string
+                description: Opaque server-side session identifier for renew/release correlation. Never sent to the guest
+                example: 8ec18121f4c2409aa7c025487f4e310c
+            protocol:
+                type: integer
+                description: Agent ticket/API revision
+                example: 1
+                format: int64
+            ticket:
+                type: string
+                description: Signed bearer ticket (id.payload.signature) to present in the agent attach message
+                example: 8ec18121f4c2409aa7c025487f4e310c.eyJ3b3Jrc3BhY2VVaWQiOiJ3cy0xIn0.c2ln
+            ttl_ms:
+                type: integer
+                description: Ticket/session lifetime in milliseconds; renew at half of it
+                example: 60000
+                format: int64
+        description: AttachResponseBody result type (default view)
+        example:
+            id: 8ec18121f4c2409aa7c025487f4e310c
+            protocol: 1
+            ticket: 8ec18121f4c2409aa7c025487f4e310c.eyJ3b3Jrc3BhY2VVaWQiOiJ3cy0xIn0.c2ln
+            ttl_ms: 60000
+        required:
+            - id
+            - ticket
+            - ttl_ms
+            - protocol
     ContainerState:
         title: ContainerState
         type: object

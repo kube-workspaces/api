@@ -1490,3 +1490,170 @@ var _ = Service("display", func() {
 		})
 	})
 })
+
+// Agent transport (workspace-agent) session types
+//
+// Agent sessions attach one exclusive controller to a workspace guest agent
+// through the proxy bridge. Tickets are short-lived HMAC bearers minted by
+// this API (see internal/agent for the trust model); the guest validates
+// binding and freshness, never platform keys.
+
+var AgentAttachPayload = Type("AgentAttachPayload", func() {
+	Description("Payload for attaching a controller to a workspace's guest agent session")
+	Attribute("namespace", String, "Workspace namespace", func() {
+		Default("workspaces")
+		Example("workspaces")
+	})
+	Attribute("name", String, "Workspace name", func() {
+		Example("my-workspace")
+	})
+	Attribute("participant", String, "Viewer-chosen participant label, echoed in session records. Not an authorization boundary", func() {
+		Example("chris-laptop")
+	})
+	Required("name")
+})
+
+var AgentTicketResult = ResultType("application/vnd.agent-ticket+json", func() {
+	Description("Short-lived attach ticket for a workspace guest agent session")
+	Attributes(func() {
+		Attribute("id", String, "Opaque server-side session identifier for renew/release correlation. Never sent to the guest", func() {
+			Example("8ec18121f4c2409aa7c025487f4e310c")
+		})
+		Attribute("ticket", String, "Signed bearer ticket (id.payload.signature) to present in the agent attach message", func() {
+			Example("8ec18121f4c2409aa7c025487f4e310c.eyJ3b3Jrc3BhY2VVaWQiOiJ3cy0xIn0.c2ln")
+		})
+		Attribute("ttl_ms", Int, "Ticket/session lifetime in milliseconds; renew at half of it", func() {
+			Example(60000)
+		})
+		Attribute("protocol", Int, "Agent ticket/API revision", func() {
+			Example(1)
+		})
+	})
+	Required("id", "ticket", "ttl_ms", "protocol")
+})
+
+var AgentRenewResult = ResultType("application/vnd.agent-renew+json", func() {
+	Description("Result of renewing a workspace guest agent session")
+	Attributes(func() {
+		Attribute("ttl_ms", Int, "Renewed lifetime in milliseconds", func() {
+			Example(60000)
+		})
+		Attribute("protocol", Int, "Agent ticket/API revision", func() {
+			Example(1)
+		})
+	})
+	Required("ttl_ms", "protocol")
+})
+
+var AgentReleaseResult = ResultType("application/vnd.agent-release+json", func() {
+	Description("Result of releasing a workspace guest agent session")
+	Attributes(func() {
+		Attribute("ok", Boolean, "Whether the session is gone (unknown ids report ok: best-effort release)", func() {
+			Example(true)
+		})
+	})
+	Required("ok")
+})
+
+var _ = Service("agent", func() {
+	Description("Workspace guest agent sessions: short-lived attach tickets with renew/release for the proxy bridge")
+
+	Method("attach", func() {
+		Description("Attach a controller to a workspace's guest agent session, minting a short-lived ticket")
+		Payload(AgentAttachPayload)
+		Result(AgentTicketResult)
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace not found", func() {
+			Example("workspace \"my-workspace\" not found")
+		})
+		Error("invalid", String, "Invalid attach request", func() {
+			Example("agent sessions are only available for VM workspaces")
+		})
+		HTTP(func() {
+			POST("/v1/workspaces/{name}/agent/attach")
+			Param("namespace")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+			Response("invalid", StatusBadRequest)
+		})
+	})
+
+	Method("renew", func() {
+		Description("Renew a workspace guest agent session by its server-side id (X-KW-Agent-Session header)")
+		Payload(func() {
+			Attribute("namespace", String, "Workspace namespace", func() {
+				Default("workspaces")
+				Example("workspaces")
+			})
+			Attribute("name", String, "Workspace name", func() {
+				Example("my-workspace")
+			})
+			Attribute("session_id", String, "Server-side session identifier from attach", func() {
+				Example("8ec18121f4c2409aa7c025487f4e310c")
+			})
+			Required("name", "session_id")
+		})
+		Result(AgentRenewResult)
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace or session not found", func() {
+			Example("agent session for workspace \"my-workspace\" not found")
+		})
+		HTTP(func() {
+			POST("/v1/workspaces/{name}/agent/renew")
+			Param("namespace")
+			Header("session_id:X-KW-Agent-Session")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+		})
+	})
+
+	Method("release", func() {
+		Description("Release a workspace guest agent session by its server-side id (best-effort; unknown ids report ok)")
+		Payload(func() {
+			Attribute("namespace", String, "Workspace namespace", func() {
+				Default("workspaces")
+				Example("workspaces")
+			})
+			Attribute("name", String, "Workspace name", func() {
+				Example("my-workspace")
+			})
+			Attribute("session_id", String, "Server-side session identifier from attach", func() {
+				Example("8ec18121f4c2409aa7c025487f4e310c")
+			})
+			Required("name", "session_id")
+		})
+		Result(AgentReleaseResult)
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace not found", func() {
+			Example("workspace \"my-workspace\" not found")
+		})
+		HTTP(func() {
+			POST("/v1/workspaces/{name}/agent/release")
+			Param("namespace")
+			Header("session_id:X-KW-Agent-Session")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+		})
+	})
+})

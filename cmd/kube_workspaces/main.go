@@ -14,6 +14,7 @@ import (
 	"time"
 
 	kubeworkspaces "github.com/kube-workspaces/api"
+	agent "github.com/kube-workspaces/api/gen/agent"
 	display "github.com/kube-workspaces/api/gen/display"
 	health "github.com/kube-workspaces/api/gen/health"
 	images "github.com/kube-workspaces/api/gen/images"
@@ -21,6 +22,7 @@ import (
 	sshkeys "github.com/kube-workspaces/api/gen/sshkeys"
 	volumes "github.com/kube-workspaces/api/gen/volumes"
 	workspaces "github.com/kube-workspaces/api/gen/workspaces"
+	agentstore "github.com/kube-workspaces/api/internal/agent"
 	"github.com/kube-workspaces/api/internal/auth"
 	dispstore "github.com/kube-workspaces/api/internal/display"
 	"github.com/kube-workspaces/api/internal/k8s"
@@ -141,6 +143,7 @@ func main() {
 		sshkeysSvc    sshkeys.Service
 		healthSvc     health.Service
 		displaySvc    display.Service
+		agentSvc      agent.Service
 	)
 	// The sessions registry is shared by the Goa display service (REST
 	// membership/control) and the shared-display WebSocket route so both see
@@ -154,6 +157,13 @@ func main() {
 		sshkeysSvc = kubeworkspaces.NewSSHKeys(authProvider)
 		healthSvc = kubeworkspaces.NewHealth()
 		displaySvc = kubeworkspaces.NewDisplay(wsClient, displaySessions, kubeworkspaces.SharedDisplayEnabledFromEnv())
+		agentSvc = kubeworkspaces.NewAgent(wsClient, agentstore.NewStore(), func(ctx context.Context) ([][]byte, error) {
+			cfg, err := authProvider.GetConfig(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return cfg.SessionSigningKeys(), nil
+		})
 	}
 
 	// Wrap the services in endpoints that can be invoked from other services
@@ -166,6 +176,7 @@ func main() {
 		sshkeysEndpoints    *sshkeys.Endpoints
 		healthEndpoints     *health.Endpoints
 		displayEndpoints    *display.Endpoints
+		agentEndpoints      *agent.Endpoints
 	)
 	{
 		workspacesEndpoints = workspaces.NewEndpoints(workspacesSvc)
@@ -189,6 +200,9 @@ func main() {
 		displayEndpoints = display.NewEndpoints(displaySvc)
 		displayEndpoints.Use(debug.LogPayloads())
 		displayEndpoints.Use(log.Endpoint)
+		agentEndpoints = agent.NewEndpoints(agentSvc)
+		agentEndpoints.Use(debug.LogPayloads())
+		agentEndpoints.Use(log.Endpoint)
 	}
 
 	// Create channel used by both the signal handler and server goroutines
@@ -230,7 +244,7 @@ func main() {
 			} else if u.Port() == "" {
 				u.Host = net.JoinHostPort(u.Host, "80")
 			}
-			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, displaySessions, &wg, errc, *dbgF)
+			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, agentEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, displaySessions, &wg, errc, *dbgF)
 		}
 
 	default:
