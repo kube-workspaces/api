@@ -69,6 +69,26 @@ func BuildRenewPayload(agentRenewName string, agentRenewNamespace string, agentR
 	return v, nil
 }
 
+// BuildStatusPayload builds the payload for the agent status endpoint from CLI
+// flags.
+func BuildStatusPayload(agentStatusName string, agentStatusNamespace string) (*agent.StatusPayload, error) {
+	var name string
+	{
+		name = agentStatusName
+	}
+	var namespace string
+	{
+		if agentStatusNamespace != "" {
+			namespace = agentStatusNamespace
+		}
+	}
+	v := &agent.StatusPayload{}
+	v.Name = name
+	v.Namespace = namespace
+
+	return v, nil
+}
+
 // BuildReleasePayload builds the payload for the agent release endpoint from
 // CLI flags.
 func BuildReleasePayload(agentReleaseName string, agentReleaseNamespace string, agentReleaseSessionID string) (*agent.ReleasePayload, error) {

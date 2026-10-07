@@ -44,6 +44,17 @@ type RenewResponseBody struct {
 	Protocol *int `form:"protocol,omitempty" json:"protocol,omitempty" xml:"protocol,omitempty"`
 }
 
+// StatusResponseBody is the type of the "agent" service "status" endpoint HTTP
+// response body.
+type StatusResponseBody struct {
+	// Whether at least one live agent session is bound to this workspace
+	Active *bool `form:"active,omitempty" json:"active,omitempty" xml:"active,omitempty"`
+	// Live (unexpired) session count for this workspace
+	Sessions *int `form:"sessions,omitempty" json:"sessions,omitempty" xml:"sessions,omitempty"`
+	// Agent ticket/API revision
+	Protocol *int `form:"protocol,omitempty" json:"protocol,omitempty" xml:"protocol,omitempty"`
+}
+
 // ReleaseResponseBody is the type of the "agent" service "release" endpoint
 // HTTP response body.
 type ReleaseResponseBody struct {
@@ -130,6 +141,40 @@ func NewRenewNotFound(body string) agent.NotFound {
 // NewRenewUnauthorized builds a agent service renew endpoint unauthorized
 // error.
 func NewRenewUnauthorized(body string) agent.Unauthorized {
+	v := agent.Unauthorized(body)
+
+	return v
+}
+
+// NewStatusAgentStatusOK builds a "agent" service "status" endpoint result
+// from a HTTP "OK" response.
+func NewStatusAgentStatusOK(body *StatusResponseBody) *agentviews.AgentStatusView {
+	v := &agentviews.AgentStatusView{
+		Active:   body.Active,
+		Sessions: body.Sessions,
+		Protocol: body.Protocol,
+	}
+
+	return v
+}
+
+// NewStatusForbidden builds a agent service status endpoint forbidden error.
+func NewStatusForbidden(body string) agent.Forbidden {
+	v := agent.Forbidden(body)
+
+	return v
+}
+
+// NewStatusNotFound builds a agent service status endpoint not_found error.
+func NewStatusNotFound(body string) agent.NotFound {
+	v := agent.NotFound(body)
+
+	return v
+}
+
+// NewStatusUnauthorized builds a agent service status endpoint unauthorized
+// error.
+func NewStatusUnauthorized(body string) agent.Unauthorized {
 	v := agent.Unauthorized(body)
 
 	return v

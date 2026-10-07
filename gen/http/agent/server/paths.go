@@ -21,6 +21,11 @@ func RenewAgentPath(name string) string {
 	return fmt.Sprintf("/v1/workspaces/%v/agent/renew", name)
 }
 
+// StatusAgentPath returns the URL path to the agent service status HTTP endpoint.
+func StatusAgentPath(name string) string {
+	return fmt.Sprintf("/v1/workspaces/%v/agent/status", name)
+}
+
 // ReleaseAgentPath returns the URL path to the agent service release HTTP endpoint.
 func ReleaseAgentPath(name string) string {
 	return fmt.Sprintf("/v1/workspaces/%v/agent/release", name)

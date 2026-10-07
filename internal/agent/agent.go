@@ -187,8 +187,23 @@ func (s *Store) Renew(id string) (time.Time, bool) {
 	return session.ExpiresAt, true
 }
 
-// Release revokes a session id immediately. Unknown ids are not an error:
-// releases are best-effort (lost releases expire via TTL).
+// Active counts live (unexpired) sessions bound to a workspace UID.
+// Expired records are swept as observed, never resurrected.
+func (s *Store) Active(workspaceUID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for id, session := range s.sessions {
+		if s.now().After(session.ExpiresAt) {
+			delete(s.sessions, id)
+			continue
+		}
+		if session.Ticket.WorkspaceUID == workspaceUID {
+			count++
+		}
+	}
+	return count
+}
 func (s *Store) Release(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

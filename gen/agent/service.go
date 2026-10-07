@@ -22,6 +22,8 @@ type Service interface {
 	// Renew a workspace guest agent session by its server-side id
 	// (X-KW-Agent-Session header)
 	Renew(context.Context, *RenewPayload) (res *AgentRenew, err error)
+	// Report live agent session state for a workspace
+	Status(context.Context, *StatusPayload) (res *AgentStatus, err error)
 	// Release a workspace guest agent session by its server-side id (best-effort;
 	// unknown ids report ok)
 	Release(context.Context, *ReleasePayload) (res *AgentRelease, err error)
@@ -41,7 +43,7 @@ const ServiceName = "agent"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [3]string{"attach", "renew", "release"}
+var MethodNames = [4]string{"attach", "renew", "status", "release"}
 
 // AgentAttachPayload is the payload type of the agent service attach method.
 type AgentAttachPayload struct {
@@ -64,6 +66,16 @@ type AgentRelease struct {
 type AgentRenew struct {
 	// Renewed lifetime in milliseconds
 	TTLMs int
+	// Agent ticket/API revision
+	Protocol int
+}
+
+// AgentStatus is the result type of the agent service status method.
+type AgentStatus struct {
+	// Whether at least one live agent session is bound to this workspace
+	Active bool
+	// Live (unexpired) session count for this workspace
+	Sessions int
 	// Agent ticket/API revision
 	Protocol int
 }
@@ -100,6 +112,14 @@ type RenewPayload struct {
 	Name string
 	// Server-side session identifier from attach
 	SessionID string
+}
+
+// StatusPayload is the payload type of the agent service status method.
+type StatusPayload struct {
+	// Workspace namespace
+	Namespace string
+	// Workspace name
+	Name string
 }
 
 // Editor or admin role with workspace namespace access is required
@@ -208,6 +228,19 @@ func NewViewedAgentRenew(res *AgentRenew, view string) *agentviews.AgentRenew {
 	return &agentviews.AgentRenew{Projected: p, View: "default"}
 }
 
+// NewAgentStatus initializes result type AgentStatus from viewed result type
+// AgentStatus.
+func NewAgentStatus(vres *agentviews.AgentStatus) *AgentStatus {
+	return newAgentStatus(vres.Projected)
+}
+
+// NewViewedAgentStatus initializes viewed result type AgentStatus from result
+// type AgentStatus using the given view.
+func NewViewedAgentStatus(res *AgentStatus, view string) *agentviews.AgentStatus {
+	p := newAgentStatusView(res)
+	return &agentviews.AgentStatus{Projected: p, View: "default"}
+}
+
 // NewAgentRelease initializes result type AgentRelease from viewed result type
 // AgentRelease.
 func NewAgentRelease(vres *agentviews.AgentRelease) *AgentRelease {
@@ -269,6 +302,33 @@ func newAgentRenew(vres *agentviews.AgentRenewView) *AgentRenew {
 func newAgentRenewView(res *AgentRenew) *agentviews.AgentRenewView {
 	vres := &agentviews.AgentRenewView{
 		TTLMs:    &res.TTLMs,
+		Protocol: &res.Protocol,
+	}
+	return vres
+}
+
+// newAgentStatus converts projected type AgentStatus to service type
+// AgentStatus.
+func newAgentStatus(vres *agentviews.AgentStatusView) *AgentStatus {
+	res := &AgentStatus{}
+	if vres.Active != nil {
+		res.Active = *vres.Active
+	}
+	if vres.Sessions != nil {
+		res.Sessions = *vres.Sessions
+	}
+	if vres.Protocol != nil {
+		res.Protocol = *vres.Protocol
+	}
+	return res
+}
+
+// newAgentStatusView projects result type AgentStatus to projected type
+// AgentStatusView using the "default" view.
+func newAgentStatusView(res *AgentStatus) *agentviews.AgentStatusView {
+	vres := &agentviews.AgentStatusView{
+		Active:   &res.Active,
+		Sessions: &res.Sessions,
 		Protocol: &res.Protocol,
 	}
 	return vres

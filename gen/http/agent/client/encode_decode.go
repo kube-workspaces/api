@@ -272,6 +272,123 @@ func DecodeRenewResponse(decoder func(*http.Response) goahttp.Decoder, restoreBo
 	}
 }
 
+// BuildStatusRequest instantiates a HTTP request object with method and path
+// set to call the "agent" service "status" endpoint
+func (c *Client) BuildStatusRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		name string
+	)
+	{
+		p, ok := v.(*agent.StatusPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("agent", "status", "*agent.StatusPayload", v)
+		}
+		name = p.Name
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: StatusAgentPath(name)}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("agent", "status", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeStatusRequest returns an encoder for requests sent to the agent status
+// server.
+func EncodeStatusRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*agent.StatusPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("agent", "status", "*agent.StatusPayload", v)
+		}
+		values := req.URL.Query()
+		values.Add("namespace", p.Namespace)
+		req.URL.RawQuery = values.Encode()
+		return nil
+	}
+}
+
+// DecodeStatusResponse returns a decoder for responses returned by the agent
+// status endpoint. restoreBody controls whether the response body should be
+// restored after having been read.
+// DecodeStatusResponse may return the following errors:
+//   - "forbidden" (type agent.Forbidden): http.StatusForbidden
+//   - "not_found" (type agent.NotFound): http.StatusNotFound
+//   - "unauthorized" (type agent.Unauthorized): http.StatusUnauthorized
+//   - error: internal error
+func DecodeStatusResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body StatusResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("agent", "status", err)
+			}
+			p := NewStatusAgentStatusOK(&body)
+			view := "default"
+			vres := &agentviews.AgentStatus{Projected: p, View: view}
+			if err = agentviews.ValidateAgentStatus(vres); err != nil {
+				return nil, goahttp.ErrValidationError("agent", "status", err)
+			}
+			res := agent.NewAgentStatus(vres)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("agent", "status", err)
+			}
+			return nil, NewStatusForbidden(body)
+		case http.StatusNotFound:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("agent", "status", err)
+			}
+			return nil, NewStatusNotFound(body)
+		case http.StatusUnauthorized:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("agent", "status", err)
+			}
+			return nil, NewStatusUnauthorized(body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("agent", "status", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildReleaseRequest instantiates a HTTP request object with method and path
 // set to call the "agent" service "release" endpoint
 func (c *Client) BuildReleaseRequest(ctx context.Context, v any) (*http.Request, error) {

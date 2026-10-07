@@ -552,6 +552,44 @@ paths:
                         type: string
             schemes:
                 - http
+    /v1/workspaces/{name}/agent/status:
+        get:
+            tags:
+                - agent
+            summary: status agent
+            description: Report live agent session state for a workspace
+            operationId: agent#status
+            parameters:
+                - name: namespace
+                  in: query
+                  description: Workspace namespace
+                  required: false
+                  type: string
+                  default: workspaces
+                - name: name
+                  in: path
+                  description: Workspace name
+                  required: true
+                  type: string
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/AgentStatus'
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+            schemes:
+                - http
     /v1/workspaces/{name}/clone:
         post:
             tags:
@@ -1108,6 +1146,33 @@ definitions:
             ttl_ms: 60000
         required:
             - ttl_ms
+            - protocol
+    AgentStatus:
+        title: 'Mediatype identifier: application/vnd.agent-status+json; view=default'
+        type: object
+        properties:
+            active:
+                type: boolean
+                description: Whether at least one live agent session is bound to this workspace
+                example: true
+            protocol:
+                type: integer
+                description: Agent ticket/API revision
+                example: 1
+                format: int64
+            sessions:
+                type: integer
+                description: Live (unexpired) session count for this workspace
+                example: 1
+                format: int64
+        description: StatusResponseBody result type (default view)
+        example:
+            active: true
+            protocol: 1
+            sessions: 1
+        required:
+            - active
+            - sessions
             - protocol
     AgentTicket:
         title: 'Mediatype identifier: application/vnd.agent-ticket+json; view=default'

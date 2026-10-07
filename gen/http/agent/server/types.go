@@ -44,6 +44,17 @@ type RenewResponseBody struct {
 	Protocol int `form:"protocol" json:"protocol" xml:"protocol"`
 }
 
+// StatusResponseBody is the type of the "agent" service "status" endpoint HTTP
+// response body.
+type StatusResponseBody struct {
+	// Whether at least one live agent session is bound to this workspace
+	Active bool `form:"active" json:"active" xml:"active"`
+	// Live (unexpired) session count for this workspace
+	Sessions int `form:"sessions" json:"sessions" xml:"sessions"`
+	// Agent ticket/API revision
+	Protocol int `form:"protocol" json:"protocol" xml:"protocol"`
+}
+
 // ReleaseResponseBody is the type of the "agent" service "release" endpoint
 // HTTP response body.
 type ReleaseResponseBody struct {
@@ -68,6 +79,17 @@ func NewAttachResponseBody(res *agentviews.AgentTicketView) *AttachResponseBody 
 func NewRenewResponseBody(res *agentviews.AgentRenewView) *RenewResponseBody {
 	body := &RenewResponseBody{
 		TTLMs:    *res.TTLMs,
+		Protocol: *res.Protocol,
+	}
+	return body
+}
+
+// NewStatusResponseBody builds the HTTP response body from the result of the
+// "status" endpoint of the "agent" service.
+func NewStatusResponseBody(res *agentviews.AgentStatusView) *StatusResponseBody {
+	body := &StatusResponseBody{
+		Active:   *res.Active,
+		Sessions: *res.Sessions,
 		Protocol: *res.Protocol,
 	}
 	return body
@@ -99,6 +121,15 @@ func NewRenewPayload(name string, namespace string, sessionID string) *agent.Ren
 	v.Name = name
 	v.Namespace = namespace
 	v.SessionID = sessionID
+
+	return v
+}
+
+// NewStatusPayload builds a agent service status endpoint payload.
+func NewStatusPayload(name string, namespace string) *agent.StatusPayload {
+	v := &agent.StatusPayload{}
+	v.Name = name
+	v.Namespace = namespace
 
 	return v
 }

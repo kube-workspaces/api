@@ -46,6 +46,43 @@ func TestAgentAttachMintsBoundTicket(t *testing.T) {
 	}
 }
 
+func TestAgentStatusReflectsLiveSessions(t *testing.T) {
+	svc := newAgentSvc(t)
+	ctx := context.Background()
+
+	quiet, err := svc.Status(ctx, &genagent.StatusPayload{Namespace: "workspaces", Name: "vm-a"})
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if quiet.Active || quiet.Sessions != 0 {
+		t.Fatalf("no sessions yet: %+v", quiet)
+	}
+	attached, err := svc.Attach(ctx, &genagent.AgentAttachPayload{Namespace: "workspaces", Name: "vm-a"})
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	busy, err := svc.Status(ctx, &genagent.StatusPayload{Namespace: "workspaces", Name: "vm-a"})
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !busy.Active || busy.Sessions != 1 {
+		t.Fatalf("one live session: %+v", busy)
+	}
+	if _, err := svc.Release(ctx, &genagent.ReleasePayload{Namespace: "workspaces", Name: "vm-a", SessionID: attached.ID}); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	again, err := svc.Status(ctx, &genagent.StatusPayload{Namespace: "workspaces", Name: "vm-a"})
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if again.Active || again.Sessions != 0 {
+		t.Fatalf("released: %+v", again)
+	}
+	if _, err := svc.Status(ctx, &genagent.StatusPayload{Namespace: "workspaces", Name: "ghost"}); !asGoaError[genagent.NotFound](t, err) {
+		t.Fatalf("unknown workspace should be not_found, got %v", err)
+	}
+}
+
 func TestAgentRenewReleaseLifecycle(t *testing.T) {
 	svc := newAgentSvc(t)
 	ctx := context.Background()

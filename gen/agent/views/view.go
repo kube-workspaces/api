@@ -27,6 +27,14 @@ type AgentRenew struct {
 	View string
 }
 
+// AgentStatus is the viewed result type that is projected based on a view.
+type AgentStatus struct {
+	// Type to project
+	Projected *AgentStatusView
+	// View to render
+	View string
+}
+
 // AgentRelease is the viewed result type that is projected based on a view.
 type AgentRelease struct {
 	// Type to project
@@ -57,6 +65,16 @@ type AgentRenewView struct {
 	Protocol *int
 }
 
+// AgentStatusView is a type that runs validations on a projected type.
+type AgentStatusView struct {
+	// Whether at least one live agent session is bound to this workspace
+	Active *bool
+	// Live (unexpired) session count for this workspace
+	Sessions *int
+	// Agent ticket/API revision
+	Protocol *int
+}
+
 // AgentReleaseView is a type that runs validations on a projected type.
 type AgentReleaseView struct {
 	// Whether the session is gone (unknown ids report ok: best-effort release)
@@ -79,6 +97,15 @@ var (
 	AgentRenewMap = map[string][]string{
 		"default": {
 			"ttl_ms",
+			"protocol",
+		},
+	}
+	// AgentStatusMap is a map indexing the attribute names of AgentStatus by view
+	// name.
+	AgentStatusMap = map[string][]string{
+		"default": {
+			"active",
+			"sessions",
 			"protocol",
 		},
 	}
@@ -109,6 +136,18 @@ func ValidateAgentRenew(result *AgentRenew) (err error) {
 	switch result.View {
 	case "default", "":
 		err = ValidateAgentRenewView(result.Projected)
+	default:
+		err = goa.InvalidEnumValueError("view", result.View, []any{"default"})
+	}
+	return
+}
+
+// ValidateAgentStatus runs the validations defined on the viewed result type
+// AgentStatus.
+func ValidateAgentStatus(result *AgentStatus) (err error) {
+	switch result.View {
+	case "default", "":
+		err = ValidateAgentStatusView(result.Projected)
 	default:
 		err = goa.InvalidEnumValueError("view", result.View, []any{"default"})
 	}
@@ -150,6 +189,21 @@ func ValidateAgentTicketView(result *AgentTicketView) (err error) {
 func ValidateAgentRenewView(result *AgentRenewView) (err error) {
 	if result.TTLMs == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("ttl_ms", "result"))
+	}
+	if result.Protocol == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("protocol", "result"))
+	}
+	return
+}
+
+// ValidateAgentStatusView runs the validations defined on AgentStatusView
+// using the "default" view.
+func ValidateAgentStatusView(result *AgentStatusView) (err error) {
+	if result.Active == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("active", "result"))
+	}
+	if result.Sessions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("sessions", "result"))
 	}
 	if result.Protocol == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("protocol", "result"))

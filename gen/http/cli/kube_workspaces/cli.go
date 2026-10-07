@@ -37,7 +37,7 @@ func UsageCommands() []string {
 		"namespaces list",
 		"health check",
 		"display (capability|status|join|leave|acquire|release|transfer)",
-		"agent (attach|renew|release)",
+		"agent (attach|renew|status|release)",
 	}
 }
 
@@ -192,6 +192,10 @@ func ParseEndpoint(
 		agentRenewNamespaceFlag = agentRenewFlags.String("namespace", "workspaces", "")
 		agentRenewSessionIDFlag = agentRenewFlags.String("session-id", "REQUIRED", "")
 
+		agentStatusFlags         = flag.NewFlagSet("status", flag.ExitOnError)
+		agentStatusNameFlag      = agentStatusFlags.String("name", "REQUIRED", "Workspace name")
+		agentStatusNamespaceFlag = agentStatusFlags.String("namespace", "workspaces", "")
+
 		agentReleaseFlags         = flag.NewFlagSet("release", flag.ExitOnError)
 		agentReleaseNameFlag      = agentReleaseFlags.String("name", "REQUIRED", "Workspace name")
 		agentReleaseNamespaceFlag = agentReleaseFlags.String("namespace", "workspaces", "")
@@ -242,6 +246,7 @@ func ParseEndpoint(
 	agentFlags.Usage = agentUsage
 	agentAttachFlags.Usage = agentAttachUsage
 	agentRenewFlags.Usage = agentRenewUsage
+	agentStatusFlags.Usage = agentStatusUsage
 	agentReleaseFlags.Usage = agentReleaseUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
@@ -410,6 +415,9 @@ func ParseEndpoint(
 			case "renew":
 				epf = agentRenewFlags
 
+			case "status":
+				epf = agentStatusFlags
+
 			case "release":
 				epf = agentReleaseFlags
 
@@ -553,6 +561,9 @@ func ParseEndpoint(
 			case "renew":
 				endpoint = c.Renew()
 				data, err = agentc.BuildRenewPayload(*agentRenewNameFlag, *agentRenewNamespaceFlag, *agentRenewSessionIDFlag)
+			case "status":
+				endpoint = c.Status()
+				data, err = agentc.BuildStatusPayload(*agentStatusNameFlag, *agentStatusNamespaceFlag)
 			case "release":
 				endpoint = c.Release()
 				data, err = agentc.BuildReleasePayload(*agentReleaseNameFlag, *agentReleaseNamespaceFlag, *agentReleaseSessionIDFlag)
@@ -1212,6 +1223,7 @@ func agentUsage() {
 	fmt.Fprintln(os.Stderr, "COMMAND:")
 	fmt.Fprintln(os.Stderr, `    attach: Attach a controller to a workspace's guest agent session, minting a short-lived ticket`)
 	fmt.Fprintln(os.Stderr, `    renew: Renew a workspace guest agent session by its server-side id (X-KW-Agent-Session header)`)
+	fmt.Fprintln(os.Stderr, `    status: Report live agent session state for a workspace`)
 	fmt.Fprintln(os.Stderr, `    release: Release a workspace guest agent session by its server-side id (best-effort; unknown ids report ok)`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
@@ -1259,6 +1271,26 @@ func agentRenewUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agent renew --name \"my-workspace\" --namespace \"workspaces\" --session-id \"8ec18121f4c2409aa7c025487f4e310c\"")
+}
+
+func agentStatusUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] agent status", os.Args[0])
+	fmt.Fprint(os.Stderr, " -name STRING")
+	fmt.Fprint(os.Stderr, " -namespace STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Report live agent session state for a workspace`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -name STRING: Workspace name`)
+	fmt.Fprintln(os.Stderr, `    -namespace STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agent status --name \"my-workspace\" --namespace \"workspaces\"")
 }
 
 func agentReleaseUsage() {

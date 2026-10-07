@@ -94,6 +94,30 @@ func TestRenewReleaseLifecycle(t *testing.T) {
 	}
 }
 
+func TestActiveCountsLiveSessionsPerWorkspace(t *testing.T) {
+	store := NewStore()
+	if got := store.Active("ws-1"); got != 0 {
+		t.Fatalf("empty store must report 0, got %d", got)
+	}
+	id, _, err := store.Mint("ws-1", "gen-1", "tester", 1, testKeys())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.Mint("ws-2", "gen-1", "tester", 1, testKeys()); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Active("ws-1"); got != 1 {
+		t.Fatalf("ws-1 must report 1, got %d", got)
+	}
+	if got := store.Active("ws-2"); got != 1 {
+		t.Fatalf("ws-2 must report 1, got %d", got)
+	}
+	store.Release(id)
+	if got := store.Active("ws-1"); got != 0 {
+		t.Fatalf("released workspace must report 0, got %d", got)
+	}
+}
+
 func TestKeyRotationVerifiesPredecessors(t *testing.T) {
 	store := NewStore()
 	_, signed, err := store.Mint("ws-1", "gen-1", "tester", 1, [][]byte{[]byte("old-key")})

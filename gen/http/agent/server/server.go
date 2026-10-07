@@ -21,6 +21,7 @@ type Server struct {
 	Mounts  []*MountPoint
 	Attach  http.Handler
 	Renew   http.Handler
+	Status  http.Handler
 	Release http.Handler
 }
 
@@ -53,10 +54,12 @@ func New(
 		Mounts: []*MountPoint{
 			{"Attach", "POST", "/v1/workspaces/{name}/agent/attach"},
 			{"Renew", "POST", "/v1/workspaces/{name}/agent/renew"},
+			{"Status", "GET", "/v1/workspaces/{name}/agent/status"},
 			{"Release", "POST", "/v1/workspaces/{name}/agent/release"},
 		},
 		Attach:  NewAttachHandler(e.Attach, mux, decoder, encoder, errhandler, formatter),
 		Renew:   NewRenewHandler(e.Renew, mux, decoder, encoder, errhandler, formatter),
+		Status:  NewStatusHandler(e.Status, mux, decoder, encoder, errhandler, formatter),
 		Release: NewReleaseHandler(e.Release, mux, decoder, encoder, errhandler, formatter),
 	}
 }
@@ -68,6 +71,7 @@ func (s *Server) Service() string { return "agent" }
 func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Attach = m(s.Attach)
 	s.Renew = m(s.Renew)
+	s.Status = m(s.Status)
 	s.Release = m(s.Release)
 }
 
@@ -78,6 +82,7 @@ func (s *Server) MethodNames() []string { return agent.MethodNames[:] }
 func Mount(mux goahttp.Muxer, h *Server) {
 	MountAttachHandler(mux, h.Attach)
 	MountRenewHandler(mux, h.Renew)
+	MountStatusHandler(mux, h.Status)
 	MountReleaseHandler(mux, h.Release)
 }
 
@@ -169,6 +174,59 @@ func NewRenewHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "renew")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "agent")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountStatusHandler configures the mux to serve the "agent" service "status"
+// endpoint.
+func MountStatusHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/v1/workspaces/{name}/agent/status", f)
+}
+
+// NewStatusHandler creates a HTTP handler which loads the HTTP request and
+// calls the "agent" service "status" endpoint.
+func NewStatusHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeStatusRequest(mux, decoder)
+		encodeResponse = EncodeStatusResponse(encoder)
+		encodeError    = EncodeStatusError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "status")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "agent")
 		payload, err := decodeRequest(r)
 		if err != nil {

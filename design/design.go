@@ -1621,6 +1621,38 @@ var _ = Service("agent", func() {
 		})
 	})
 
+	Method("status", func() {
+		Description("Report live agent session state for a workspace")
+		Payload(func() {
+			Attribute("namespace", String, "Workspace namespace", func() {
+				Default("workspaces")
+				Example("workspaces")
+			})
+			Attribute("name", String, "Workspace name", func() {
+				Example("my-workspace")
+			})
+			Required("name")
+		})
+		Result(AgentStatusResult)
+		Error("unauthorized", String, "Authentication required", func() {
+			Example("authentication required")
+		})
+		Error("forbidden", String, "Editor or admin role with workspace namespace access is required", func() {
+			Example("no access to workspace namespace")
+		})
+		Error("not_found", String, "Workspace not found", func() {
+			Example("workspace \"my-workspace\" not found")
+		})
+		HTTP(func() {
+			GET("/v1/workspaces/{name}/agent/status")
+			Param("namespace")
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+		})
+	})
+
 	Method("release", func() {
 		Description("Release a workspace guest agent session by its server-side id (best-effort; unknown ids report ok)")
 		Payload(func() {
@@ -1656,4 +1688,20 @@ var _ = Service("agent", func() {
 			Response("not_found", StatusNotFound)
 		})
 	})
+})
+
+var AgentStatusResult = ResultType("application/vnd.agent-status+json", func() {
+	Description("Live agent session state for a workspace: whether any unexpired attach session exists")
+	Attributes(func() {
+		Attribute("active", Boolean, "Whether at least one live agent session is bound to this workspace", func() {
+			Example(true)
+		})
+		Attribute("sessions", Int, "Live (unexpired) session count for this workspace", func() {
+			Example(1)
+		})
+		Attribute("protocol", Int, "Agent ticket/API revision", func() {
+			Example(1)
+		})
+	})
+	Required("active", "sessions", "protocol")
 })

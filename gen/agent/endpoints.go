@@ -17,6 +17,7 @@ import (
 type Endpoints struct {
 	Attach  goa.Endpoint
 	Renew   goa.Endpoint
+	Status  goa.Endpoint
 	Release goa.Endpoint
 }
 
@@ -25,6 +26,7 @@ func NewEndpoints(s Service) *Endpoints {
 	return &Endpoints{
 		Attach:  NewAttachEndpoint(s),
 		Renew:   NewRenewEndpoint(s),
+		Status:  NewStatusEndpoint(s),
 		Release: NewReleaseEndpoint(s),
 	}
 }
@@ -33,6 +35,7 @@ func NewEndpoints(s Service) *Endpoints {
 func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Attach = m(e.Attach)
 	e.Renew = m(e.Renew)
+	e.Status = m(e.Status)
 	e.Release = m(e.Release)
 }
 
@@ -60,6 +63,20 @@ func NewRenewEndpoint(s Service) goa.Endpoint {
 			return nil, err
 		}
 		vres := NewViewedAgentRenew(res, "default")
+		return vres, nil
+	}
+}
+
+// NewStatusEndpoint returns an endpoint function that calls the method
+// "status" of service "agent".
+func NewStatusEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*StatusPayload)
+		res, err := s.Status(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		vres := NewViewedAgentStatus(res, "default")
 		return vres, nil
 	}
 }

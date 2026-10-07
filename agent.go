@@ -129,6 +129,26 @@ func (s *agentsrvc) Renew(ctx context.Context, payload *genagent.RenewPayload) (
 	}, nil
 }
 
+// Status reports live agent session state: whether any unexpired session
+// is bound to the workspace. This is the API leg of the indicator contract:
+// clients combine it with proxy counters and guest telemetry, never alone.
+func (s *agentsrvc) Status(ctx context.Context, payload *genagent.StatusPayload) (*genagent.AgentStatus, error) {
+	ns, err := s.authorizeEditor(ctx, payload.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	uid, _, err := s.agentWorkspace(ctx, ns, payload.Name)
+	if err != nil {
+		return nil, err
+	}
+	count := s.sessions.Active(uid)
+	return &genagent.AgentStatus{
+		Active:   count > 0,
+		Sessions: count,
+		Protocol: agent.Protocol,
+	}, nil
+}
+
 // Release revokes a session id immediately. Unknown ids report ok:
 // releases are best-effort (lost releases expire via TTL).
 func (s *agentsrvc) Release(ctx context.Context, payload *genagent.ReleasePayload) (*genagent.AgentRelease, error) {

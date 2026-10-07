@@ -17,14 +17,16 @@ import (
 type Client struct {
 	AttachEndpoint  goa.Endpoint
 	RenewEndpoint   goa.Endpoint
+	StatusEndpoint  goa.Endpoint
 	ReleaseEndpoint goa.Endpoint
 }
 
 // NewClient initializes a "agent" service client given the endpoints.
-func NewClient(attach, renew, release goa.Endpoint) *Client {
+func NewClient(attach, renew, status, release goa.Endpoint) *Client {
 	return &Client{
 		AttachEndpoint:  attach,
 		RenewEndpoint:   renew,
+		StatusEndpoint:  status,
 		ReleaseEndpoint: release,
 	}
 }
@@ -58,6 +60,21 @@ func (c *Client) Renew(ctx context.Context, p *RenewPayload) (res *AgentRenew, e
 		return
 	}
 	return ires.(*AgentRenew), nil
+}
+
+// Status calls the "status" endpoint of the "agent" service.
+// Status may return the following errors:
+//   - "unauthorized" (type Unauthorized)
+//   - "forbidden" (type Forbidden)
+//   - "not_found" (type NotFound)
+//   - error: internal error
+func (c *Client) Status(ctx context.Context, p *StatusPayload) (res *AgentStatus, err error) {
+	var ires any
+	ires, err = c.StatusEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*AgentStatus), nil
 }
 
 // Release calls the "release" endpoint of the "agent" service.
