@@ -230,7 +230,8 @@ type ImageProxyConfig struct {
 
 // In-guest remote desktop agent configuration
 type ImageRemoteDesktop struct {
-	// Protocol name (e.g. "selkies")
+	// Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform
+	// kw-agent)
 	Protocol string
 	// Guest port the agent listens on
 	Port int

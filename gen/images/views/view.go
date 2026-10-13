@@ -138,7 +138,8 @@ type ImageCredentialsView struct {
 
 // ImageRemoteDesktopView is a type that runs validations on a projected type.
 type ImageRemoteDesktopView struct {
-	// Protocol name (e.g. "selkies")
+	// Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform
+	// kw-agent)
 	Protocol *string
 	// Guest port the agent listens on
 	Port *int
@@ -281,8 +282,8 @@ func ValidateImageRemoteDesktopView(result *ImageRemoteDesktopView) (err error) 
 		err = goa.MergeErrors(err, goa.MissingFieldError("port", "result"))
 	}
 	if result.Protocol != nil {
-		if !(*result.Protocol == "selkies") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.protocol", *result.Protocol, []any{"selkies"}))
+		if !(*result.Protocol == "selkies" || *result.Protocol == "agent") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.protocol", *result.Protocol, []any{"selkies", "agent"}))
 		}
 	}
 	return

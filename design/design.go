@@ -453,8 +453,8 @@ var ImageCredentials = Type("ImageCredentials", func() {
 
 var ImageRemoteDesktop = Type("ImageRemoteDesktop", func() {
 	Description("In-guest remote desktop agent configuration")
-	Attribute("protocol", String, "Protocol name (e.g. \"selkies\")", func() {
-		Enum("selkies")
+	Attribute("protocol", String, "Protocol name: \"selkies\" (Linux in-guest agent) or \"agent\" (cross-platform kw-agent)", func() {
+		Enum("selkies", "agent")
 	})
 	Attribute("port", Int, "Guest port the agent listens on", func() {
 		Example(8080)

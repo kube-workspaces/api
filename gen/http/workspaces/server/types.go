@@ -412,7 +412,8 @@ type VolumeMountResponse struct {
 
 // ImageRemoteDesktopResponse is used to define fields on response body types.
 type ImageRemoteDesktopResponse struct {
-	// Protocol name (e.g. "selkies")
+	// Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform
+	// kw-agent)
 	Protocol string `form:"protocol" json:"protocol" xml:"protocol"`
 	// Guest port the agent listens on
 	Port int `form:"port" json:"port" xml:"port"`
@@ -466,7 +467,8 @@ type VolumeMountResponseBody struct {
 // ImageRemoteDesktopResponseBody is used to define fields on response body
 // types.
 type ImageRemoteDesktopResponseBody struct {
-	// Protocol name (e.g. "selkies")
+	// Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform
+	// kw-agent)
 	Protocol string `form:"protocol" json:"protocol" xml:"protocol"`
 	// Guest port the agent listens on
 	Port int `form:"port" json:"port" xml:"port"`

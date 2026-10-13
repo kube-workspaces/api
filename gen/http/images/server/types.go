@@ -284,7 +284,8 @@ type ImageCredentialsResponse struct {
 
 // ImageRemoteDesktopResponse is used to define fields on response body types.
 type ImageRemoteDesktopResponse struct {
-	// Protocol name (e.g. "selkies")
+	// Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform
+	// kw-agent)
 	Protocol string `form:"protocol" json:"protocol" xml:"protocol"`
 	// Guest port the agent listens on
 	Port int `form:"port" json:"port" xml:"port"`
@@ -340,7 +341,8 @@ type ImageCredentialsResponseBody struct {
 // ImageRemoteDesktopResponseBody is used to define fields on response body
 // types.
 type ImageRemoteDesktopResponseBody struct {
-	// Protocol name (e.g. "selkies")
+	// Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform
+	// kw-agent)
 	Protocol string `form:"protocol" json:"protocol" xml:"protocol"`
 	// Guest port the agent listens on
 	Port int `form:"port" json:"port" xml:"port"`
@@ -395,7 +397,8 @@ type ImageProxyConfigRequestBody struct {
 
 // ImageRemoteDesktopRequestBody is used to define fields on request body types.
 type ImageRemoteDesktopRequestBody struct {
-	// Protocol name (e.g. "selkies")
+	// Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform
+	// kw-agent)
 	Protocol *string `form:"protocol,omitempty" json:"protocol,omitempty" xml:"protocol,omitempty"`
 	// Guest port the agent listens on
 	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
@@ -653,8 +656,8 @@ func ValidateImageRemoteDesktopRequestBody(body *ImageRemoteDesktopRequestBody) 
 		err = goa.MergeErrors(err, goa.MissingFieldError("port", "body"))
 	}
 	if body.Protocol != nil {
-		if !(*body.Protocol == "selkies") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.protocol", *body.Protocol, []any{"selkies"}))
+		if !(*body.Protocol == "selkies" || *body.Protocol == "agent") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.protocol", *body.Protocol, []any{"selkies", "agent"}))
 		}
 	}
 	return

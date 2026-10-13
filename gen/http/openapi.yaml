@@ -1443,7 +1443,7 @@ definitions:
             remote_desktop:
                 path: /
                 port: 8080
-                protocol: selkies
+                protocol: agent
             source_url: https://github.com/coder/code-server
             tags:
                 - development
@@ -2192,7 +2192,7 @@ definitions:
             remote_desktop:
                 path: /
                 port: 8080
-                protocol: selkies
+                protocol: agent
             source_url: https://github.com/coder/code-server
             tags:
                 - development
@@ -2331,10 +2331,11 @@ definitions:
                 format: int64
             protocol:
                 type: string
-                description: Protocol name (e.g. "selkies")
-                example: selkies
+                description: 'Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform kw-agent)'
+                example: agent
                 enum:
                     - selkies
+                    - agent
         description: In-guest remote desktop agent configuration
         example:
             path: /
@@ -2746,7 +2747,7 @@ definitions:
             remote_desktop:
                 path: /
                 port: 8080
-                protocol: selkies
+                protocol: agent
             stopped: false
             type: container
             vm_profile: Doloremque eum aperiam explicabo sunt.
