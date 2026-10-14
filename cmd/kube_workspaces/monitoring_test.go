@@ -70,7 +70,17 @@ func TestMonitoringReplicaAggregationPartialCoverageAndRestart(t *testing.T) {
 	}
 	unavailable = true
 	c.collect(context.Background())
-	if c.view.Complete || len(c.view.Workspaces[0].Connections) != 3 || c.view.Sources[1].Available {
+	// Sources are sorted by owner, so locate the proxy report instead of
+	// assuming it lands at a fixed index (hostnames vary across machines).
+	proxyAvailable := false
+	proxyFound := false
+	for _, s := range c.view.Sources {
+		if s.Owner == "proxy-1" && s.Component == "proxy" {
+			proxyFound = true
+			proxyAvailable = s.Available
+		}
+	}
+	if c.view.Complete || len(c.view.Workspaces[0].Connections) != 3 || !proxyFound || proxyAvailable {
 		t.Fatalf("missing replica reported as complete or stale connections retained: %+v", c.view)
 	}
 	unavailable = false
