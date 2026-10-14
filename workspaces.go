@@ -1225,7 +1225,12 @@ func unstructuredToWorkspace(obj *unstructured.Unstructured, rd *k8s.ImageRemote
 		ws.VMProfile = strPtr(windowsVMProfile)
 		generation, _, _ := unstructured.NestedString(obj.Object, "spec", "vmProfile", "generation")
 		ws.Provisioned = boolPtr(generation != "" && obj.GetAnnotations()["kubeworkspaces.io/windows-provisioned-generation"] == generation && obj.GetAnnotations()["kubeworkspaces.io/windows-detaching-generation"] == "")
-		ws.RemoteDesktop = nil
+		// Windows supports the cross-platform agent transport. Keep its
+		// explicit image advert so native clients can select it automatically;
+		// Linux-only transports remain unavailable on Windows profiles.
+		if rd != nil && rd.Protocol != "agent" {
+			ws.RemoteDesktop = nil
+		}
 	}
 	return ws
 }

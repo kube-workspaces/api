@@ -206,8 +206,8 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 		spec["memoryRequest"] = *p.MemoryRequest
 	}
 	if p.VMProfile != nil && *p.VMProfile == windowsVMProfile {
-		if p.PersistentRootDisk == nil || !*p.PersistentRootDisk || !windowsRootDigest.MatchString(p.Image) || p.DefaultCredentials != nil || (p.DefaultPassword != nil && *p.DefaultPassword != "") || (p.DefaultCloudInit != nil && *p.DefaultCloudInit) || (p.DefaultUserData != nil && *p.DefaultUserData != "") || p.RemoteDesktop != nil {
-			return nil, images.Invalid("Windows images require a pinned generalised persistent root with native provisioning and no shared password/cloud-init/guest streaming")
+		if p.PersistentRootDisk == nil || !*p.PersistentRootDisk || !windowsRootDigest.MatchString(p.Image) || p.DefaultCredentials != nil || (p.DefaultPassword != nil && *p.DefaultPassword != "") || (p.DefaultCloudInit != nil && *p.DefaultCloudInit) || (p.DefaultUserData != nil && *p.DefaultUserData != "") || (p.RemoteDesktop != nil && p.RemoteDesktop.Protocol != "agent") {
+			return nil, images.Invalid("Windows images require a pinned generalised persistent root with native provisioning, no shared password/cloud-init and agent-only guest streaming")
 		}
 	}
 

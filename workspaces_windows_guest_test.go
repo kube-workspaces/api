@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kube-workspaces/api/gen/images"
 	"github.com/kube-workspaces/api/gen/workspaces"
 	"github.com/kube-workspaces/api/internal/auth"
 	"github.com/kube-workspaces/api/internal/k8s"
@@ -16,6 +17,70 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/fake"
 )
+
+func TestWindowsWorkspaceAdvertisesAgentTransport(t *testing.T) {
+	for _, protocol := range []string{"", "agent", "selkies"} {
+		t.Run(protocol, func(t *testing.T) {
+			ws := &unstructured.Unstructured{Object: map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"name": "desktop", "namespace": "test",
+					"annotations": map[string]interface{}{"kubeworkspaces.io/windows-provisioned-generation": "one"},
+				},
+				"spec": map[string]interface{}{
+					"type": "vm", "vmProfile": map[string]interface{}{"id": windowsVMProfile, "generation": "one"},
+				},
+			}}
+			var rd *k8s.ImageRemoteDesktop
+			if protocol != "" {
+				rd = &k8s.ImageRemoteDesktop{Protocol: protocol, Port: 44787, Path: "/"}
+			}
+			result := unstructuredToWorkspace(ws, rd)
+			if result.VMProfile == nil || *result.VMProfile != windowsVMProfile || result.Provisioned == nil || !*result.Provisioned {
+				t.Fatal("Windows provisioning metadata lost")
+			}
+			if protocol == "agent" {
+				if result.RemoteDesktop == nil || result.RemoteDesktop.Protocol != protocol || result.RemoteDesktop.Port != 44787 || result.RemoteDesktop.Path != "/" {
+					t.Fatalf("agent advert missing or changed: %+v", result.RemoteDesktop)
+				}
+			} else if result.RemoteDesktop != nil {
+				t.Fatalf("Windows unexpectedly advertises %+v", result.RemoteDesktop)
+			}
+		})
+	}
+}
+
+func TestWindowsImageCreationAllowsAgentOnly(t *testing.T) {
+	for _, protocol := range []string{"", "agent", "selkies"} {
+		t.Run(protocol, func(t *testing.T) {
+			dynamic := fake.NewSimpleDynamicClient(runtime.NewScheme())
+			service := NewImages(k8s.NewImageClientFor(dynamic))
+			profile, persistent := windowsVMProfile, true
+			payload := &images.CreateImagePayload{
+				Name: "Windows desktop", Image: "registry.example.com/private/windows@sha256:" + strings.Repeat("a", 64),
+				VMProfile: &profile, PersistentRootDisk: &persistent, DefaultPort: 44787,
+			}
+			if protocol != "" {
+				payload.RemoteDesktop = &images.ImageRemoteDesktop{Protocol: protocol, Port: 44787, Path: "/"}
+			}
+			result, err := service.Create(context.Background(), payload)
+			if protocol == "selkies" {
+				if err == nil {
+					t.Fatal("Windows image accepted Linux-only remote desktop transport")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if protocol == "agent" && (result.RemoteDesktop == nil || result.RemoteDesktop.Protocol != protocol || result.RemoteDesktop.Port != 44787 || result.RemoteDesktop.Path != "/") {
+				t.Fatalf("created Windows image lost agent advert: %+v", result.RemoteDesktop)
+			}
+			if protocol == "" && result.RemoteDesktop != nil {
+				t.Fatal("baseline Windows image unexpectedly opted into streaming")
+			}
+		})
+	}
+}
 
 func TestWindowsProfileRejectsLinuxOptionsAndPinsSource(t *testing.T) {
 	image := &k8s.Image{Image: "registry.example.com/private/windows@sha256:" + strings.Repeat("a", 64), VMProfile: windowsVMProfile, PersistentRootDisk: true}
