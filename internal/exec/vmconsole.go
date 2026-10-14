@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kube-workspaces/api/internal/monitoring"
 	"k8s.io/client-go/rest"
 )
 
@@ -121,6 +122,7 @@ func VMConsoleHandler(opts *Options) http.HandlerFunc {
 		}()
 
 		var wg sync.WaitGroup
+		monitoring.Establish(r.Context(), "")
 
 		// client → VM: forward raw input; swallow terminal resize control messages
 		wg.Add(1)

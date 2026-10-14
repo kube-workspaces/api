@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kube-workspaces/api/internal/display"
+	"github.com/kube-workspaces/api/internal/monitoring"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -88,6 +89,7 @@ func (h *OwnerHop) Forward(w http.ResponseWriter, r *http.Request, owner string)
 		return
 	}
 	r.Header.Set(hopHeader, "1")
+	monitoring.Ignore(r.Context())
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = "http"

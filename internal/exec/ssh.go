@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kube-workspaces/api/internal/monitoring"
 	"golang.org/x/crypto/ssh"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -204,6 +205,7 @@ func SSHHandler(opts *SSHOptions) http.HandlerFunc {
 		}
 
 		var wg sync.WaitGroup
+		monitoring.Establish(r.Context(), "")
 
 		// client → guest shell: forward input; resize control messages call
 		// WindowChange on the PTY.

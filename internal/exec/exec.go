@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/kube-workspaces/api/internal/display"
+	"github.com/kube-workspaces/api/internal/monitoring"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -200,7 +201,15 @@ func Handler(opts *Options) http.HandlerFunc {
 				TTY:     true,
 			}, scheme.ParameterCodec)
 
-		exec, err := remotecommand.NewSPDYExecutor(opts.RESTConfig, "POST", req.URL())
+		config := rest.CopyConfig(opts.RESTConfig)
+		previousWrap := config.WrapTransport
+		config.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
+			if previousWrap != nil {
+				rt = previousWrap(rt)
+			}
+			return establishTransport{RoundTripper: rt, ctx: r.Context()}
+		}
+		exec, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
 		if err != nil {
 			conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("\r\nError creating exec session: %v\r\n", err)))
 			return
@@ -216,6 +225,7 @@ func Handler(opts *Options) http.HandlerFunc {
 
 		// Create pipes for stdin
 		stdinReader, stdinWriter := io.Pipe()
+		defer stdinReader.Close()
 
 		// Context for coordinating goroutines
 		ctx, cancel := context.WithCancel(r.Context())
@@ -285,7 +295,6 @@ func Handler(opts *Options) http.HandlerFunc {
 		})
 
 		cancel()
-		close(sizeQueue.ch)
 
 		if err != nil {
 			// Abnormal exit: write error message and close with 1001 (Going Away)
@@ -299,8 +308,24 @@ func Handler(opts *Options) http.HandlerFunc {
 		}
 
 		// Wait for reader goroutine to finish
+		conn.Close()
+		stdinReader.Close()
 		wg.Wait()
+		close(sizeQueue.ch)
 	}
+}
+
+type establishTransport struct {
+	http.RoundTripper
+	ctx context.Context
+}
+
+func (t establishTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := t.RoundTripper.RoundTrip(r)
+	if err == nil && resp.StatusCode == http.StatusSwitchingProtocols {
+		monitoring.Establish(t.ctx, "")
+	}
+	return resp, err
 }
 
 // wsWriterImpl writes exec output to a WebSocket connection.

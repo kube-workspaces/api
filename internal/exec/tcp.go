@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kube-workspaces/api/internal/monitoring"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -108,6 +109,7 @@ func TCPHandler(opts *TCPOptions) http.HandlerFunc {
 		}()
 
 		var wg sync.WaitGroup
+		monitoring.Establish(r.Context(), "")
 
 		// client → guest: binary frames only; text frames are a protocol error.
 		wg.Add(1)

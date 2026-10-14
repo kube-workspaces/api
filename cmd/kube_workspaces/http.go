@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -36,6 +37,7 @@ import (
 	"github.com/kube-workspaces/api/internal/display"
 	"github.com/kube-workspaces/api/internal/exec"
 	"github.com/kube-workspaces/api/internal/k8s"
+	"github.com/kube-workspaces/api/internal/monitoring"
 	"github.com/kube-workspaces/api/internal/platform"
 	"goa.design/clue/debug"
 	"goa.design/clue/log"
@@ -60,6 +62,13 @@ var godocFS embed.FS
 // handleHTTPServer starts configures and starts a HTTP server on the given
 // URL. It shuts down the server if any error is received in the error channel.
 func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, displayEndpoints *gendisplay.Endpoints, agentEndpoints *genagent.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, displaySessions *display.Sessions, wg *sync.WaitGroup, errc chan error, dbg bool) {
+	monitor := monitoring.New("api")
+	if err := monitoring.Listen(ctx, monitor, ":9090", os.Getenv("KW_MONITORING_TOKEN")); err != nil {
+		log.Fatal(ctx, err)
+	}
+	collector := newMonitoringCollector(monitor, wsClient, coreClient)
+	go collector.Run(ctx)
+	go func() { <-ctx.Done(); monitor.Close() }()
 
 	// Provide the transport specific request decoder and response encoder.
 	// The goa http package has built-in support for JSON, XML and gob.
@@ -118,6 +127,8 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	healthsvr.Mount(mux, healthServer)
 	displaysvr.Mount(mux, displayServer)
 	agentsvr.Mount(mux, agentServer)
+	mux.Handle("GET", "/admin/monitoring/overview", collector.ServeHTTP)
+	mux.Handle("GET", "/admin/monitoring/series", monitoringHistory)
 
 	// Serve OpenAPI spec, rewriting the server URL to use EXTERNAL_HOST.
 	externalHost := os.Getenv("EXTERNAL_HOST")
@@ -2062,6 +2073,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	}
 
 	var handler http.Handler = mux
+	handler = bridgeMonitoring(monitor, wsClient, handler)
 	if dbg {
 		// Log query and response bodies if debug logs are enabled.
 		handler = debug.HTTP()(handler)
@@ -2122,7 +2134,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 
 	// Start HTTP server using default configuration, change the code to
 	// configure the server as required by your service.
-	srv := &http.Server{Addr: u.Host, Handler: corsHandler, ReadHeaderTimeout: time.Second * 60}
+	srv := &http.Server{Addr: u.Host, Handler: corsHandler, ReadHeaderTimeout: time.Second * 60, BaseContext: func(net.Listener) context.Context { return ctx }}
 	for _, m := range workspacesServer.Mounts {
 		log.Printf(ctx, "HTTP %q mounted on %s %s", m.Method, m.Verb, m.Pattern)
 	}

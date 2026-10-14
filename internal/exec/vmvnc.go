@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/kube-workspaces/api/internal/display"
+	"github.com/kube-workspaces/api/internal/monitoring"
 	"k8s.io/client-go/rest"
 )
 
@@ -97,7 +98,9 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 		guard, err := display.Acquire(ctx, opts.Display, namespace, name)
 		if err != nil {
 			status := http.StatusServiceUnavailable
-			if errors.Is(err, display.ErrBusy) { status = http.StatusConflict }
+			if errors.Is(err, display.ErrBusy) {
+				status = http.StatusConflict
+			}
 			http.Error(w, "interactive display unavailable", status)
 			return
 		}
@@ -166,12 +169,17 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 		// Force-close both sockets when the session is cancelled (TTL expiry or
 		// API shutdown) so blocked ReadMessage pumps unwind and the slot frees.
 		go func() {
-			select { case <-ctx.Done(): case <-guard.Done(): cancel() }
+			select {
+			case <-ctx.Done():
+			case <-guard.Done():
+				cancel()
+			}
 			vmConn.Close()
 			clientConn.Close()
 		}()
 
 		var wg sync.WaitGroup
+		monitoring.Establish(r.Context(), "controller")
 
 		// client → VM: forward the raw RFB input stream
 		wg.Add(1)
@@ -185,7 +193,9 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 				}
 				handle.touch()
 				deadline, valid := guard.Deadline()
-				if !valid { return }
+				if !valid {
+					return
+				}
 				_ = vmConn.SetWriteDeadline(deadline)
 				if err := vmConn.WriteMessage(msgType, msg); err != nil {
 					return

@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/kube-workspaces/api/internal/broker"
 	"github.com/kube-workspaces/api/internal/display"
+	"github.com/kube-workspaces/api/internal/monitoring"
 	"k8s.io/client-go/rest"
 )
 
@@ -286,6 +287,7 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = s.opts.Sessions.SetConnected(namespace, name, p.ID, false) }()
+	monitoring.Establish(r.Context(), string(role))
 
 	// 5. Serve the participant stream. ServeParticipant forwards a controller's
 	// guest-mutating RFB messages upstream only through the fence.
