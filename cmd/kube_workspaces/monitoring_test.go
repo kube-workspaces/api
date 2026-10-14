@@ -97,8 +97,17 @@ func TestMonitoringAdminAuthorizationAndFixedHistoryQueries(t *testing.T) {
 		}
 	}
 	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/query_range" || !strings.Contains(r.URL.Query().Get("query"), `kw_platform="test/release"`) {
-			t.Errorf("unscoped query %s", r.URL)
+		if r.URL.Path != "/api/v1/query_range" {
+			t.Errorf("unexpected path %s", r.URL)
+		}
+		q := r.URL.Query().Get("query")
+		if strings.Contains(q, "kubeworkspaces_") && !strings.Contains(q, `kw_platform="test/release"`) {
+			t.Errorf("unscoped platform query %s", r.URL)
+		}
+		for _, want := range []string{"container_network_receive_bytes_total", "container_network_receive_packets_total", "kubevirt_vmi_network_receive_bytes_total", "kubevirt_vmi_network_receive_packets_total"} {
+			if strings.Contains(r.URL.Query().Get("query"), want) && !strings.Contains(q, "direction") {
+				t.Errorf("network query without direction %s", q)
+			}
 		}
 		_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 	}))
@@ -108,7 +117,7 @@ func TestMonitoringAdminAuthorizationAndFixedHistoryQueries(t *testing.T) {
 	for _, tc := range []struct {
 		query  string
 		status int
-	}{{"metric=connections&range=15m", 200}, {"metric=arbitrary&range=15m", 400}, {"metric=connections&range=100y", 400}} {
+	}{{"metric=connections&range=15m", 200}, {"metric=toward_workspace&range=1h", 200}, {"metric=network_container_bytes&range=15m", 200}, {"metric=network_container_packets&range=1h", 200}, {"metric=network_vmi_bytes&range=1h", 200}, {"metric=network_vmi_packets&range=24h", 200}, {"metric=arbitrary&range=15m", 400}, {"metric=connections&range=100y", 400}, {"metric=rate(container_network_receive_bytes_total[1m])&range=15m", 400}} {
 		w := httptest.NewRecorder()
 		monitoringHistory(w, httptest.NewRequest("GET", "/admin/monitoring/series?"+tc.query, nil))
 		if w.Code != tc.status {

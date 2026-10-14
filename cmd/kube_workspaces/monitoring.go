@@ -352,7 +352,18 @@ func monitoringHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := "kw_platform=" + strconv.Quote(os.Getenv("KW_MONITORING_PLATFORM"))
-	queries := map[string]string{"connections": "sum by (tier, transport, category) (kubeworkspaces_connections_active{" + scope + ",category!=\"http\"})", "toward_workspace": "sum by (tier, transport, category) (rate(kubeworkspaces_traffic_bytes_total{" + scope + ",direction=\"toward_workspace\"}[1m]))", "toward_client": "sum by (tier, transport, category) (rate(kubeworkspaces_traffic_bytes_total{" + scope + ",direction=\"toward_client\"}[1m]))"}
+	queries := map[string]string{"connections": "sum by (tier, transport, category) (kubeworkspaces_connections_active{" + scope + ",category!=\"http\"})", "toward_workspace": "sum by (tier, transport, category) (rate(kubeworkspaces_traffic_bytes_total{" + scope + ",direction=\"toward_workspace\"}[1m]))", "toward_client": "sum by (tier, transport, category) (rate(kubeworkspaces_traffic_bytes_total{" + scope + ",direction=\"toward_client\"}[1m]))",
+		// Phase 5: workspace/interface network counters from existing cluster
+		// telemetry, kept separate from proxy stream bytes. Container metrics
+		// come from kubelet/cAdvisor; VMI metrics come from the KubeVirt
+		// prometheus-metrics Service. Neither carries kw_platform, so these
+		// are cluster-level sums: receive maps to toward_workspace and
+		// transmit maps to toward_client. Do not add them to proxy totals;
+		// virt-launcher pod traffic also appears under container_network_*.
+		"network_container_bytes":   "sum by (direction) (label_replace(sum(rate(container_network_receive_bytes_total[1m])), \"direction\", \"toward_workspace\", \"__name__\", \".+\") or label_replace(sum(rate(container_network_transmit_bytes_total[1m])), \"direction\", \"toward_client\", \"__name__\", \".+\"))",
+		"network_container_packets": "sum by (direction) (label_replace(sum(rate(container_network_receive_packets_total[1m])), \"direction\", \"toward_workspace\", \"__name__\", \".+\") or label_replace(sum(rate(container_network_transmit_packets_total[1m])), \"direction\", \"toward_client\", \"__name__\", \".+\"))",
+		"network_vmi_bytes":         "sum by (direction) (label_replace(sum(rate(kubevirt_vmi_network_receive_bytes_total[1m])), \"direction\", \"toward_workspace\", \"__name__\", \".+\") or label_replace(sum(rate(kubevirt_vmi_network_transmit_bytes_total[1m])), \"direction\", \"toward_client\", \"__name__\", \".+\"))",
+		"network_vmi_packets":       "sum by (direction) (label_replace(sum(rate(kubevirt_vmi_network_receive_packets_total[1m])), \"direction\", \"toward_workspace\", \"__name__\", \".+\") or label_replace(sum(rate(kubevirt_vmi_network_transmit_packets_total[1m])), \"direction\", \"toward_client\", \"__name__\", \".+\"))"}
 	query, ok := queries[r.URL.Query().Get("metric")]
 	if !ok {
 		http.Error(w, "invalid metric", 400)
