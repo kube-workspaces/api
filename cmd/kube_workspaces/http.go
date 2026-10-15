@@ -1624,7 +1624,15 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		// answered by the pod that owns the workspace's generation. Route
 		// them there through the lease-recorded owner (see B.4).
 		displayOwnerForward = func(next http.Handler) http.Handler {
-			return exec.DisplayOwnerMiddleware(displayStore, replicaID, exec.NewOwnerHop(execClientset), next)
+			hop := exec.NewOwnerHop(execClientset)
+			next = exec.AgentOwnerMiddleware(replicaID, func(ctx context.Context) ([][]byte, error) {
+				cfg, err := authProvider.GetConfig(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return cfg.SessionSigningKeys(), nil
+			}, hop, next)
+			return exec.DisplayOwnerMiddleware(displayStore, replicaID, hop, next)
 		}
 
 		// requireEditorAccess enforces editor/admin access plus namespace scoping

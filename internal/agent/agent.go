@@ -5,13 +5,14 @@ package agent
 // Trust model (do not weaken silently):
 //   - Tickets are HMAC-SHA256 bearers minted by the API with the platform
 //     session keys (rotation-safe: current key signs, predecessors verify).
-//     The HMAC proves API issuance to key holders (the proxy edge).
+//     The HMAC proves API issuance to key holders. The bridge consumes the
+//     authenticated API response directly, rather than verifying viewer tickets.
 //   - The guest agent holds no platform keys and never sees them. It
 //     validates binding (workspace UID/generation, role, epoch, audience)
-//     and freshness only. An empty ticket session id means "whoever holds
-//     the live claim": the proxy bridges exactly one session per workspace
-//     and the guest admits exactly one controller, so a stolen ticket is
-//     confined to the workspace it names while unexpired.
+//     and freshness only. The proxy stamps the guest's hello session id into
+//     its own API-issued grant; viewer-supplied tickets never reach the guest.
+//     Guest network isolation remains required: direct listener access is not
+//     cryptographically authenticated by this binding-only protocol.
 //   - Renew/release correlate on the API session id, carried in the
 //     X-KW-Agent-Session header between proxy and API — never to the guest.
 
@@ -61,6 +62,7 @@ type Session struct {
 // indicator contract — no silent persistence is claimed).
 type Store struct {
 	mu       sync.Mutex
+	owner    string
 	sessions map[string]*Session
 	now      func() time.Time
 	ttl      time.Duration
@@ -69,6 +71,35 @@ type Store struct {
 // NewStore returns a Store with the default TTL and real clock.
 func NewStore() *Store {
 	return &Store{sessions: map[string]*Session{}, now: time.Now, ttl: DefaultTTL}
+}
+
+// NewOwnedStore retains grants on their issuer. Signed routing IDs allow any
+// API replica to forward lifecycle calls without trusting caller-chosen hosts.
+func NewOwnedStore(owner string) *Store {
+	s := NewStore()
+	s.owner = owner
+	return s
+}
+
+func ownerMAC(value string, key []byte) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte("kw-agent-owner-v1:" + value))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// SessionOwner verifies an issuer-routing ID, including predecessor keys.
+// Legacy IDs have no routing hint and remain local, failing closed elsewhere.
+func SessionOwner(id string, keys [][]byte) string {
+	parts := strings.Split(id, "~")
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+	for _, key := range keys {
+		if len(key) != 0 && hmac.Equal([]byte(parts[2]), []byte(ownerMAC(parts[0]+"~"+parts[1], key))) {
+			return parts[0]
+		}
+	}
+	return ""
 }
 
 func newID() (string, error) {
@@ -99,6 +130,10 @@ func (s *Store) Mint(workspaceUID, workspaceGeneration, participant string, epoc
 	id, err = newID()
 	if err != nil {
 		return "", "", err
+	}
+	if s.owner != "" {
+		id = s.owner + "~" + id
+		id += "~" + ownerMAC(id, keys[0])
 	}
 	now := s.now()
 	payload := Ticket{
@@ -170,7 +205,31 @@ func (s *Store) Lookup(id string) (*Session, bool) {
 	if !ok || s.now().After(session.ExpiresAt) {
 		return nil, false
 	}
-	return session, true
+	copy := *session
+	return &copy, true
+}
+
+// RenewBound atomically checks the current provisioning binding before renewal.
+func (s *Store) RenewBound(id, uid, generation string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session, ok := s.sessions[id]
+	if !ok || !s.now().Before(session.ExpiresAt) || session.Ticket.WorkspaceUID != uid || session.Ticket.WorkspaceGeneration != generation {
+		return false
+	}
+	session.ExpiresAt = s.now().Add(s.ttl)
+	return true
+}
+
+// ReleaseBound is idempotent for missing IDs; a mismatched binding is refused.
+func (s *Store) ReleaseBound(id, uid, generation string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if session, ok := s.sessions[id]; ok && (session.Ticket.WorkspaceUID != uid || session.Ticket.WorkspaceGeneration != generation) {
+		return false
+	}
+	delete(s.sessions, id)
+	return true
 }
 
 // Renew extends a live session by one TTL. Expired or unknown ids fail

@@ -157,7 +157,8 @@ func main() {
 		sshkeysSvc = kubeworkspaces.NewSSHKeys(authProvider)
 		healthSvc = kubeworkspaces.NewHealth()
 		displaySvc = kubeworkspaces.NewDisplay(wsClient, displaySessions, kubeworkspaces.SharedDisplayEnabledFromEnv())
-		agentSvc = kubeworkspaces.NewAgent(wsClient, agentstore.NewStore(), func(ctx context.Context) ([][]byte, error) {
+		issuer, _ := os.Hostname()
+		agentSvc = kubeworkspaces.NewAgent(wsClient, agentstore.NewOwnedStore(issuer), func(ctx context.Context) ([][]byte, error) {
 			cfg, err := authProvider.GetConfig(ctx)
 			if err != nil {
 				return nil, err

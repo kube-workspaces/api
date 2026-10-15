@@ -12,9 +12,9 @@ import (
 )
 
 // agent service implementation. Handwritten behavior lives here, outside the
-// generated gen/ packages. Tickets are minted by this API and validated at
-// the proxy edge (see internal/agent for the trust model); the guest checks
-// binding and freshness only.
+// generated gen/ packages. The authenticated proxy obtains its grant directly
+// from this API and substitutes it for viewer claims; the guest checks binding
+// and freshness only, not the platform signature.
 type agentsrvc struct {
 	wsClient *k8s.WorkspaceClient
 	sessions *agent.Store
@@ -117,10 +117,11 @@ func (s *agentsrvc) Renew(ctx context.Context, payload *genagent.RenewPayload) (
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := s.agentWorkspace(ctx, ns, payload.Name); err != nil {
+	uid, generation, err := s.agentWorkspace(ctx, ns, payload.Name)
+	if err != nil {
 		return nil, err
 	}
-	if _, ok := s.sessions.Renew(payload.SessionID); !ok {
+	if !s.sessions.RenewBound(payload.SessionID, uid, generation) {
 		return nil, genagent.NotFound(fmt.Sprintf("agent session for workspace \"%s\" not found", payload.Name))
 	}
 	return &genagent.AgentRenew{
@@ -156,9 +157,12 @@ func (s *agentsrvc) Release(ctx context.Context, payload *genagent.ReleasePayloa
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := s.agentWorkspace(ctx, ns, payload.Name); err != nil {
+	uid, generation, err := s.agentWorkspace(ctx, ns, payload.Name)
+	if err != nil {
 		return nil, err
 	}
-	s.sessions.Release(payload.SessionID)
+	if !s.sessions.ReleaseBound(payload.SessionID, uid, generation) {
+		return nil, genagent.NotFound("agent session binding does not match workspace")
+	}
 	return &genagent.AgentRelease{OK: true}, nil
 }
