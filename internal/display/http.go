@@ -19,7 +19,11 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request, ns, name, acti
 	switch action {
 	case "claim":
 		var id string
-		id, err = s.Claim(ctx, ns, name, "tier1")
+		if r.Header.Get("X-KW-Display-Transport") == "agent" {
+			id, err = s.ClaimAgent(ctx, ns, name, r.Header.Get("X-KW-Agent-Owner"))
+		} else {
+			id, err = s.Claim(ctx, ns, name, "tier1")
+		}
 		result = map[string]any{"id": id, "ttl_ms": ClientTTL / time.Millisecond, "protocol": 1}
 	case "renew":
 		err = s.Renew(ctx, ns, name, r.Header.Get("X-KW-Display-Claim"))
@@ -28,9 +32,7 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request, ns, name, acti
 		err = s.Release(ctx, ns, name, r.Header.Get("X-KW-Display-Claim"))
 		result = map[string]bool{"ok": err == nil}
 	case "status":
-		var inUse bool
-		inUse, err = s.InUse(ctx, ns, name)
-		result = map[string]bool{"inUse": inUse}
+		result, err = s.SeatInfo(ctx, ns, name)
 	case "takeover":
 		var inUse bool
 		inUse, err = s.Revoke(ctx, ns, name)

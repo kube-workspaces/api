@@ -1819,6 +1819,36 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		})
 
 		// Tier 1 transport session status: GET /v1/workspaces/{name}/tier1/status
+		// Premium observer stream heartbeat. The display-owner middleware routes
+		// this transport-side endpoint to the same registry as REST join/leave.
+		mux.Handle("POST", "/v1/workspaces/{name}/display/observer", func(w http.ResponseWriter, r *http.Request) {
+			ns, name, ok := requireEditorAccess(w, r)
+			if !ok {
+				return
+			}
+			if !kubeworkspaces.SharedDisplayEnabledFromEnv() {
+				http.NotFound(w, r)
+				return
+			}
+			var body struct {
+				ID string `json:"participant_id"`
+			}
+			if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil || body.ID == "" {
+				http.Error(w, "participant required", 400)
+				return
+			}
+			p, err := displaySessions.Lookup(ns, name, body.ID)
+			if err != nil || p.Role != display.RoleObserver {
+				http.Error(w, "observer membership unavailable", 409)
+				return
+			}
+			if err := displaySessions.SetConnected(ns, name, body.ID, true); err != nil {
+				http.Error(w, "observer membership unavailable", 409)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		})
 		mux.Handle("GET", "/v1/workspaces/{name}/tier1/status", func(w http.ResponseWriter, r *http.Request) {
 			ns, name, ok := requireEditorAccess(w, r)
 			if !ok {

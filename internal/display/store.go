@@ -157,6 +157,37 @@ func (s *Store) Claim(ctx context.Context, ns, name, tier string) (string, error
 	return s.claimLease(ctx, leaseName(name), ns, map[string]string{tierKey: tier, revokedKey: "false"}, "display-ownership")
 }
 
+// ClaimAgent distinguishes encoded premium fan-out from Selkies' Tier 1 seat.
+func (s *Store) ClaimAgent(ctx context.Context, ns, name, owner string) (string, error) {
+	return s.claimLease(ctx, leaseName(name), ns, map[string]string{tierKey: "tier1", revokedKey: "false", "kubeworkspaces.io/display-transport": "agent", "kubeworkspaces.io/agent-proxy-owner": owner}, "display-ownership")
+}
+
+// SeatInfo is one coherent ownership snapshot for transport discovery.
+type SeatInfo struct {
+	InUse      bool   `json:"inUse"`
+	Transport  string `json:"transport"`
+	ProxyOwner string `json:"proxyOwner"`
+}
+
+func (s *Store) SeatInfo(ctx context.Context, ns, name string) (SeatInfo, error) {
+	l, err := s.client.CoordinationV1().Leases(ns).Get(ctx, leaseName(name), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return SeatInfo{}, nil
+	}
+	if err != nil {
+		return SeatInfo{}, err
+	}
+	if !held(l) || s.expired(ns, l) {
+		return SeatInfo{}, nil
+	}
+	info := SeatInfo{InUse: true}
+	if l.Annotations[revokedKey] != "true" {
+		info.Transport = l.Annotations["kubeworkspaces.io/display-transport"]
+		info.ProxyOwner = l.Annotations["kubeworkspaces.io/agent-proxy-owner"]
+	}
+	return info, nil
+}
+
 // claimLease creates or takes over a coordination lease after the fencing
 // interval when its holder went quiet. A fresh claim restarts fencing
 // observation so the next contender must watch this holder go quiet again.
