@@ -19,13 +19,16 @@ import (
 	health "github.com/kube-workspaces/api/gen/health"
 	images "github.com/kube-workspaces/api/gen/images"
 	namespaces "github.com/kube-workspaces/api/gen/namespaces"
+	executions "github.com/kube-workspaces/api/gen/executions"
 	sshkeys "github.com/kube-workspaces/api/gen/sshkeys"
 	volumes "github.com/kube-workspaces/api/gen/volumes"
 	workspaces "github.com/kube-workspaces/api/gen/workspaces"
 	agentstore "github.com/kube-workspaces/api/internal/agent"
 	"github.com/kube-workspaces/api/internal/auth"
 	dispstore "github.com/kube-workspaces/api/internal/display"
+	"github.com/kube-workspaces/api/internal/platform"
 	"github.com/kube-workspaces/api/internal/execution"
+	executionstorage "github.com/kube-workspaces/api/internal/execution/storage"
 	"github.com/kube-workspaces/api/internal/k8s"
 	"goa.design/clue/debug"
 	"goa.design/clue/log"
@@ -153,6 +156,7 @@ func main() {
 		healthSvc     health.Service
 		displaySvc    display.Service
 		agentSvc      agent.Service
+		executionsSvc executions.Service
 	)
 	// The sessions registry is shared by the Goa display service (REST
 	// membership/control) and the shared-display WebSocket route so both see
@@ -174,6 +178,18 @@ func main() {
 			}
 			return cfg.SessionSigningKeys(), nil
 		})
+		// execution storage/service
+		execStore, execErr := executionstorage.Open(ctx, executionStorage.StorageOptions())
+		if execErr != nil {
+			log.Printf(ctx, "execution storage unavailable: %v", execErr)
+			execStore = nil
+		}
+		log.Print(ctx, log.KV{K: "execution-storage-ready-at-start", V: execStore != nil})
+		if execStore != nil && execStore.Ready(ctx) != nil {
+			log.Printf(ctx, "execution storage not ready at startup")
+		}
+		execSvc := execution.NewService(execStore)
+		executionsSvc = kubeworkspaces.NewExecutions(execSvc, platform.NewConfigProvider(dynClient))
 	}
 
 	// Wrap the services in endpoints that can be invoked from other services
@@ -187,6 +203,7 @@ func main() {
 		healthEndpoints     *health.Endpoints
 		displayEndpoints    *display.Endpoints
 		agentEndpoints      *agent.Endpoints
+		executionsEndpoints *executions.Endpoints
 	)
 	{
 		workspacesEndpoints = workspaces.NewEndpoints(workspacesSvc)
@@ -213,6 +230,9 @@ func main() {
 		agentEndpoints = agent.NewEndpoints(agentSvc)
 		agentEndpoints.Use(debug.LogPayloads())
 		agentEndpoints.Use(log.Endpoint)
+		executionsEndpoints = executions.NewEndpoints(executionsSvc)
+		executionsEndpoints.Use(debug.LogPayloads())
+		executionsEndpoints.Use(log.Endpoint)
 	}
 
 	// Create channel used by both the signal handler and server goroutines
@@ -254,7 +274,7 @@ func main() {
 			} else if u.Port() == "" {
 				u.Host = net.JoinHostPort(u.Host, "80")
 			}
-			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, agentEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, displaySessions, &wg, errc, *dbgF)
+			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, agentEndpoints, executionsEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, displaySessions, &wg, errc, *dbgF)
 		}
 
 	default:

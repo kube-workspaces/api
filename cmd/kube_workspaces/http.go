@@ -26,8 +26,10 @@ import (
 	imagessvr "github.com/kube-workspaces/api/gen/http/images/server"
 	namespacessvr "github.com/kube-workspaces/api/gen/http/namespaces/server"
 	sshkeyssvr "github.com/kube-workspaces/api/gen/http/sshkeys/server"
+	executionssvr "github.com/kube-workspaces/api/gen/http/executions/server"
 	volumessvr "github.com/kube-workspaces/api/gen/http/volumes/server"
 	workspacessvr "github.com/kube-workspaces/api/gen/http/workspaces/server"
+	genexecutions "github.com/kube-workspaces/api/gen/executions"
 	images "github.com/kube-workspaces/api/gen/images"
 	namespaces "github.com/kube-workspaces/api/gen/namespaces"
 	sshkeys "github.com/kube-workspaces/api/gen/sshkeys"
@@ -61,7 +63,7 @@ var godocFS embed.FS
 
 // handleHTTPServer starts configures and starts a HTTP server on the given
 // URL. It shuts down the server if any error is received in the error channel.
-func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, displayEndpoints *gendisplay.Endpoints, agentEndpoints *genagent.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, displaySessions *display.Sessions, wg *sync.WaitGroup, errc chan error, dbg bool) {
+func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, displayEndpoints *gendisplay.Endpoints, agentEndpoints *genagent.Endpoints, executionsEndpoints *genexecutions.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, displaySessions *display.Sessions, wg *sync.WaitGroup, errc chan error, dbg bool) {
 	monitor := monitoring.New("api")
 	if err := monitoring.Listen(ctx, monitor, ":9090", os.Getenv("KW_MONITORING_TOKEN")); err != nil {
 		log.Fatal(ctx, err)
@@ -105,6 +107,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		healthServer     *healthsvr.Server
 		displayServer    *displaysvr.Server
 		agentServer      *agentsvr.Server
+		executionsServer *executionssvr.Server
 	)
 	{
 		eh := errorHandler(ctx)
@@ -113,6 +116,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		imagesServer = imagessvr.New(imagesEndpoints, mux, dec, enc, eh, nil)
 		namespacesServer = namespacessvr.New(namespacesEndpoints, mux, dec, enc, eh, nil)
 		sshkeysServer = sshkeyssvr.New(sshkeysEndpoints, mux, dec, enc, eh, nil)
+		executionsServer = executionssvr.New(executionsEndpoints, mux, dec, enc, eh, nil)
 		healthServer = healthsvr.New(healthEndpoints, mux, dec, enc, eh, nil)
 		displayServer = displaysvr.New(displayEndpoints, mux, dec, enc, eh, nil)
 		agentServer = agentsvr.New(agentEndpoints, mux, dec, enc, eh, nil)
@@ -124,6 +128,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	imagessvr.Mount(mux, imagesServer)
 	namespacessvr.Mount(mux, namespacesServer)
 	sshkeyssvr.Mount(mux, sshkeysServer)
+	executionssvr.Mount(mux, executionsServer)
 	healthsvr.Mount(mux, healthServer)
 	displaysvr.Mount(mux, displayServer)
 	agentsvr.Mount(mux, agentServer)
