@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kube-workspaces/api/internal/auth"
 	"github.com/kube-workspaces/api/internal/display"
 	"github.com/kube-workspaces/api/internal/monitoring"
 	corev1 "k8s.io/api/core/v1"
@@ -25,9 +26,7 @@ import (
 var shellCandidates = []string{"/bin/bash", "/bin/sh", "/bin/ash", "/bin/zsh"}
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Origin checking is handled by CORS middleware
-	},
+	CheckOrigin: auth.WebSocketOriginAllowed,
 }
 
 // Options configures the exec handler.
@@ -124,6 +123,21 @@ func probeShell(ctx context.Context, opts *Options, namespace, podName, shell st
 	return err == nil
 }
 
+type resolvedPodKey struct{}
+
+// ContextWithPod sets the server-resolved target for Deployment-backed scratch
+// workspaces. A client query parameter must never select a different pod.
+func ContextWithPod(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, resolvedPodKey{}, name)
+}
+
+func execPodName(r *http.Request, workspace string) string {
+	if pod, ok := r.Context().Value(resolvedPodKey{}).(string); ok && pod != "" {
+		return pod
+	}
+	return workspace + "-0"
+}
+
 // Handler creates an HTTP handler that upgrades to WebSocket and bridges to pod exec.
 // The handler expects path parameters: namespace, name (workspace name).
 // Query parameters: shell (optional, auto-detected if not provided), cols, rows.
@@ -143,12 +157,7 @@ func Handler(opts *Options) http.HandlerFunc {
 		}
 
 		shell := r.URL.Query().Get("shell")
-		// The pod may be pre-resolved by the caller (e.g. scratch workspaces whose
-		// Deployment pods have generated names); otherwise StatefulSet naming applies.
-		podName := r.URL.Query().Get("pod")
-		if podName == "" {
-			podName = name + "-0"
-		}
+		podName := execPodName(r, name)
 
 		// Only run shell detection if no shell was explicitly configured
 		// (empty means the Image CR had no defaultShell set)

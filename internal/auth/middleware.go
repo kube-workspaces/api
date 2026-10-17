@@ -49,8 +49,7 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 			cfg, err := provider.GetConfig(ctx)
 			if err != nil {
 				log.Printf(ctx, "auth: failed to get config: %v", err)
-				// If we can't determine auth state, pass through (fail-open for compatibility)
-				next.ServeHTTP(w, r)
+				writeJSONError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication configuration unavailable")
 				return
 			}
 
@@ -60,10 +59,10 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 				return
 			}
 
-		// Extract token from cookie
-		cookie, err := r.Cookie(SessionCookieName)
-		if err != nil || cookie.Value == "" {
-			// Check for Bearer token in Authorization header (API clients)
+			// Extract token from cookie
+			cookie, err := r.Cookie(SessionCookieName)
+			if err != nil || cookie.Value == "" {
+				// Check for Bearer token in Authorization header (API clients)
 				authHeader := r.Header.Get("Authorization")
 				if strings.HasPrefix(authHeader, "Bearer ") {
 					tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
@@ -107,8 +106,28 @@ func validateAndGetUser(ctx context.Context, tokenStr string, cfg *Config, provi
 		return nil, fmt.Errorf("device token has been revoked")
 	}
 
-	// Check if user is in admin emails list (override role)
-	role := token.Role
+	// Current User state is authoritative. A stale token must not preserve an
+	// administrator role or keep a deleted/disabled user authorized.
+	userCR, err := provider.GetUserByEmail(ctx, token.Email)
+	if err != nil || userCR == nil {
+		return nil, fmt.Errorf("current user account unavailable")
+	}
+	if userCR.GetDeletionTimestamp() != nil {
+		return nil, fmt.Errorf("user account is being deleted")
+	}
+	if token.UserUID != "" && token.UserUID != string(userCR.GetUID()) {
+		return nil, fmt.Errorf("session user identity no longer matches")
+	}
+	disabled, _, err := unstructured.NestedBool(userCR.Object, "spec", "disabled")
+	if err != nil || disabled {
+		return nil, fmt.Errorf("user account is disabled or invalid")
+	}
+	role, _, err := unstructured.NestedString(userCR.Object, "spec", "role")
+	if err != nil || (role != "admin" && role != "editor" && role != "viewer") {
+		return nil, fmt.Errorf("current user role is invalid")
+	}
+	// Configured admin emails remain an explicit administrator override, but
+	// never bypass the current-account existence/disabled checks above.
 	for _, adminEmail := range cfg.AdminEmails {
 		if strings.EqualFold(adminEmail, token.Email) {
 			role = "admin"
@@ -117,32 +136,27 @@ func validateAndGetUser(ctx context.Context, tokenStr string, cfg *Config, provi
 	}
 
 	user := &UserInfo{
-		Email:       token.Email,
-		DisplayName: token.DisplayName,
-		Role:        role,
-		Groups:      token.Groups,
+		credentialUserUID: token.UserUID,
+		UID:               string(userCR.GetUID()),
+		Email:             token.Email,
+		DisplayName:       token.DisplayName,
+		Role:              role,
+		Groups:            token.Groups,
 	}
 
-	// Try to enrich with User CR data (personal namespace, additional access, avatar)
-	userCR, err := provider.GetUserByEmail(ctx, token.Email)
-	if err == nil && userCR != nil {
-		personalNS, _, _ := unstructuredNestedString(userCR.Object, "status", "personalNamespace")
-		user.PersonalNamespace = personalNS
-
-		avatarURL, _, _ := unstructuredNestedString(userCR.Object, "status", "avatarURL")
-		user.AvatarURL = avatarURL
-
-		// Get namespace access
-		user.Namespaces = getUserNamespaces(userCR, personalNS)
-
-		mustChangePassword, _, _ := unstructuredNestedBool(userCR.Object, "spec", "localAuth", "mustChangePassword")
-		user.MustChangePassword = mustChangePassword
-
-		// Check if disabled
-		disabled, _, _ := unstructuredNestedBool(userCR.Object, "spec", "disabled")
-		if disabled {
-			return nil, fmt.Errorf("user account is disabled")
-		}
+	personalNS, _, _ := unstructuredNestedString(userCR.Object, "status", "personalNamespace")
+	user.PersonalNamespace = personalNS
+	avatarURL, _, _ := unstructuredNestedString(userCR.Object, "status", "avatarURL")
+	user.AvatarURL = avatarURL
+	user.Namespaces = getUserNamespaces(userCR, personalNS)
+	mustChangePassword, _, err := unstructuredNestedBool(userCR.Object, "spec", "localAuth", "mustChangePassword")
+	if err != nil {
+		return nil, fmt.Errorf("invalid current user password policy")
+	}
+	user.MustChangePassword = mustChangePassword
+	user.ExecutionGrants, err = userExecutionGrants(userCR)
+	if err != nil {
+		return nil, err
 	}
 
 	return user, nil

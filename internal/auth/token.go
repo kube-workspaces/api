@@ -25,6 +25,8 @@ const (
 
 // UserInfo represents the authenticated user's identity extracted from the session token.
 type UserInfo struct {
+	// UID is the current User CR identity, not a caller-selected label.
+	UID         string   `json:"uid,omitempty"`
 	Email       string   `json:"email"`
 	DisplayName string   `json:"displayName,omitempty"`
 	Role        string   `json:"role"`
@@ -38,10 +40,16 @@ type UserInfo struct {
 	// MustChangePassword indicates a local-auth user must set a new password
 	// before continuing (set on creation/reset by an admin).
 	MustChangePassword bool `json:"mustChangePassword,omitempty"`
+	// ExecutionGrants are loaded from the current User CR, never from a token.
+	ExecutionGrants   []ExecutionGrant `json:"-"`
+	credentialUserUID string
 }
 
 // SessionToken represents a JWT-like session token.
 type SessionToken struct {
+	// UserUID binds new credentials to a User incarnation. Legacy credentials
+	// remain usable for existing routes, but cannot authorize machine execution.
+	UserUID     string   `json:"user_uid,omitempty"`
 	Email       string   `json:"email"`
 	DisplayName string   `json:"displayName,omitempty"`
 	Role        string   `json:"role"`
@@ -56,7 +64,7 @@ type SessionToken struct {
 }
 
 // CreateSessionToken creates a signed session token for the given user.
-func CreateSessionToken(email, displayName, role string, groups []string, signingKey []byte, expiry time.Duration) (string, error) {
+func CreateSessionToken(email, displayName, role string, groups []string, signingKey []byte, expiry time.Duration, userUID ...string) (string, error) {
 	if len(signingKey) == 0 {
 		return "", fmt.Errorf("session signing key is not configured")
 	}
@@ -67,6 +75,9 @@ func CreateSessionToken(email, displayName, role string, groups []string, signin
 		Groups:      groups,
 		IssuedAt:    time.Now().Unix(),
 		ExpiresAt:   time.Now().Add(expiry).Unix(),
+	}
+	if len(userUID) > 0 {
+		token.UserUID = userUID[0]
 	}
 
 	payload, err := json.Marshal(token)

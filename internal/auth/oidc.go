@@ -401,10 +401,26 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	h.updateAvatarURL(ctx, email, avatarURL)
 
 	// Create session token
-	sessionToken, err := CreateSessionToken(email, claims.Name, role, claims.Groups, cfg.SigningKey, cfg.TokenExpiry)
+	currentUser, err := h.provider.GetUserByEmail(ctx, email)
+	if err != nil {
+		http.Error(w, "current user account unavailable", http.StatusForbidden)
+		return
+	}
+	role, _, _ = unstructuredNestedString(currentUser.Object, "spec", "role")
+	for _, adminEmail := range cfg.AdminEmails {
+		if strings.EqualFold(adminEmail, email) {
+			role = "admin"
+			break
+		}
+	}
+	sessionToken, err := CreateSessionToken(email, claims.Name, role, claims.Groups, cfg.SigningKey, cfg.TokenExpiry, string(currentUser.GetUID()))
 	if err != nil {
 		log.Printf(ctx, "auth: failed to create session token: %v", err)
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
+		return
+	}
+	if _, err := validateAndGetUser(ctx, sessionToken, cfg, h.provider); err != nil {
+		http.Error(w, "current user account cannot sign in", http.StatusForbidden)
 		return
 	}
 
@@ -459,8 +475,13 @@ func (h *OIDCHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 func (h *OIDCHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	cfg, _ := h.provider.GetConfig(ctx)
-	if cfg == nil || !cfg.Enabled {
+	cfg, err := h.provider.GetConfig(ctx)
+	if err != nil {
+		log.Printf(ctx, "auth: /auth/me configuration unavailable: %v", err)
+		writeJSONError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication configuration unavailable")
+		return
+	}
+	if !cfg.Enabled {
 		// Auth disabled - return anonymous with admin access
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{

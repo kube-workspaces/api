@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -321,6 +323,13 @@ func newTestHandler(t *testing.T, cfg *Config) *OIDCHandler {
 		config:        cfg,
 		lastFetch:     time.Now(),
 		cacheDuration: time.Hour,
+	}
+	// Session validation requires current, enabled account records. Seed the
+	// identities used by these transport tests instead of relying on token roles.
+	for _, email := range []string{"user@example.com", "cookie@example.com", "bearer@example.com"} {
+		if _, err := provider.dynamicClient.Resource(userGVR).Create(context.Background(), executionUserFixture(email, "editor"), metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	h := NewOIDCHandler(provider)
 	// Handler tests fire several requests from the same RemoteAddr; the

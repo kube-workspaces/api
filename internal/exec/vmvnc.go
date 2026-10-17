@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kube-workspaces/api/internal/auth"
 	"github.com/kube-workspaces/api/internal/display"
 	"github.com/kube-workspaces/api/internal/monitoring"
 	"k8s.io/client-go/rest"
@@ -66,9 +67,7 @@ func (l *throughputLogger) logStats(now time.Time) {
 // echo a match or the browser abandons the handshake.
 var vncUpgrader = websocket.Upgrader{
 	Subprotocols: []string{"binary", "base64", "plain.kubevirt.io"},
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Origin checking is handled by CORS middleware
-	},
+	CheckOrigin:  auth.WebSocketOriginAllowed,
 }
 
 // VMVNCHandler returns an HTTP handler that upgrades the client connection to

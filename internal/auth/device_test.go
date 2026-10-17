@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func testDeviceConfig() *Config {
@@ -96,6 +98,9 @@ func TestDeviceListOwnScopeFiltersAdministratorProfile(t *testing.T) {
 	provider := &ConfigProvider{dynamicClient: dyn, config: testDeviceConfig(), lastFetch: time.Now(), cacheDuration: time.Hour}
 	store := NewDeviceStore(dyn)
 	ctx := context.Background()
+	if _, err := dyn.Resource(userGVR).Create(ctx, executionUserFixture("admin@example.com", "admin"), metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
 	for _, email := range []string{"admin@example.com", "other@example.com"} {
 		if err := store.Register(ctx, email, "laptop", email, time.Now(), time.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)

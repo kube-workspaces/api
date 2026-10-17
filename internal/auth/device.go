@@ -46,7 +46,7 @@ const (
 
 // CreateDeviceToken mints a long-lived device token. jti must be fresh random
 // hex; name is human metadata (e.g. "ada-laptop") and is not unique.
-func CreateDeviceToken(email, displayName, role string, groups []string, deviceName, jti string, signingKey []byte, expiry time.Duration) (string, error) {
+func CreateDeviceToken(email, displayName, role string, groups []string, deviceName, jti string, signingKey []byte, expiry time.Duration, userUID ...string) (string, error) {
 	if len(signingKey) == 0 {
 		return "", fmt.Errorf("session signing key is not configured")
 	}
@@ -62,6 +62,9 @@ func CreateDeviceToken(email, displayName, role string, groups []string, deviceN
 		JTI:         jti,
 		IssuedAt:    time.Now().Unix(),
 		ExpiresAt:   time.Now().Add(expiry).Unix(),
+	}
+	if len(userUID) > 0 {
+		token.UserUID = userUID[0]
 	}
 	payload, err := json.Marshal(token)
 	if err != nil {
@@ -320,7 +323,7 @@ func (h *DeviceHandler) HandleDeviceCreate(w http.ResponseWriter, r *http.Reques
 		expiry = defaultDeviceTokenExpiry
 	}
 	now := time.Now()
-	deviceToken, err := CreateDeviceToken(claims.Email, claims.DisplayName, caller.Role, claims.Groups, name, jti, cfg.SigningKey, expiry)
+	deviceToken, err := CreateDeviceToken(claims.Email, claims.DisplayName, caller.Role, claims.Groups, name, jti, cfg.SigningKey, expiry, caller.credentialUserUID)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

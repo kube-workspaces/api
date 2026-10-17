@@ -25,6 +25,7 @@ import (
 	agentstore "github.com/kube-workspaces/api/internal/agent"
 	"github.com/kube-workspaces/api/internal/auth"
 	dispstore "github.com/kube-workspaces/api/internal/display"
+	"github.com/kube-workspaces/api/internal/execution"
 	"github.com/kube-workspaces/api/internal/k8s"
 	"goa.design/clue/debug"
 	"goa.design/clue/log"
@@ -90,6 +91,14 @@ func main() {
 		log.KV{K: "go", V: runtime.Version()},
 		log.KV{K: "platform", V: fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)})
 	log.Print(ctx, log.KV{K: "http-port", V: *httpPortF})
+	// Configuration is fail-closed and does not establish storage readiness or
+	// enable guest execution. The management service must additionally open and
+	// verify its stores before issuing any process-creation grant.
+	executionStorage, err := execution.StorageConfigFromEnv()
+	if err != nil {
+		log.Fatal(ctx, err)
+	}
+	log.Print(ctx, log.KV{K: "execution-storage-mode", V: string(executionStorage.Mode)})
 
 	// Initialize the services.
 	wsClient, err := k8s.NewWorkspaceClient()

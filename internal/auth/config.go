@@ -13,8 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
-
-	"goa.design/clue/log"
 )
 
 var authConfigGVR = schema.GroupVersionResource{
@@ -59,7 +57,7 @@ type Config struct {
 	// DeviceTokenExpiry is the lifetime of long-lived revocable device tokens
 	// (spec.session.deviceTokenExpiry, default 90d). Session tokens keep using
 	// TokenExpiry.
-	DeviceTokenExpiry time.Duration
+	DeviceTokenExpiry       time.Duration
 	PersonalNamespaces      PersonalNamespacesConfig
 	Registration            RegistrationConfig
 	AdminEmails             []string
@@ -102,6 +100,7 @@ type ConfigProvider struct {
 	mu            sync.RWMutex
 	config        *Config
 	lastFetch     time.Time
+	lastError     error
 	rotatedAt     time.Time
 	cacheDuration time.Duration
 }
@@ -124,45 +123,46 @@ func (p *ConfigProvider) DynamicClient() dynamic.Interface {
 }
 
 // GetConfig returns the current auth configuration, fetching from Kubernetes if needed.
+// Failed refreshes are cached too, but never expose a stale or disabled configuration.
 func (p *ConfigProvider) GetConfig(ctx context.Context) (*Config, error) {
 	p.mu.RLock()
-	if p.config != nil && time.Since(p.lastFetch) < p.cacheDuration {
-		cfg := p.config
+	if !p.lastFetch.IsZero() && time.Since(p.lastFetch) < p.cacheDuration {
+		cfg, err := p.cachedResult()
 		p.mu.RUnlock()
-		return cfg, nil
+		return cfg, err
 	}
 	p.mu.RUnlock()
 
 	return p.refresh(ctx)
 }
 
-// Refresh forces a reload of the configuration.
+// cachedResult requires p.mu to be held. Keep the last good config only for key
+// rotation continuity after recovery, not for authorizing requests during failure.
+func (p *ConfigProvider) cachedResult() (*Config, error) {
+	if p.lastError != nil {
+		return nil, p.lastError
+	}
+	return p.config, nil
+}
+
+// refresh reloads the configuration unless another request already refreshed it.
 func (p *ConfigProvider) refresh(ctx context.Context) (*Config, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	// Double-check after acquiring write lock
-	if p.config != nil && time.Since(p.lastFetch) < p.cacheDuration {
-		return p.config, nil
+	if !p.lastFetch.IsZero() && time.Since(p.lastFetch) < p.cacheDuration {
+		return p.cachedResult()
 	}
 
 	cfg, err := p.loadFromCluster(ctx)
+	p.lastFetch = time.Now()
+	p.lastError = err
 	if err != nil {
-		// Retain the last known-good config instead of replacing it with a
-		// degraded one. Replacing it (e.g. with an empty signing key) would
-		// mint tokens that immediately fail validation, logging every user out.
-		if p.config != nil {
-			log.Printf(ctx, "auth: failed to reload auth config; retaining previous config: %v", err)
-		} else {
-			log.Printf(ctx, "auth: failed to load auth config; defaulting to auth disabled: %v", err)
-			p.config = &Config{Enabled: false}
-		}
-		p.lastFetch = time.Now()
-		return p.config, nil
+		return nil, err
 	}
 	p.applyKeyRotation(cfg)
 	p.config = cfg
-	p.lastFetch = time.Now()
 	return cfg, nil
 }
 
@@ -191,7 +191,7 @@ func (p *ConfigProvider) applyKeyRotation(cfg *Config) {
 func (p *ConfigProvider) loadFromCluster(ctx context.Context) (*Config, error) {
 	obj, err := p.dynamicClient.Resource(authConfigGVR).Get(ctx, "default", metav1.GetOptions{})
 	if err != nil {
-		return &Config{Enabled: false}, nil
+		return nil, fmt.Errorf("failed to load AuthConfig: %w", err)
 	}
 
 	cfg := &Config{
@@ -201,7 +201,10 @@ func (p *ConfigProvider) loadFromCluster(ctx context.Context) (*Config, error) {
 	}
 
 	// Parse spec.enabled
-	enabled, _, _ := unstructured.NestedBool(obj.Object, "spec", "enabled")
+	enabled, found, err := unstructured.NestedBool(obj.Object, "spec", "enabled")
+	if err != nil || !found {
+		return nil, fmt.Errorf("AuthConfig spec.enabled must be an explicit boolean")
+	}
 	cfg.Enabled = enabled
 
 	if !enabled {
@@ -358,11 +361,18 @@ func (p *ConfigProvider) GetUserByEmail(ctx context.Context, email string) (*uns
 		return nil, err
 	}
 
+	var matched *unstructured.Unstructured
 	for _, item := range list.Items {
 		userEmail, _, _ := unstructured.NestedString(item.Object, "spec", "email")
 		if userEmail == email {
-			return &item, nil
+			if matched != nil {
+				return nil, fmt.Errorf("multiple user accounts match email")
+			}
+			matched = item.DeepCopy()
 		}
+	}
+	if matched != nil {
+		return matched, nil
 	}
 	return nil, fmt.Errorf("user with email %s not found", email)
 }

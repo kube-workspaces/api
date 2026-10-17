@@ -468,6 +468,23 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		if nsAccess, ok := body["namespaceAccess"].([]interface{}); ok {
 			spec["namespaceAccess"] = nsAccess
 		}
+		if rawGrants, present := body["executionGrants"]; present {
+			// Auth-disabled mode must not be able to plant dormant privileged
+			// grants that become active when authentication is re-enabled.
+			if auth.UserFromContext(r.Context()) == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]string{"error": "execution grants require an authenticated administrator"})
+				return
+			}
+			if _, err := auth.ParseExecutionGrants(rawGrants); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			spec["executionGrants"] = rawGrants
+		}
 
 		// Allow enabling local auth for an existing (e.g. OIDC-provisioned) user,
 		// adding password login as a secondary method for the same identity.
@@ -1683,15 +1700,25 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				return
 			}
 
+			workspace, err := wsClient.GetWorkspace(r.Context(), ns, name)
+			if err != nil {
+				status := http.StatusServiceUnavailable
+				if errors.IsNotFound(err) {
+					status = http.StatusNotFound
+				}
+				http.Error(w, "workspace unavailable", status)
+				return
+			}
+			wsType, _, _ := unstructured.NestedString(workspace.Object, "spec", "type")
 			// VM workspaces expose the guest serial console instead of a pod exec.
-			if workspaceType(r.Context(), wsClient, ns, name) == "vm" {
+			if wsType == "vm" {
 				vmConsoleHandler(w, r)
 				return
 			}
 
 			// Scratch workspaces run a plain Deployment; resolve the pod by label.
 			// Container workspaces keep the {name}-0 StatefulSet pod convention.
-			if wsType := workspaceType(r.Context(), wsClient, ns, name); wsType == "scratch" {
+			if wsType == "scratch" {
 				podName, err := resolveWorkspacePod(r.Context(), coreClient, ns, name, wsType)
 				if err != nil {
 					w.Header().Set("Content-Type", "application/json")
@@ -1699,9 +1726,10 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 					json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					return
 				}
-				q := r.URL.Query()
-				q.Set("pod", podName)
-				r.URL.RawQuery = q.Encode()
+				r = r.WithContext(exec.ContextWithPod(r.Context(), podName))
+			} else if wsType != "" && wsType != "container" {
+				http.Error(w, "unsupported workspace type", http.StatusBadRequest)
+				return
 			}
 
 			// Determine shell from Image CR if not specified in query
@@ -2150,6 +2178,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 
 	// Wrap handler with CORS for cross-origin requests from the frontend.
 	allowedOrigins := strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",")
+	browserGuard := auth.BrowserRequestGuard(allowedOrigins)(rootHandler)
 	corsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin != "" {
@@ -2167,7 +2196,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		rootHandler.ServeHTTP(w, r)
+		browserGuard.ServeHTTP(w, r)
 	})
 
 	// Start HTTP server using default configuration, change the code to

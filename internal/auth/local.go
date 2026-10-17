@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
 	"goa.design/clue/log"
+	"golang.org/x/crypto/bcrypt"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -191,7 +191,7 @@ func (h *LocalAuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	sessionToken, err := CreateSessionToken(email, displayName, role, nil, cfg.SigningKey, cfg.TokenExpiry)
+	sessionToken, err := CreateSessionToken(email, displayName, role, nil, cfg.SigningKey, cfg.TokenExpiry, string(userCR.GetUID()))
 	if err != nil {
 		log.Printf(ctx, "auth: failed to create session token: %v", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "failed to create session")
