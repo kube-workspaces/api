@@ -60,6 +60,17 @@ func (c StorageConfig) Persistent() bool {
 func (c StorageConfig) String() string { return fmt.Sprintf("execution storage mode=%s", c.Mode) }
 func (c S3Config) String() string      { return "execution S3 configuration (credentials redacted)" }
 
+// RecordingKey returns a copy of the recording encryption key for storage
+// engines. The result is secret material; never log it.
+func (c StorageConfig) RecordingKey() []byte {
+	if len(c.recordingKey) == 0 {
+		return nil
+	}
+	out := make([]byte, len(c.recordingKey))
+	copy(out, c.recordingKey)
+	return out
+}
+
 func StorageConfigFromEnv() (StorageConfig, error) {
 	return readStorageConfig(os.Getenv, os.ReadFile)
 }
