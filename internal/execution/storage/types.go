@@ -18,6 +18,9 @@ import (
 // Operation identifies the kind of admitted work.
 type Operation string
 
+// MaxChunkBytes bounds recording buffers and per-request playback responses.
+const MaxChunkBytes = 1 << 20
+
 const (
 	OperationCommand Operation = "command"
 	OperationScript  Operation = "script"
@@ -53,6 +56,24 @@ func (s State) Terminal() bool {
 	default:
 		return false
 	}
+}
+
+func validTransition(from, to State) bool {
+	if from.Terminal() {
+		return false
+	}
+	if to.Terminal() {
+		return true
+	}
+	switch from {
+	case "", StateAdmitted:
+		return to == StateRunning || to == StateUnknown
+	case StateRunning:
+		return to == StateRunning || to == StateUnknown
+	case StateUnknown:
+		return to == StateUnknown
+	}
+	return false
 }
 
 // Durability advertises whether execution state/history is retained.
@@ -116,20 +137,24 @@ type Filter struct {
 
 // Common store failures.
 var (
-	ErrDisabled     = errors.New("execution storage is disabled")
-	ErrNotReady     = errors.New("execution storage is not ready")
-	ErrNotFound     = errors.New("execution record not found")
-	ErrConflict     = errors.New("execution record conflicts with existing record")
-	ErrTampered     = errors.New("recording chunk failed integrity verification")
-	ErrTruncated    = errors.New("recording is missing chunks")
-	ErrSeqGap       = errors.New("recording chunk sequence is not contiguous")
-	ErrFinalized    = errors.New("recording is already finalized")
-	ErrOverCapacity = errors.New("ephemeral storage capacity exceeded")
-	ErrNotFinalized = errors.New("recording is not finalized")
+	ErrDisabled      = errors.New("execution storage is disabled")
+	ErrNotReady      = errors.New("execution storage is not ready")
+	ErrNotFound      = errors.New("execution record not found")
+	ErrConflict      = errors.New("execution record conflicts with existing record")
+	ErrTampered      = errors.New("recording chunk failed integrity verification")
+	ErrTruncated     = errors.New("recording is missing chunks")
+	ErrSeqGap        = errors.New("recording chunk sequence is not contiguous")
+	ErrFinalized     = errors.New("recording is already finalized")
+	ErrOverCapacity  = errors.New("ephemeral storage capacity exceeded")
+	ErrNotFinalized  = errors.New("recording is not finalized")
+	ErrChunkTooLarge = errors.New("recording chunk exceeds maximum size")
 )
 
 // MetadataStore persists searchable execution metadata and the audit trail.
 type MetadataStore interface {
+	// Reserve atomically claims a new execution and recording identity. Unlike
+	// Create, even identical retries conflict, so only one caller may start work.
+	Reserve(ctx context.Context, rec ExecutionRecord) error
 	// Create inserts a new execution record. It is idempotent on ExecutionID
 	// when the content is identical, and returns ErrConflict when it differs.
 	Create(ctx context.Context, rec ExecutionRecord) error
@@ -168,6 +193,7 @@ type FinalizeMeta struct {
 
 // Manifest is the authoritative integrity record for a finalized recording.
 type Manifest struct {
+	Authentication string    `json:"authentication"`
 	Version        int       `json:"version"`
 	RecordingID    string    `json:"recordingID"`
 	KeyID          string    `json:"keyID"`

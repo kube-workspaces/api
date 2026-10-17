@@ -23,10 +23,11 @@ const recordingPrefix = "executions"
 // s3Recording is the durable, encrypted recording chunk store on S3-compatible
 // object storage (RustFS, SeaweedFS, MinIO, AWS).
 type s3Recording struct {
-	client *minio.Client
-	bucket string
-	gcm    cipher.AEAD
-	keyID  string
+	manifestKey []byte
+	client      *minio.Client
+	bucket      string
+	gcm         cipher.AEAD
+	keyID       string
 }
 
 // NewS3Recording opens an S3-backed RecordingStore. It verifies the key and
@@ -51,11 +52,16 @@ func NewS3Recording(cfg S3Options, key []byte, keyID string) (RecordingStore, er
 		useTLS = parsed.Scheme == "https"
 		endpoint = parsed.Host
 	}
+	lookup := minio.BucketLookupAuto
+	if cfg.ForcePathStyle {
+		lookup = minio.BucketLookupPath
+	}
 	client, err := minio.New(endpoint, &minio.Options{
-		Creds:     credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-		Secure:    useTLS,
-		Region:    cfg.Region,
-		Transport: transport,
+		BucketLookup: lookup,
+		Creds:        credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+		Secure:       useTLS,
+		Region:       cfg.Region,
+		Transport:    transport,
 	})
 	if err != nil {
 		return nil, err
@@ -74,7 +80,7 @@ func NewS3Recording(cfg S3Options, key []byte, keyID string) (RecordingStore, er
 			return nil, fmt.Errorf("%w: %v", ErrNotReady, err)
 		}
 	}
-	return &s3Recording{client: client, bucket: cfg.Bucket, gcm: gcm, keyID: keyID}, nil
+	return &s3Recording{manifestKey: append([]byte(nil), key...), client: client, bucket: cfg.Bucket, gcm: gcm, keyID: keyID}, nil
 }
 
 func s3Transport(cfg S3Options) (http.RoundTripper, error) {
@@ -107,18 +113,23 @@ func (s *s3Recording) manifestObject(recordingID string) string {
 	return fmt.Sprintf("%s/%s/manifest.json", recordingPrefix, recordingID)
 }
 
-func (s *s3Recording) Begin(_ context.Context, recordingID string) (Recorder, error) {
+func (s *s3Recording) Begin(ctx context.Context, recordingID string) (Recorder, error) {
 	if err := validateID("recording id", recordingID); err != nil {
+		return nil, err
+	}
+	// Prove write admission before a process can start, not merely bucket-read
+	// permission. Recording IDs have already been atomically reserved in metadata.
+	if err := s.putContext(ctx, fmt.Sprintf("%s/%s/pending", recordingPrefix, recordingID), []byte("recording-v1")); err != nil {
 		return nil, err
 	}
 	return &s3Recorder{store: s, recordingID: recordingID, chain: chainStart(s.keyID, recordingID), createdAt: time.Now()}, nil
 }
 
-func (s *s3Recording) Open(_ context.Context, recordingID string) (Reader, error) {
+func (s *s3Recording) Open(ctx context.Context, recordingID string) (Reader, error) {
 	if err := validateID("recording id", recordingID); err != nil {
 		return nil, err
 	}
-	raw, err := s.get(s.manifestObject(recordingID))
+	raw, err := s.getContext(ctx, s.manifestObject(recordingID))
 	if err != nil {
 		if isNoSuchKey(err) {
 			return nil, ErrNotFinalized
@@ -129,26 +140,41 @@ func (s *s3Recording) Open(_ context.Context, recordingID string) (Reader, error
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return nil, err
 	}
+	if err := verifyManifest(s.manifestKey, s.keyID, recordingID, manifest); err != nil {
+		return nil, err
+	}
 	return &s3Reader{store: s, manifest: manifest}, nil
 }
 
 func (s *s3Recording) get(object string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	return s.getContext(context.Background(), object)
+}
+
+func (s *s3Recording) getContext(parent context.Context, object string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
 	obj, err := s.client.GetObject(ctx, s.bucket, object, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, err
 	}
 	defer obj.Close()
-	data, err := io.ReadAll(obj)
+	// Includes GCM nonce/tag overhead; manifests are bounded by the same cap.
+	data, err := io.ReadAll(io.LimitReader(obj, MaxChunkBytes+1025))
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > MaxChunkBytes+1024 {
+		return nil, ErrChunkTooLarge
 	}
 	return data, nil
 }
 
 func (s *s3Recording) put(object string, data []byte) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	return s.putContext(context.Background(), object, data)
+}
+
+func (s *s3Recording) putContext(parent context.Context, object string, data []byte) error {
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
 	_, err := s.client.PutObject(ctx, s.bucket, object, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{})
 	return err
@@ -188,7 +214,13 @@ type s3Recorder struct {
 	finalized   bool
 }
 
-func (r *s3Recorder) PutChunk(_ context.Context, index uint64, plaintext []byte) error {
+func (r *s3Recorder) PutChunk(ctx context.Context, index uint64, plaintext []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(plaintext) > MaxChunkBytes {
+		return ErrChunkTooLarge
+	}
 	if r.finalized {
 		return ErrFinalized
 	}
@@ -196,7 +228,7 @@ func (r *s3Recorder) PutChunk(_ context.Context, index uint64, plaintext []byte)
 		return ErrSeqGap
 	}
 	payload := sealChunk(r.store.gcm, r.recordingID, r.store.keyID, index, plaintext)
-	if err := r.store.put(r.store.chunkObject(r.recordingID, index), payload); err != nil {
+	if err := r.store.putContext(ctx, r.store.chunkObject(r.recordingID, index), payload); err != nil {
 		return err
 	}
 	r.chain = chainNext(r.chain, index, payload)
@@ -205,7 +237,7 @@ func (r *s3Recorder) PutChunk(_ context.Context, index uint64, plaintext []byte)
 	return nil
 }
 
-func (r *s3Recorder) Finalize(_ context.Context, _ FinalizeMeta) error {
+func (r *s3Recorder) Finalize(ctx context.Context, _ FinalizeMeta) error {
 	if r.finalized {
 		return ErrFinalized
 	}
@@ -219,11 +251,12 @@ func (r *s3Recorder) Finalize(_ context.Context, _ FinalizeMeta) error {
 		CreatedAt:      r.createdAt,
 		FinalizedAt:    time.Now(),
 	}
+	manifest.Authentication = manifestAuthentication(r.store.manifestKey, manifest)
 	raw, err := json.Marshal(manifest)
 	if err != nil {
 		return err
 	}
-	if err := r.store.put(r.store.manifestObject(r.recordingID), raw); err != nil {
+	if err := r.store.putContext(ctx, r.store.manifestObject(r.recordingID), raw); err != nil {
 		return err
 	}
 	r.finalized = true
@@ -246,11 +279,11 @@ type s3Reader struct {
 
 func (r *s3Reader) Manifest() Manifest { return r.manifest }
 
-func (r *s3Reader) ReadChunk(_ context.Context, index uint64) ([]byte, error) {
+func (r *s3Reader) ReadChunk(ctx context.Context, index uint64) ([]byte, error) {
 	if index >= r.manifest.Chunks {
 		return nil, ErrNotFound
 	}
-	payload, err := r.store.get(r.store.chunkObject(r.manifest.RecordingID, index))
+	payload, err := r.store.getContext(ctx, r.store.chunkObject(r.manifest.RecordingID, index))
 	if err != nil {
 		if isNoSuchKey(err) {
 			return nil, ErrTruncated
@@ -260,10 +293,16 @@ func (r *s3Reader) ReadChunk(_ context.Context, index uint64) ([]byte, error) {
 	return openChunk(r.store.gcm, r.manifest.RecordingID, r.manifest.KeyID, index, payload)
 }
 
-func (r *s3Reader) Verify(context.Context) error {
+func (r *s3Reader) Verify(ctx context.Context) error {
+	if err := verifyManifest(r.store.manifestKey, r.store.keyID, r.manifest.RecordingID, r.manifest); err != nil {
+		return err
+	}
 	chain := chainStart(r.manifest.KeyID, r.manifest.RecordingID)
 	for i := uint64(0); i < r.manifest.Chunks; i++ {
-		payload, err := r.store.get(r.store.chunkObject(r.manifest.RecordingID, i))
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		payload, err := r.store.getContext(ctx, r.store.chunkObject(r.manifest.RecordingID, i))
 		if err != nil {
 			if isNoSuchKey(err) {
 				return ErrTruncated

@@ -32,6 +32,16 @@ func validExecutionPermission(p ExecutionPermission) bool {
 	}
 }
 
+// ExecutionPrincipal is the middleware-authenticated, current User identity.
+// Legacy credentials remain valid for older routes but cannot access management.
+func ExecutionPrincipal(ctx context.Context) *UserInfo {
+	u := UserFromContext(ctx)
+	if u == nil || u.UID == "" || u.MustChangePassword || u.credentialUserUID != u.UID {
+		return nil
+	}
+	return u
+}
+
 // ExecutionGrant grants no namespace access by itself. Permissions from matching
 // unexpired grants are additive, including separately granted elevation.
 type ExecutionGrant struct {

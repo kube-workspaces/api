@@ -12,6 +12,7 @@ import (
 	pgxdriver "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -62,7 +63,7 @@ func runMigrations(databaseURL string) error {
 		return err
 	}
 	defer db.Close()
-	drv, err := pgxdriver.WithInstance(db, nil)
+	drv, err := pgxdriver.WithInstance(db, &pgxdriver.Config{})
 	if err != nil {
 		return err
 	}
@@ -90,15 +91,30 @@ const insertExecution = `INSERT INTO execution_executions (` + executionColumns 
 	ON CONFLICT (execution_id) DO NOTHING`
 
 func (m *postgresMetadata) Create(ctx context.Context, rec ExecutionRecord) error {
+	return m.create(ctx, rec, false)
+}
+
+func (m *postgresMetadata) Reserve(ctx context.Context, rec ExecutionRecord) error {
+	return m.create(ctx, rec, true)
+}
+
+func (m *postgresMetadata) create(ctx context.Context, rec ExecutionRecord, exclusive bool) error {
 	tag, err := m.pool.Exec(ctx, insertExecution,
 		rec.ExecutionID, rec.ActorID, string(rec.Operation), rec.Namespace, rec.WorkspaceName,
 		rec.WorkspaceUID, rec.WorkspaceGeneration, rec.GrantVersion, rec.OSIdentity, rec.Elevated,
 		rec.RecordingID, rec.Mode, string(rec.Durability), rec.AdmissionTime, rec.Admitted,
 		rec.DenyReason, string(StateAdmitted), nil, nil, nil, "", false)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrConflict
+		}
 		return err
 	}
 	if tag.RowsAffected() == 0 {
+		if exclusive {
+			return ErrConflict
+		}
 		// Already present; idempotent when identical, conflicting otherwise.
 		existing, _, err := m.Get(ctx, rec.ExecutionID)
 		if err != nil {
@@ -117,12 +133,12 @@ func (m *postgresMetadata) Transition(ctx context.Context, id string, outcome Ex
 	if err != nil {
 		return err
 	}
-	if state.Terminal() {
+	if !validTransition(state, outcome.State) {
 		return ErrConflict
 	}
 	q := `UPDATE execution_executions
 		SET state=$2, start_time=$3, end_time=$4, exit_code=$5, termination=$6, recording_lost=$7
-		WHERE execution_id=$1 AND state NOT IN ` + terminalStatesSQL()
+		WHERE execution_id=$1 AND state=$8`
 	var exit sql.NullInt32
 	if outcome.ExitCode != nil {
 		exit = sql.NullInt32{Int32: int32(*outcome.ExitCode), Valid: true}
@@ -134,7 +150,7 @@ func (m *postgresMetadata) Transition(ctx context.Context, id string, outcome Ex
 	if !outcome.EndTime.IsZero() {
 		end = sql.NullTime{Time: outcome.EndTime, Valid: true}
 	}
-	tag, err := m.pool.Exec(ctx, q, id, string(outcome.State), start, end, exit, outcome.Termination, outcome.RecordingLost)
+	tag, err := m.pool.Exec(ctx, q, id, string(outcome.State), start, end, exit, outcome.Termination, outcome.RecordingLost, string(state))
 	if err != nil {
 		return err
 	}

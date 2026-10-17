@@ -16,20 +16,20 @@ import (
 	kubeworkspaces "github.com/kube-workspaces/api"
 	agent "github.com/kube-workspaces/api/gen/agent"
 	display "github.com/kube-workspaces/api/gen/display"
+	executions "github.com/kube-workspaces/api/gen/executions"
 	health "github.com/kube-workspaces/api/gen/health"
 	images "github.com/kube-workspaces/api/gen/images"
 	namespaces "github.com/kube-workspaces/api/gen/namespaces"
-	executions "github.com/kube-workspaces/api/gen/executions"
 	sshkeys "github.com/kube-workspaces/api/gen/sshkeys"
 	volumes "github.com/kube-workspaces/api/gen/volumes"
 	workspaces "github.com/kube-workspaces/api/gen/workspaces"
 	agentstore "github.com/kube-workspaces/api/internal/agent"
 	"github.com/kube-workspaces/api/internal/auth"
 	dispstore "github.com/kube-workspaces/api/internal/display"
-	"github.com/kube-workspaces/api/internal/platform"
 	"github.com/kube-workspaces/api/internal/execution"
 	executionstorage "github.com/kube-workspaces/api/internal/execution/storage"
 	"github.com/kube-workspaces/api/internal/k8s"
+	"github.com/kube-workspaces/api/internal/platform"
 	"goa.design/clue/debug"
 	"goa.design/clue/log"
 )
@@ -181,12 +181,20 @@ func main() {
 		// execution storage/service
 		execStore, execErr := executionstorage.Open(ctx, executionStorage.StorageOptions())
 		if execErr != nil {
-			log.Printf(ctx, "execution storage unavailable: %v", execErr)
+			if executionStorage.Mode != execution.StorageDisabled {
+				log.Fatal(ctx, fmt.Errorf("configured execution storage could not be initialized"))
+			}
 			execStore = nil
 		}
 		log.Print(ctx, log.KV{K: "execution-storage-ready-at-start", V: execStore != nil})
-		if execStore != nil && execStore.Ready(ctx) != nil {
-			log.Printf(ctx, "execution storage not ready at startup")
+		if execStore != nil {
+			defer execStore.Close()
+			probeCtx, probeCancel := context.WithTimeout(ctx, 10*time.Second)
+			readyErr := execStore.Ready(probeCtx)
+			probeCancel()
+			if readyErr != nil {
+				log.Fatal(ctx, fmt.Errorf("configured execution storage is not ready"))
+			}
 		}
 		execSvc := execution.NewService(execStore)
 		executionsSvc = kubeworkspaces.NewExecutions(execSvc, platform.NewConfigProvider(dynClient))
@@ -231,7 +239,6 @@ func main() {
 		agentEndpoints.Use(debug.LogPayloads())
 		agentEndpoints.Use(log.Endpoint)
 		executionsEndpoints = executions.NewEndpoints(executionsSvc)
-		executionsEndpoints.Use(debug.LogPayloads())
 		executionsEndpoints.Use(log.Endpoint)
 	}
 

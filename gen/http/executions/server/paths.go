@@ -25,3 +25,13 @@ func ListExecutionsPath() string {
 func GetExecutionsPath(executionID string) string {
 	return fmt.Sprintf("/v1/executions/%v", executionID)
 }
+
+// ManifestExecutionsPath returns the URL path to the executions service manifest HTTP endpoint.
+func ManifestExecutionsPath(executionID string) string {
+	return fmt.Sprintf("/v1/executions/%v/recording", executionID)
+}
+
+// ChunkExecutionsPath returns the URL path to the executions service chunk HTTP endpoint.
+func ChunkExecutionsPath(executionID string, index uint64) string {
+	return fmt.Sprintf("/v1/executions/%v/recording/chunks/%v", executionID, index)
+}

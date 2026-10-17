@@ -89,3 +89,38 @@ func BuildGetPayload(executionsGetExecutionID string) (*executions.GetPayload, e
 
 	return v, nil
 }
+
+// BuildManifestPayload builds the payload for the executions manifest endpoint
+// from CLI flags.
+func BuildManifestPayload(executionsManifestExecutionID string) (*executions.ManifestPayload, error) {
+	var executionID string
+	{
+		executionID = executionsManifestExecutionID
+	}
+	v := &executions.ManifestPayload{}
+	v.ExecutionID = executionID
+
+	return v, nil
+}
+
+// BuildChunkPayload builds the payload for the executions chunk endpoint from
+// CLI flags.
+func BuildChunkPayload(executionsChunkExecutionID string, executionsChunkIndex string) (*executions.ChunkPayload, error) {
+	var err error
+	var executionID string
+	{
+		executionID = executionsChunkExecutionID
+	}
+	var index uint64
+	{
+		index, err = strconv.ParseUint(executionsChunkIndex, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value for index, must be UINT64")
+		}
+	}
+	v := &executions.ChunkPayload{}
+	v.ExecutionID = executionID
+	v.Index = index
+
+	return v, nil
+}

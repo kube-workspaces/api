@@ -19,17 +19,17 @@ import (
 	kubeworkspaces "github.com/kube-workspaces/api"
 	genagent "github.com/kube-workspaces/api/gen/agent"
 	gendisplay "github.com/kube-workspaces/api/gen/display"
+	genexecutions "github.com/kube-workspaces/api/gen/executions"
 	health "github.com/kube-workspaces/api/gen/health"
 	agentsvr "github.com/kube-workspaces/api/gen/http/agent/server"
 	displaysvr "github.com/kube-workspaces/api/gen/http/display/server"
+	executionssvr "github.com/kube-workspaces/api/gen/http/executions/server"
 	healthsvr "github.com/kube-workspaces/api/gen/http/health/server"
 	imagessvr "github.com/kube-workspaces/api/gen/http/images/server"
 	namespacessvr "github.com/kube-workspaces/api/gen/http/namespaces/server"
 	sshkeyssvr "github.com/kube-workspaces/api/gen/http/sshkeys/server"
-	executionssvr "github.com/kube-workspaces/api/gen/http/executions/server"
 	volumessvr "github.com/kube-workspaces/api/gen/http/volumes/server"
 	workspacessvr "github.com/kube-workspaces/api/gen/http/workspaces/server"
-	genexecutions "github.com/kube-workspaces/api/gen/executions"
 	images "github.com/kube-workspaces/api/gen/images"
 	namespaces "github.com/kube-workspaces/api/gen/namespaces"
 	sshkeys "github.com/kube-workspaces/api/gen/sshkeys"
@@ -2147,8 +2147,17 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	handler = bridgeMonitoring(monitor, wsClient, handler)
 	if dbg {
 		// Log query and response bodies if debug logs are enabled.
-		handler = debug.HTTP()(handler)
+		next := handler
+		debugHandler := debug.HTTP()(next)
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1/executions" || strings.HasPrefix(r.URL.Path, "/v1/executions/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			debugHandler.ServeHTTP(w, r)
+		})
 	}
+	handler = executionPrivacyHeaders(handler)
 	handler = redactedRequestLog(ctx)(handler)
 
 	// Apply auth middleware (no-op when auth is disabled)
@@ -2245,6 +2254,17 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			log.Printf(shutdownCtx, "failed to shutdown: %v", err)
 		}
 	}()
+}
+
+// Execution history and decrypted recordings must not enter shared/browser caches.
+func executionPrivacyHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/executions" || strings.HasPrefix(r.URL.Path, "/v1/executions/") {
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // errorHandler returns a function that writes and logs the given error.

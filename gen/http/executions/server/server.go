@@ -18,10 +18,12 @@ import (
 
 // Server lists the executions service endpoint HTTP handlers.
 type Server struct {
-	Mounts []*MountPoint
-	Status http.Handler
-	List   http.Handler
-	Get    http.Handler
+	Mounts   []*MountPoint
+	Status   http.Handler
+	List     http.Handler
+	Get      http.Handler
+	Manifest http.Handler
+	Chunk    http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -54,10 +56,14 @@ func New(
 			{"Status", "GET", "/v1/executions/status"},
 			{"List", "GET", "/v1/executions"},
 			{"Get", "GET", "/v1/executions/{execution_id}"},
+			{"Manifest", "GET", "/v1/executions/{execution_id}/recording"},
+			{"Chunk", "GET", "/v1/executions/{execution_id}/recording/chunks/{index}"},
 		},
-		Status: NewStatusHandler(e.Status, mux, decoder, encoder, errhandler, formatter),
-		List:   NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
-		Get:    NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
+		Status:   NewStatusHandler(e.Status, mux, decoder, encoder, errhandler, formatter),
+		List:     NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
+		Get:      NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
+		Manifest: NewManifestHandler(e.Manifest, mux, decoder, encoder, errhandler, formatter),
+		Chunk:    NewChunkHandler(e.Chunk, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -69,6 +75,8 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Status = m(s.Status)
 	s.List = m(s.List)
 	s.Get = m(s.Get)
+	s.Manifest = m(s.Manifest)
+	s.Chunk = m(s.Chunk)
 }
 
 // MethodNames returns the methods served.
@@ -79,6 +87,8 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountStatusHandler(mux, h.Status)
 	MountListHandler(mux, h.List)
 	MountGetHandler(mux, h.Get)
+	MountManifestHandler(mux, h.Manifest)
+	MountChunkHandler(mux, h.Chunk)
 }
 
 // Mount configures the mux to serve the executions endpoints.
@@ -110,7 +120,7 @@ func NewStatusHandler(
 ) http.Handler {
 	var (
 		encodeResponse = EncodeStatusResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeStatusError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -157,7 +167,7 @@ func NewListHandler(
 	var (
 		decodeRequest  = DecodeListRequest(mux, decoder)
 		encodeResponse = EncodeListResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeListError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -215,6 +225,112 @@ func NewGetHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "get")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "executions")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountManifestHandler configures the mux to serve the "executions" service
+// "manifest" endpoint.
+func MountManifestHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/v1/executions/{execution_id}/recording", f)
+}
+
+// NewManifestHandler creates a HTTP handler which loads the HTTP request and
+// calls the "executions" service "manifest" endpoint.
+func NewManifestHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeManifestRequest(mux, decoder)
+		encodeResponse = EncodeManifestResponse(encoder)
+		encodeError    = EncodeManifestError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "manifest")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "executions")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountChunkHandler configures the mux to serve the "executions" service
+// "chunk" endpoint.
+func MountChunkHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/v1/executions/{execution_id}/recording/chunks/{index}", f)
+}
+
+// NewChunkHandler creates a HTTP handler which loads the HTTP request and
+// calls the "executions" service "chunk" endpoint.
+func NewChunkHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeChunkRequest(mux, decoder)
+		encodeResponse = EncodeChunkResponse(encoder)
+		encodeError    = EncodeChunkError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "chunk")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "executions")
 		payload, err := decodeRequest(r)
 		if err != nil {

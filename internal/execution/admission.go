@@ -101,7 +101,7 @@ func (s *Service) readyStore(ctx context.Context) (storage.Store, error) {
 		return nil, fmt.Errorf("%w: %w", ErrAdmissionDenied, storage.ErrDisabled)
 	}
 	if err := s.store.Ready(ctx); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrAdmissionDenied, err)
+		return nil, fmt.Errorf("%w: %w: %w", ErrAdmissionDenied, storage.ErrNotReady, err)
 	}
 	return s.store, nil
 }
@@ -160,13 +160,13 @@ func (s *Service) Admit(ctx context.Context, req AdmissionRequest) (*Session, er
 		AdmissionTime:       s.now().UTC(),
 		Admitted:            true,
 	}
+	if err := store.Metadata().Reserve(ctx, rec); err != nil {
+		return nil, fmt.Errorf("%w: cannot record admission: %v", ErrAdmissionDenied, err)
+	}
 	writer, err := store.Recording().Begin(ctx, req.RecordingID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: cannot open recording: %v", ErrAdmissionDenied, err)
-	}
-	if err := store.Metadata().Create(ctx, rec); err != nil {
-		_ = writer.Abort(ctx)
-		return nil, fmt.Errorf("%w: cannot record admission: %v", ErrAdmissionDenied, err)
+		_ = store.Metadata().Transition(ctx, req.ExecutionID, storage.ExecutionOutcome{State: storage.StateRecordingLost, RecordingLost: true, EndTime: s.now().UTC()})
+		return nil, fmt.Errorf("%w: cannot open recording", ErrAdmissionDenied)
 	}
 	detail := map[string]string{
 		"operation":   string(req.Operation),
@@ -187,22 +187,23 @@ func (s *Service) Admit(ctx context.Context, req AdmissionRequest) (*Session, er
 		// Metadata audit is mandatory; a failure to record must abort the
 		// execution and the recording.
 		_ = writer.Abort(ctx)
+		_ = store.Metadata().Transition(ctx, req.ExecutionID, storage.ExecutionOutcome{State: storage.StateFailed, EndTime: s.now().UTC(), Termination: "admission audit unavailable"})
 		return nil, fmt.Errorf("%w: cannot record admission audit: %v", ErrAdmissionDenied, err)
 	}
 	return &Session{record: rec, writer: writer, meta: store.Metadata(), now: s.now}, nil
 }
 
-// Session streams one admitted execution's encrypted recording and audit. It is
-// single-use and not safe for concurrent Finish/Abort with AppendChunk.
+// Session serializes recording and lifecycle operations for one admission.
 type Session struct {
-	record    storage.ExecutionRecord
-	meta      storage.MetadataStore
-	writer    storage.Recorder
-	now       func() time.Time
-	mu        sync.Mutex
-	next      uint64
-	startTime time.Time
-	ended     bool
+	record       storage.ExecutionRecord
+	meta         storage.MetadataStore
+	writer       storage.Recorder
+	now          func() time.Time
+	mu           sync.Mutex
+	next         uint64
+	startTime    time.Time
+	ended        bool
+	recordingErr error
 }
 
 // Record returns a copy of the admission record bound to this session.
@@ -232,7 +233,11 @@ func (s *Session) AppendChunk(ctx context.Context, plaintext []byte) error {
 	if s.ended {
 		return storage.ErrFinalized
 	}
+	if s.recordingErr != nil {
+		return s.recordingErr
+	}
 	if err := s.writer.PutChunk(ctx, s.next, plaintext); err != nil {
+		s.recordingErr = err
 		return err
 	}
 	s.next++
@@ -261,14 +266,22 @@ func (s *Session) Finish(ctx context.Context, outcome storage.ExecutionOutcome) 
 	if s.ended {
 		return storage.ErrFinalized
 	}
-	s.ended = true
 	if outcome.State == "" {
 		outcome.State = storage.StateFailed
+	}
+	if !outcome.State.Terminal() {
+		return storage.ErrConflict
+	}
+	s.ended = true
+	if outcome.StartTime.IsZero() {
+		outcome.StartTime = s.startTime
 	}
 	if outcome.EndTime.IsZero() {
 		outcome.EndTime = s.now().UTC()
 	}
-	if err := s.writer.Finalize(ctx, storage.FinalizeMeta{ActorID: s.record.ActorID, EndTime: outcome.EndTime}); err != nil {
+	finalizeErr := s.writer.Finalize(ctx, storage.FinalizeMeta{ActorID: s.record.ActorID, EndTime: outcome.EndTime})
+	recordingErr := errors.Join(s.recordingErr, finalizeErr)
+	if recordingErr != nil {
 		outcome.State = storage.StateRecordingLost
 		outcome.RecordingLost = true
 		_ = s.meta.Audit(ctx, storage.AuditEvent{
@@ -276,42 +289,32 @@ func (s *Session) Finish(ctx context.Context, outcome storage.ExecutionOutcome) 
 			Time:        s.now().UTC(),
 			Kind:        "recording.lost",
 			ActorID:     s.record.ActorID,
-			Detail:      map[string]string{"reason": err.Error()},
+			Detail:      map[string]string{"reason": "recording storage failure"},
 		})
 	}
 	if err := s.meta.Transition(ctx, s.record.ExecutionID, outcome); err != nil {
 		return err
 	}
-	return s.meta.Audit(ctx, storage.AuditEvent{
+	return errors.Join(recordingErr, s.meta.Audit(ctx, storage.AuditEvent{
 		ExecutionID: s.record.ExecutionID,
 		Time:        s.now().UTC(),
 		Kind:        "finished",
 		ActorID:     s.record.ActorID,
 		Detail:      map[string]string{"state": string(outcome.State)},
-	})
+	}))
 }
 
-// Abort discards the recording and marks the execution failed. It is used when
-// the caller cannot safely continue (for example a broken transport) and must
-// never be followed by a process start.
+// Abort preserves partial evidence and marks the execution failed. The caller
+// must terminate any running process; this coordinator never owns a process.
 func (s *Session) Abort(ctx context.Context, reason string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.ended {
-		return storage.ErrFinalized
-	}
-	s.ended = true
-	_ = s.writer.Abort(ctx)
-	return s.meta.Transition(ctx, s.record.ExecutionID, storage.ExecutionOutcome{
+	// Preserve partial evidence rather than deleting input/output on disconnect.
+	return s.Finish(ctx, storage.ExecutionOutcome{
 		State:       storage.StateFailed,
-		EndTime:     s.now().UTC(),
 		Termination: reason,
 	})
 }
 
-// Replay authorizes and opens a finalized recording for verified playback. It
-// audits both denial and success and always returns a reader that the caller
-// must Verify before trusting.
+// Replay authorizes, verifies, and audits access before returning any recording.
 func (s *Service) Replay(ctx context.Context, actorID, executionID string) (storage.Reader, storage.ExecutionRecord, error) {
 	store, err := s.readyStore(ctx)
 	if err != nil {
@@ -341,11 +344,19 @@ func (s *Service) Replay(ctx context.Context, actorID, executionID string) (stor
 	if err != nil {
 		return nil, rec, err
 	}
+	if reader.Manifest().RecordingID != rec.RecordingID {
+		reader.Close()
+		return nil, rec, storage.ErrTampered
+	}
+	if err := reader.Verify(ctx); err != nil {
+		reader.Close()
+		return nil, rec, err
+	}
 	if err := s.store.Metadata().Audit(ctx, storage.AuditEvent{
 		ExecutionID: rec.ExecutionID,
 		Time:        s.now().UTC(),
 		Kind:        "replay.authorized",
-		ActorID:     rec.ActorID,
+		ActorID:     actorID,
 		Detail:      map[string]string{"actor": actorID, "recordingID": rec.RecordingID},
 	}); err != nil {
 		reader.Close()

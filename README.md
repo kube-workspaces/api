@@ -280,3 +280,45 @@ The API uses the current kubeconfig or in-cluster service account for Kubernetes
 ## License
 
 Apache License 2.0
+## Execution history and protected playback
+
+The execution management API requires a current User-UID-bound credential even
+when ordinary API authentication is disabled. Legacy sessions must sign in again.
+Current User grants and namespace membership are reloaded by authentication on
+each HTTP request; token role claims do not grant management authority.
+
+| Route | Permission / behavior |
+|---|---|
+| `GET /v1/executions/status` | Authenticated user-bound identity; policy and storage status, not a guest-execution capability promise. |
+| `GET /v1/executions?namespace=team&workspace_name=vm` | Exact workspace scope and `workspace.execution.manage`; optional actor/since/limit filters only narrow that scope. |
+| `GET /v1/executions/{id}` | `workspace.execution.manage` on the recorded scope; inaccessible IDs return 404. |
+| `GET /v1/executions/{id}/recording` | Independent `workspace.execution.recordings.read`; verify the authenticated manifest and full chunk chain, then audit access before returning recording metadata. |
+| `GET /v1/executions/{id}/recording/chunks/{index}` | Fresh recording-read authorization and integrity verification; returns base64 plaintext data in JSON. |
+
+Recording responses use `Cache-Control: no-store`; management payloads are excluded
+from debug body logging. Recording chunks are capped at 1 MiB. Manifests are
+HMAC-SHA-256 authenticated with domain separation in addition to AES-256-GCM chunk
+encryption and the ciphertext hash chain. Unsigned manifests fail verification.
+Replay currently verifies the entire recording on each request; it is intended
+as a correctness-first protected playback surface, not a streaming optimization.
+
+Configured persistent storage initialization failures stop API startup; disabled
+storage leaves the ordinary API running and management admission unavailable.
+Every admission reserves both execution and recording IDs atomically before
+opening its sink. Recording-write failures latch, cannot be finalized as success,
+and preserve available evidence on abort. There is no guest process-start route
+until authenticated guest transport and runners are implemented.
+
+Disposable PostgreSQL/S3 integration checks are opt-in:
+
+```sh
+KW_EXECUTION_TEST_DATABASE_URL='postgres://test:test@127.0.0.1:15432/test?sslmode=disable' \
+  go test -race ./internal/execution/storage -run TestPostgresIntegration
+KW_EXECUTION_TEST_S3_ENDPOINT='http://127.0.0.1:19000' \
+KW_EXECUTION_TEST_S3_ACCESS_KEY='test-access' \
+KW_EXECUTION_TEST_S3_SECRET_KEY='test-secret' \
+  go test -race ./internal/execution/storage -run TestS3Integration
+```
+
+Use isolated disposable services: these tests apply migrations and write test
+execution records and recording objects. They never discover cluster credentials.

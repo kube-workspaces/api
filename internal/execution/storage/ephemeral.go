@@ -55,16 +55,32 @@ func NewEphemeralMetadata() MetadataStore {
 }
 
 func (m *ephemeralMetadata) Create(_ context.Context, rec ExecutionRecord) error {
+	return m.create(rec, false)
+}
+
+func (m *ephemeralMetadata) Reserve(_ context.Context, rec ExecutionRecord) error {
+	return m.create(rec, true)
+}
+
+func (m *ephemeralMetadata) create(rec ExecutionRecord, exclusive bool) error {
 	if err := validateID("execution id", rec.ExecutionID); err != nil {
 		return err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if existing, ok := m.records[rec.ExecutionID]; ok {
-		if sameRecord(existing, rec) {
+		if !exclusive && sameRecord(existing, rec) {
 			return nil // idempotent retry
 		}
 		return ErrConflict
+	}
+	for _, existing := range m.records {
+		if existing.RecordingID == rec.RecordingID {
+			return ErrConflict
+		}
+	}
+	if len(m.records) >= m.max {
+		return ErrOverCapacity
 	}
 	m.records[rec.ExecutionID] = rec
 	m.order = append(m.order, rec.ExecutionID)
@@ -79,8 +95,11 @@ func (m *ephemeralMetadata) Create(_ context.Context, rec ExecutionRecord) error
 }
 
 func sameRecord(a, b ExecutionRecord) bool {
-	return a.ExecutionID == b.ExecutionID && a.ActorID == b.ActorID &&
-		a.WorkspaceUID == b.WorkspaceUID && a.RecordingID == b.RecordingID
+	if !a.AdmissionTime.Equal(b.AdmissionTime) {
+		return false
+	}
+	a.AdmissionTime, b.AdmissionTime = time.Time{}, time.Time{}
+	return a == b
 }
 
 func (m *ephemeralMetadata) Transition(_ context.Context, id string, outcome ExecutionOutcome) error {
@@ -89,7 +108,7 @@ func (m *ephemeralMetadata) Transition(_ context.Context, id string, outcome Exe
 	if _, ok := m.records[id]; !ok {
 		return ErrNotFound
 	}
-	if prev, ok := m.outcomes[id]; ok && prev.State.Terminal() {
+	if !validTransition(m.outcomes[id].State, outcome.State) {
 		return ErrConflict
 	}
 	m.outcomes[id] = outcome
@@ -180,12 +199,13 @@ func (b *budget) release(n int64) {
 // ---------------------------------------------------------------------------
 
 type ephemeralRecording struct {
-	base      string
-	gcm       cipher.AEAD
-	keyID     string
-	b         *budget
-	mu        sync.Mutex
-	finalized map[string]bool
+	manifestKey []byte
+	base        string
+	gcm         cipher.AEAD
+	keyID       string
+	b           *budget
+	mu          sync.Mutex
+	finalized   map[string]bool
 }
 
 // NewEphemeralRecording returns an encrypted, byte-bounded file-backed
@@ -209,11 +229,12 @@ func NewEphemeralRecording(base string, key []byte, keyID string, maxBytes int64
 		return nil, err
 	}
 	return &ephemeralRecording{
-		base:      recordings,
-		gcm:       gcm,
-		keyID:     keyID,
-		b:         &budget{max: maxBytes},
-		finalized: make(map[string]bool),
+		manifestKey: append([]byte(nil), key...),
+		base:        recordings,
+		gcm:         gcm,
+		keyID:       keyID,
+		b:           &budget{max: maxBytes},
+		finalized:   make(map[string]bool),
 	}, nil
 }
 
@@ -228,7 +249,10 @@ func (s *ephemeralRecording) Begin(_ context.Context, recordingID string) (Recor
 	}
 	s.mu.Unlock()
 	dir := filepath.Join(s.base, recordingID)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		if os.IsExist(err) {
+			return nil, ErrConflict
+		}
 		return nil, err
 	}
 	return &ephemeralRecorder{store: s, dir: dir, recordingID: recordingID, chain: chainStart(s.keyID, recordingID), createdAt: time.Now()}, nil
@@ -250,6 +274,9 @@ func (s *ephemeralRecording) Open(_ context.Context, recordingID string) (Reader
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return nil, err
 	}
+	if err := verifyManifest(s.manifestKey, s.keyID, recordingID, manifest); err != nil {
+		return nil, err
+	}
 	return &ephemeralReader{store: s, dir: dir, manifest: manifest}, nil
 }
 
@@ -268,6 +295,12 @@ type ephemeralRecorder struct {
 }
 
 func (r *ephemeralRecorder) PutChunk(ctx context.Context, index uint64, plaintext []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(plaintext) > MaxChunkBytes {
+		return ErrChunkTooLarge
+	}
 	if r.finalized {
 		return ErrFinalized
 	}
@@ -286,7 +319,7 @@ func (r *ephemeralRecorder) PutChunk(ctx context.Context, index uint64, plaintex
 	r.chain = chainNext(r.chain, index, payload)
 	r.next++
 	r.plaintext += int64(len(plaintext))
-	return ctx.Err()
+	return nil
 }
 
 func (r *ephemeralRecorder) Finalize(_ context.Context, _ FinalizeMeta) error {
@@ -303,6 +336,7 @@ func (r *ephemeralRecorder) Finalize(_ context.Context, _ FinalizeMeta) error {
 		CreatedAt:      r.createdAt,
 		FinalizedAt:    time.Now(),
 	}
+	manifest.Authentication = manifestAuthentication(r.store.manifestKey, manifest)
 	raw, err := json.Marshal(manifest)
 	if err != nil {
 		return err
@@ -351,9 +385,15 @@ func (r *ephemeralReader) chunkPath(index uint64) string {
 	return filepath.Join(r.dir, fmt.Sprintf("chunk-%016d.bin", index))
 }
 
-func (r *ephemeralReader) Verify(context.Context) error {
+func (r *ephemeralReader) Verify(ctx context.Context) error {
+	if err := verifyManifest(r.store.manifestKey, r.store.keyID, r.manifest.RecordingID, r.manifest); err != nil {
+		return err
+	}
 	chain := chainStart(r.manifest.KeyID, r.manifest.RecordingID)
 	for i := uint64(0); i < r.manifest.Chunks; i++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		payload, err := os.ReadFile(r.chunkPath(i))
 		if err != nil {
 			if os.IsNotExist(err) {

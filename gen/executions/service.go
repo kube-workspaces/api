@@ -13,8 +13,7 @@ import (
 	executionsviews "github.com/kube-workspaces/api/gen/executions/views"
 )
 
-// Execution management: admission status, listing/replay and admission entry
-// point
+// Scoped execution management status, history and protected recording replay
 type Service interface {
 	// Get execution management status (policy + storage readiness)
 	Status(context.Context) (res *ExecutionStatus, err error)
@@ -22,6 +21,10 @@ type Service interface {
 	List(context.Context, *ListPayload) (res []*ExecutionRecord, err error)
 	// Get an execution record and its last known outcome
 	Get(context.Context, *GetPayload) (res *ExecutionRecord, err error)
+	// Verify recording integrity and audit protected playback access
+	Manifest(context.Context, *ManifestPayload) (res *ExecutionRecordingManifest, err error)
+	// Read a verified recording chunk with fresh scoped recording-read permission
+	Chunk(context.Context, *ChunkPayload) (res *ExecutionRecordingChunk, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -38,7 +41,13 @@ const ServiceName = "executions"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [3]string{"status", "list", "get"}
+var MethodNames = [5]string{"status", "list", "get", "manifest", "chunk"}
+
+// ChunkPayload is the payload type of the executions service chunk method.
+type ChunkPayload struct {
+	ExecutionID string
+	Index       uint64
+}
 
 // ExecutionRecord is the result type of the executions service get method.
 type ExecutionRecord struct {
@@ -75,6 +84,24 @@ type ExecutionRecord struct {
 	RecordingLost *bool
 }
 
+// ExecutionRecordingChunk is the result type of the executions service chunk
+// method.
+type ExecutionRecordingChunk struct {
+	// Chunk index starting at 0
+	Index uint64
+	// Base64-encoded plaintext recording data
+	Data []byte
+}
+
+// ExecutionRecordingManifest is the result type of the executions service
+// manifest method.
+type ExecutionRecordingManifest struct {
+	RecordingID    string
+	Chunks         uint64
+	PlaintextBytes int64
+	Verified       bool
+}
+
 // ExecutionStatus is the result type of the executions service status method.
 type ExecutionStatus struct {
 	// Whether VM execution is enabled by policy
@@ -109,8 +136,60 @@ type ListPayload struct {
 	Limit int
 }
 
+// ManifestPayload is the payload type of the executions service manifest
+// method.
+type ManifestPayload struct {
+	ExecutionID string
+}
+
+// Scoped execution permission is required
+type Forbidden string
+
+// Invalid management request
+type Invalid string
+
 // Execution not found
 type NotFound string
+
+// A current user-bound credential is required
+type Unauthorized string
+
+// Execution storage or policy is unavailable
+type Unavailable string
+
+// Error returns an error description.
+func (e Forbidden) Error() string {
+	return "Scoped execution permission is required"
+}
+
+// ErrorName returns the error name.
+//
+// Deprecated: Use GoaErrorName - https://github.com/goadesign/goa/issues/3105
+func (e Forbidden) ErrorName() string {
+	return e.GoaErrorName()
+}
+
+// GoaErrorName returns the error name.
+func (e Forbidden) GoaErrorName() string {
+	return "forbidden"
+}
+
+// Error returns an error description.
+func (e Invalid) Error() string {
+	return "Invalid management request"
+}
+
+// ErrorName returns the error name.
+//
+// Deprecated: Use GoaErrorName - https://github.com/goadesign/goa/issues/3105
+func (e Invalid) ErrorName() string {
+	return e.GoaErrorName()
+}
+
+// GoaErrorName returns the error name.
+func (e Invalid) GoaErrorName() string {
+	return "invalid"
+}
 
 // Error returns an error description.
 func (e NotFound) Error() string {
@@ -127,6 +206,40 @@ func (e NotFound) ErrorName() string {
 // GoaErrorName returns the error name.
 func (e NotFound) GoaErrorName() string {
 	return "not_found"
+}
+
+// Error returns an error description.
+func (e Unauthorized) Error() string {
+	return "A current user-bound credential is required"
+}
+
+// ErrorName returns the error name.
+//
+// Deprecated: Use GoaErrorName - https://github.com/goadesign/goa/issues/3105
+func (e Unauthorized) ErrorName() string {
+	return e.GoaErrorName()
+}
+
+// GoaErrorName returns the error name.
+func (e Unauthorized) GoaErrorName() string {
+	return "unauthorized"
+}
+
+// Error returns an error description.
+func (e Unavailable) Error() string {
+	return "Execution storage or policy is unavailable"
+}
+
+// ErrorName returns the error name.
+//
+// Deprecated: Use GoaErrorName - https://github.com/goadesign/goa/issues/3105
+func (e Unavailable) ErrorName() string {
+	return e.GoaErrorName()
+}
+
+// GoaErrorName returns the error name.
+func (e Unavailable) GoaErrorName() string {
+	return "unavailable"
 }
 
 // NewExecutionStatus initializes result type ExecutionStatus from viewed

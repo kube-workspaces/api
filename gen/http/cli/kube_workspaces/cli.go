@@ -39,13 +39,13 @@ func UsageCommands() []string {
 		"health check",
 		"display (capability|status|join|leave|acquire|release|transfer)",
 		"agent (attach|renew|status|release)",
-		"executions (status|list|get)",
+		"executions (status|list|get|manifest|chunk)",
 	}
 }
 
 // UsageExamples produces an example of a valid invocation of the CLI tool.
 func UsageExamples() string {
-	return os.Args[0] + " " + "workspaces credentials --name \"Sit earum eaque ea.\" --namespace \"Nihil molestias laborum odio.\"" + "\n" +
+	return os.Args[0] + " " + "workspaces credentials --name \"Ab corporis quam dicta nam id.\" --namespace \"Dolores non.\"" + "\n" +
 		os.Args[0] + " " + "volumes list --namespace \"workspaces\"" + "\n" +
 		os.Args[0] + " " + "sshkeys list --namespace \"chris-at-fordham-id-au\"" + "\n" +
 		os.Args[0] + " " + "images list" + "\n" +
@@ -216,6 +216,13 @@ func ParseEndpoint(
 
 		executionsGetFlags           = flag.NewFlagSet("get", flag.ExitOnError)
 		executionsGetExecutionIDFlag = executionsGetFlags.String("execution-id", "REQUIRED", "Execution identifier")
+
+		executionsManifestFlags           = flag.NewFlagSet("manifest", flag.ExitOnError)
+		executionsManifestExecutionIDFlag = executionsManifestFlags.String("execution-id", "REQUIRED", "")
+
+		executionsChunkFlags           = flag.NewFlagSet("chunk", flag.ExitOnError)
+		executionsChunkExecutionIDFlag = executionsChunkFlags.String("execution-id", "REQUIRED", "")
+		executionsChunkIndexFlag       = executionsChunkFlags.String("index", "REQUIRED", "")
 	)
 	workspacesFlags.Usage = workspacesUsage
 	workspacesCredentialsFlags.Usage = workspacesCredentialsUsage
@@ -269,6 +276,8 @@ func ParseEndpoint(
 	executionsStatusFlags.Usage = executionsStatusUsage
 	executionsListFlags.Usage = executionsListUsage
 	executionsGetFlags.Usage = executionsGetUsage
+	executionsManifestFlags.Usage = executionsManifestUsage
+	executionsChunkFlags.Usage = executionsChunkUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
@@ -457,6 +466,12 @@ func ParseEndpoint(
 			case "get":
 				epf = executionsGetFlags
 
+			case "manifest":
+				epf = executionsManifestFlags
+
+			case "chunk":
+				epf = executionsChunkFlags
+
 			}
 
 		}
@@ -615,6 +630,12 @@ func ParseEndpoint(
 			case "get":
 				endpoint = c.Get()
 				data, err = executionsc.BuildGetPayload(*executionsGetExecutionIDFlag)
+			case "manifest":
+				endpoint = c.Manifest()
+				data, err = executionsc.BuildManifestPayload(*executionsManifestExecutionIDFlag)
+			case "chunk":
+				endpoint = c.Chunk()
+				data, err = executionsc.BuildChunkPayload(*executionsChunkExecutionIDFlag, *executionsChunkIndexFlag)
 			}
 		}
 	}
@@ -661,7 +682,7 @@ func workspacesCredentialsUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces credentials --name \"Sit earum eaque ea.\" --namespace \"Nihil molestias laborum odio.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces credentials --name \"Ab corporis quam dicta nam id.\" --namespace \"Dolores non.\"")
 }
 
 func workspacesListUsage() {
@@ -717,7 +738,7 @@ func workspacesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces create --body '{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 8080\n      },\n      \"env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"image_pull_policy\": \"IfNotPresent\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"nvidia.com/gpu\": \"true\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"vm_options\": {\n         \"import_cert_config_map_name\": \"Rerum dolorum enim asperiores minus eum.\",\n         \"import_secret_name\": \"Ratione molestiae.\",\n         \"root_disk_size\": \"Et commodi sint.\",\n         \"storage_class_name\": \"Accusamus voluptatem ex repellat saepe nulla.\"\n      },\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces create --body '{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 8080\n      },\n      \"env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"image_pull_policy\": \"IfNotPresent\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"nvidia.com/gpu\": \"true\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"vm_options\": {\n         \"import_cert_config_map_name\": \"Sequi totam ratione ut minus dolorum.\",\n         \"import_secret_name\": \"Id reiciendis tenetur consectetur consequatur.\",\n         \"root_disk_size\": \"Reiciendis ut quasi commodi ratione.\",\n         \"storage_class_name\": \"Facilis velit fugit odit modi repudiandae.\"\n      },\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
 }
 
 func workspacesDeleteUsage() {
@@ -1042,7 +1063,7 @@ func imagesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "images create --body '{\n      \"category\": \"IDE\",\n      \"default_args\": [\n         \"--bind-addr\",\n         \"0.0.0.0:8080\"\n      ],\n      \"default_cloud_init\": false,\n      \"default_credentials\": {\n         \"password\": \"changeme\",\n         \"username\": \"coder\"\n      },\n      \"default_env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"default_homedir\": \"/home/coder\",\n      \"default_password\": \"changeme\",\n      \"default_path\": \"/\",\n      \"default_port\": 8080,\n      \"default_shared_memory\": false,\n      \"default_shell\": \"/bin/bash\",\n      \"default_uid\": 1000,\n      \"default_user\": \"coder\",\n      \"default_user_data\": \"\",\n      \"description\": \"Code editor in the browser\",\n      \"homepage_url\": \"https://github.com/coder/code-server\",\n      \"icon\": \"code\",\n      \"image\": \"codercom/code-server:latest\",\n      \"image_homepage_url\": \"https://hub.docker.com/r/codercom/code-server\",\n      \"links\": [\n         {\n            \"title\": \"GitHub\",\n            \"url\": \"https://github.com/coder/code-server\"\n         },\n         {\n            \"title\": \"Docker Hub\",\n            \"url\": \"https://hub.docker.com/r/codercom/code-server\"\n         }\n      ],\n      \"memory_limit\": \"Et itaque tenetur nam suscipit accusamus sit.\",\n      \"memory_request\": \"Soluta qui possimus.\",\n      \"name\": \"Code Server (VS Code)\",\n      \"persistent_root_disk\": true,\n      \"persistent_root_disk_size\": \"Aliquam aut nemo totam corrupti.\",\n      \"privileged\": false,\n      \"proxy_config\": {\n         \"custom_request_headers\": {\n            \"x-tenant\": \"workspaces\"\n         },\n         \"inject_base_tag\": true,\n         \"needs_noop_sw\": true,\n         \"preserve_path_prefix\": true,\n         \"rewrite_host_absolute_paths\": true,\n         \"tls_insecure\": true,\n         \"websocket_paths\": [\n            \"/websockify\"\n         ]\n      },\n      \"remote_desktop\": {\n         \"path\": \"/\",\n         \"port\": 8080,\n         \"protocol\": \"selkies\"\n      },\n      \"source_url\": \"https://github.com/coder/code-server\",\n      \"tags\": [\n         \"development\",\n         \"vscode\"\n      ],\n      \"vm_profile\": \"windows11-amd64-v1\",\n      \"workspace_types\": [\n         \"container\"\n      ]\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "images create --body '{\n      \"category\": \"IDE\",\n      \"default_args\": [\n         \"--bind-addr\",\n         \"0.0.0.0:8080\"\n      ],\n      \"default_cloud_init\": false,\n      \"default_credentials\": {\n         \"password\": \"changeme\",\n         \"username\": \"coder\"\n      },\n      \"default_env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"default_homedir\": \"/home/coder\",\n      \"default_password\": \"changeme\",\n      \"default_path\": \"/\",\n      \"default_port\": 8080,\n      \"default_shared_memory\": false,\n      \"default_shell\": \"/bin/bash\",\n      \"default_uid\": 1000,\n      \"default_user\": \"coder\",\n      \"default_user_data\": \"\",\n      \"description\": \"Code editor in the browser\",\n      \"homepage_url\": \"https://github.com/coder/code-server\",\n      \"icon\": \"code\",\n      \"image\": \"codercom/code-server:latest\",\n      \"image_homepage_url\": \"https://hub.docker.com/r/codercom/code-server\",\n      \"links\": [\n         {\n            \"title\": \"GitHub\",\n            \"url\": \"https://github.com/coder/code-server\"\n         },\n         {\n            \"title\": \"Docker Hub\",\n            \"url\": \"https://hub.docker.com/r/codercom/code-server\"\n         }\n      ],\n      \"memory_limit\": \"Quibusdam soluta praesentium.\",\n      \"memory_request\": \"Sequi qui nisi vel ut facere dolorum.\",\n      \"name\": \"Code Server (VS Code)\",\n      \"persistent_root_disk\": false,\n      \"persistent_root_disk_size\": \"Delectus sit ut quis maiores.\",\n      \"privileged\": false,\n      \"proxy_config\": {\n         \"custom_request_headers\": {\n            \"x-tenant\": \"workspaces\"\n         },\n         \"inject_base_tag\": true,\n         \"needs_noop_sw\": true,\n         \"preserve_path_prefix\": true,\n         \"rewrite_host_absolute_paths\": false,\n         \"tls_insecure\": false,\n         \"websocket_paths\": [\n            \"/websockify\"\n         ]\n      },\n      \"remote_desktop\": {\n         \"path\": \"/\",\n         \"port\": 8080,\n         \"protocol\": \"selkies\"\n      },\n      \"source_url\": \"https://github.com/coder/code-server\",\n      \"tags\": [\n         \"development\",\n         \"vscode\"\n      ],\n      \"vm_profile\": \"windows11-amd64-v1\",\n      \"workspace_types\": [\n         \"container\"\n      ]\n   }'")
 }
 
 // namespacesUsage displays the usage of the namespaces command and its
@@ -1173,7 +1194,7 @@ func displayJoinUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "display join --body '{\n      \"role\": \"controller\"\n   }' --name \"my-workspace\" --namespace \"workspaces\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "display join --body '{\n      \"role\": \"observer\"\n   }' --name \"my-workspace\" --namespace \"workspaces\"")
 }
 
 func displayLeaveUsage() {
@@ -1366,12 +1387,14 @@ func agentReleaseUsage() {
 // executionsUsage displays the usage of the executions command and its
 // subcommands.
 func executionsUsage() {
-	fmt.Fprintln(os.Stderr, `Execution management: admission status, listing/replay and admission entry point`)
+	fmt.Fprintln(os.Stderr, `Scoped execution management status, history and protected recording replay`)
 	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] executions COMMAND [flags]\n\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "COMMAND:")
 	fmt.Fprintln(os.Stderr, `    status: Get execution management status (policy + storage readiness)`)
 	fmt.Fprintln(os.Stderr, `    list: List execution records visible to the actor`)
 	fmt.Fprintln(os.Stderr, `    get: Get an execution record and its last known outcome`)
+	fmt.Fprintln(os.Stderr, `    manifest: Verify recording integrity and audit protected playback access`)
+	fmt.Fprintln(os.Stderr, `    chunk: Read a verified recording chunk with fresh scoped recording-read permission`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s executions COMMAND --help\n", os.Args[0])
@@ -1415,7 +1438,7 @@ func executionsListUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions list --namespace \"Quod hic ut incidunt autem.\" --workspace-name \"In aut cum illum fugit aut illo.\" --actor-id \"Incidunt reprehenderit maxime et odit.\" --since \"2002-04-12T10:13:47Z\" --limit 262")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions list --namespace \"Minus eum modi accusamus voluptatem ex.\" --workspace-name \"Saepe nulla consequatur et commodi sint porro.\" --actor-id \"Velit et qui consequatur repudiandae.\" --since \"2013-10-24T12:00:00Z\" --limit 722")
 }
 
 func executionsGetUsage() {
@@ -1434,4 +1457,42 @@ func executionsGetUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions get --execution-id \"exec_9f82\"")
+}
+
+func executionsManifestUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] executions manifest", os.Args[0])
+	fmt.Fprint(os.Stderr, " -execution-id STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Verify recording integrity and audit protected playback access`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -execution-id STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions manifest --execution-id \"Qui autem dolor et voluptas.\"")
+}
+
+func executionsChunkUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] executions chunk", os.Args[0])
+	fmt.Fprint(os.Stderr, " -execution-id STRING")
+	fmt.Fprint(os.Stderr, " -index UINT64")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Read a verified recording chunk with fresh scoped recording-read permission`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -execution-id STRING: `)
+	fmt.Fprintln(os.Stderr, `    -index UINT64: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions chunk --execution-id \"Numquam atque beatae beatae.\" --index 5736191249421937084")
 }

@@ -3,10 +3,71 @@ package execution
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/kube-workspaces/api/internal/execution/storage"
 )
+
+func TestConcurrentAdmissionCannotReplaceWinnerRecording(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(mustEphemeral(t)).WithReplayAuthorizer(allowAll{})
+	winner := make(chan *Session, 32)
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s, err := svc.Admit(ctx, validRequest())
+			if err == nil {
+				winner <- s
+			}
+		}()
+	}
+	wg.Wait()
+	close(winner)
+	if len(winner) != 1 {
+		t.Fatalf("got %d process-start permits", len(winner))
+	}
+	s := <-winner
+	if err := s.AppendChunk(ctx, []byte("winner evidence")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Abort(ctx, "disconnect"); err != nil {
+		t.Fatal(err)
+	}
+	r, _, err := svc.Replay(ctx, "reader", "exec-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	b, err := r.ReadChunk(ctx, 0)
+	if err != nil || string(b) != "winner evidence" {
+		t.Fatalf("evidence lost: %q, %v", b, err)
+	}
+}
+
+func TestRecordingFailureCannotFinalizeAsSuccess(t *testing.T) {
+	ctx := context.Background()
+	store := mustEphemeral(t)
+	s, err := NewService(store).Admit(ctx, validRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendChunk(ctx, make([]byte, storage.MaxChunkBytes+1)); !errors.Is(err, storage.ErrChunkTooLarge) {
+		t.Fatal(err)
+	}
+	if err := s.AppendChunk(ctx, []byte("retry")); !errors.Is(err, storage.ErrChunkTooLarge) {
+		t.Fatal("recording error did not latch", err)
+	}
+	if err := s.Finish(ctx, storage.ExecutionOutcome{State: storage.StateSucceeded}); err == nil {
+		t.Fatal("lost recording reported success")
+	}
+	_, outcome, err := store.Metadata().Get(ctx, "exec-1")
+	if err != nil || outcome.State != storage.StateRecordingLost || !outcome.RecordingLost {
+		t.Fatalf("outcome: %+v, %v", outcome, err)
+	}
+}
 
 // allowAll is a permissive ReplayAuthorizer used only in tests.
 type allowAll struct{}

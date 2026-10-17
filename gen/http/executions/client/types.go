@@ -64,6 +64,24 @@ type GetResponseBody struct {
 	RecordingLost *bool   `form:"recording_lost,omitempty" json:"recording_lost,omitempty" xml:"recording_lost,omitempty"`
 }
 
+// ManifestResponseBody is the type of the "executions" service "manifest"
+// endpoint HTTP response body.
+type ManifestResponseBody struct {
+	RecordingID    *string `form:"recording_id,omitempty" json:"recording_id,omitempty" xml:"recording_id,omitempty"`
+	Chunks         *uint64 `form:"chunks,omitempty" json:"chunks,omitempty" xml:"chunks,omitempty"`
+	PlaintextBytes *int64  `form:"plaintext_bytes,omitempty" json:"plaintext_bytes,omitempty" xml:"plaintext_bytes,omitempty"`
+	Verified       *bool   `form:"verified,omitempty" json:"verified,omitempty" xml:"verified,omitempty"`
+}
+
+// ChunkResponseBody is the type of the "executions" service "chunk" endpoint
+// HTTP response body.
+type ChunkResponseBody struct {
+	// Chunk index starting at 0
+	Index *uint64 `form:"index,omitempty" json:"index,omitempty" xml:"index,omitempty"`
+	// Base64-encoded plaintext recording data
+	Data []byte `form:"data,omitempty" json:"data,omitempty" xml:"data,omitempty"`
+}
+
 // ExecutionRecordResponse is used to define fields on response body types.
 type ExecutionRecordResponse struct {
 	// Execution identifier
@@ -113,6 +131,45 @@ func NewStatusExecutionStatusOK(body *StatusResponseBody) *executionsviews.Execu
 	return v
 }
 
+// NewStatusForbidden builds a executions service status endpoint forbidden
+// error.
+func NewStatusForbidden(body string) executions.Forbidden {
+	v := executions.Forbidden(body)
+
+	return v
+}
+
+// NewStatusInvalid builds a executions service status endpoint invalid error.
+func NewStatusInvalid(body string) executions.Invalid {
+	v := executions.Invalid(body)
+
+	return v
+}
+
+// NewStatusNotFound builds a executions service status endpoint not_found
+// error.
+func NewStatusNotFound(body string) executions.NotFound {
+	v := executions.NotFound(body)
+
+	return v
+}
+
+// NewStatusUnauthorized builds a executions service status endpoint
+// unauthorized error.
+func NewStatusUnauthorized(body string) executions.Unauthorized {
+	v := executions.Unauthorized(body)
+
+	return v
+}
+
+// NewStatusUnavailable builds a executions service status endpoint unavailable
+// error.
+func NewStatusUnavailable(body string) executions.Unavailable {
+	v := executions.Unavailable(body)
+
+	return v
+}
+
 // NewListExecutionRecordOK builds a "executions" service "list" endpoint
 // result from a HTTP "OK" response.
 func NewListExecutionRecordOK(body []*ExecutionRecordResponse) []*executions.ExecutionRecord {
@@ -124,6 +181,43 @@ func NewListExecutionRecordOK(body []*ExecutionRecordResponse) []*executions.Exe
 		}
 		v[i] = unmarshalExecutionRecordResponseToExecutionsExecutionRecord(val)
 	}
+
+	return v
+}
+
+// NewListForbidden builds a executions service list endpoint forbidden error.
+func NewListForbidden(body string) executions.Forbidden {
+	v := executions.Forbidden(body)
+
+	return v
+}
+
+// NewListInvalid builds a executions service list endpoint invalid error.
+func NewListInvalid(body string) executions.Invalid {
+	v := executions.Invalid(body)
+
+	return v
+}
+
+// NewListNotFound builds a executions service list endpoint not_found error.
+func NewListNotFound(body string) executions.NotFound {
+	v := executions.NotFound(body)
+
+	return v
+}
+
+// NewListUnauthorized builds a executions service list endpoint unauthorized
+// error.
+func NewListUnauthorized(body string) executions.Unauthorized {
+	v := executions.Unauthorized(body)
+
+	return v
+}
+
+// NewListUnavailable builds a executions service list endpoint unavailable
+// error.
+func NewListUnavailable(body string) executions.Unavailable {
+	v := executions.Unavailable(body)
 
 	return v
 }
@@ -159,11 +253,170 @@ func NewGetExecutionRecordOK(body *GetResponseBody) *executionsviews.ExecutionRe
 	return v
 }
 
+// NewGetForbidden builds a executions service get endpoint forbidden error.
+func NewGetForbidden(body string) executions.Forbidden {
+	v := executions.Forbidden(body)
+
+	return v
+}
+
+// NewGetInvalid builds a executions service get endpoint invalid error.
+func NewGetInvalid(body string) executions.Invalid {
+	v := executions.Invalid(body)
+
+	return v
+}
+
 // NewGetNotFound builds a executions service get endpoint not_found error.
 func NewGetNotFound(body string) executions.NotFound {
 	v := executions.NotFound(body)
 
 	return v
+}
+
+// NewGetUnauthorized builds a executions service get endpoint unauthorized
+// error.
+func NewGetUnauthorized(body string) executions.Unauthorized {
+	v := executions.Unauthorized(body)
+
+	return v
+}
+
+// NewGetUnavailable builds a executions service get endpoint unavailable error.
+func NewGetUnavailable(body string) executions.Unavailable {
+	v := executions.Unavailable(body)
+
+	return v
+}
+
+// NewManifestExecutionRecordingManifestOK builds a "executions" service
+// "manifest" endpoint result from a HTTP "OK" response.
+func NewManifestExecutionRecordingManifestOK(body *ManifestResponseBody) *executions.ExecutionRecordingManifest {
+	v := &executions.ExecutionRecordingManifest{
+		RecordingID:    *body.RecordingID,
+		Chunks:         *body.Chunks,
+		PlaintextBytes: *body.PlaintextBytes,
+		Verified:       *body.Verified,
+	}
+
+	return v
+}
+
+// NewManifestForbidden builds a executions service manifest endpoint forbidden
+// error.
+func NewManifestForbidden(body string) executions.Forbidden {
+	v := executions.Forbidden(body)
+
+	return v
+}
+
+// NewManifestInvalid builds a executions service manifest endpoint invalid
+// error.
+func NewManifestInvalid(body string) executions.Invalid {
+	v := executions.Invalid(body)
+
+	return v
+}
+
+// NewManifestNotFound builds a executions service manifest endpoint not_found
+// error.
+func NewManifestNotFound(body string) executions.NotFound {
+	v := executions.NotFound(body)
+
+	return v
+}
+
+// NewManifestUnauthorized builds a executions service manifest endpoint
+// unauthorized error.
+func NewManifestUnauthorized(body string) executions.Unauthorized {
+	v := executions.Unauthorized(body)
+
+	return v
+}
+
+// NewManifestUnavailable builds a executions service manifest endpoint
+// unavailable error.
+func NewManifestUnavailable(body string) executions.Unavailable {
+	v := executions.Unavailable(body)
+
+	return v
+}
+
+// NewChunkExecutionRecordingChunkOK builds a "executions" service "chunk"
+// endpoint result from a HTTP "OK" response.
+func NewChunkExecutionRecordingChunkOK(body *ChunkResponseBody) *executions.ExecutionRecordingChunk {
+	v := &executions.ExecutionRecordingChunk{
+		Index: *body.Index,
+		Data:  body.Data,
+	}
+
+	return v
+}
+
+// NewChunkForbidden builds a executions service chunk endpoint forbidden error.
+func NewChunkForbidden(body string) executions.Forbidden {
+	v := executions.Forbidden(body)
+
+	return v
+}
+
+// NewChunkInvalid builds a executions service chunk endpoint invalid error.
+func NewChunkInvalid(body string) executions.Invalid {
+	v := executions.Invalid(body)
+
+	return v
+}
+
+// NewChunkNotFound builds a executions service chunk endpoint not_found error.
+func NewChunkNotFound(body string) executions.NotFound {
+	v := executions.NotFound(body)
+
+	return v
+}
+
+// NewChunkUnauthorized builds a executions service chunk endpoint unauthorized
+// error.
+func NewChunkUnauthorized(body string) executions.Unauthorized {
+	v := executions.Unauthorized(body)
+
+	return v
+}
+
+// NewChunkUnavailable builds a executions service chunk endpoint unavailable
+// error.
+func NewChunkUnavailable(body string) executions.Unavailable {
+	v := executions.Unavailable(body)
+
+	return v
+}
+
+// ValidateManifestResponseBody runs the validations defined on
+// ManifestResponseBody
+func ValidateManifestResponseBody(body *ManifestResponseBody) (err error) {
+	if body.RecordingID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("recording_id", "body"))
+	}
+	if body.Chunks == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("chunks", "body"))
+	}
+	if body.PlaintextBytes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("plaintext_bytes", "body"))
+	}
+	if body.Verified == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verified", "body"))
+	}
+	return
+}
+
+// ValidateChunkResponseBody runs the validations defined on ChunkResponseBody
+func ValidateChunkResponseBody(body *ChunkResponseBody) (err error) {
+	if body.Index == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("index", "body"))
+	}
+	if body.Data == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("data", "body"))
+	}
+	return
 }
 
 // ValidateExecutionRecordResponse runs the validations defined on

@@ -39,6 +39,13 @@ func (c *Client) BuildStatusRequest(ctx context.Context, v any) (*http.Request, 
 // DecodeStatusResponse returns a decoder for responses returned by the
 // executions status endpoint. restoreBody controls whether the response body
 // should be restored after having been read.
+// DecodeStatusResponse may return the following errors:
+//   - "forbidden" (type executions.Forbidden): http.StatusForbidden
+//   - "invalid" (type executions.Invalid): http.StatusBadRequest
+//   - "not_found" (type executions.NotFound): http.StatusNotFound
+//   - "unauthorized" (type executions.Unauthorized): http.StatusUnauthorized
+//   - "unavailable" (type executions.Unavailable): http.StatusServiceUnavailable
+//   - error: internal error
 func DecodeStatusResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (any, error) {
 		if restoreBody {
@@ -71,6 +78,56 @@ func DecodeStatusResponse(decoder func(*http.Response) goahttp.Decoder, restoreB
 			}
 			res := executions.NewExecutionStatus(vres)
 			return res, nil
+		case http.StatusForbidden:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "status", err)
+			}
+			return nil, NewStatusForbidden(body)
+		case http.StatusBadRequest:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "status", err)
+			}
+			return nil, NewStatusInvalid(body)
+		case http.StatusNotFound:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "status", err)
+			}
+			return nil, NewStatusNotFound(body)
+		case http.StatusUnauthorized:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "status", err)
+			}
+			return nil, NewStatusUnauthorized(body)
+		case http.StatusServiceUnavailable:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "status", err)
+			}
+			return nil, NewStatusUnavailable(body)
 		default:
 			body, _ := io.ReadAll(resp.Body)
 			return nil, goahttp.ErrInvalidResponse("executions", "status", resp.StatusCode, string(body))
@@ -123,6 +180,13 @@ func EncodeListRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.R
 // DecodeListResponse returns a decoder for responses returned by the
 // executions list endpoint. restoreBody controls whether the response body
 // should be restored after having been read.
+// DecodeListResponse may return the following errors:
+//   - "forbidden" (type executions.Forbidden): http.StatusForbidden
+//   - "invalid" (type executions.Invalid): http.StatusBadRequest
+//   - "not_found" (type executions.NotFound): http.StatusNotFound
+//   - "unauthorized" (type executions.Unauthorized): http.StatusUnauthorized
+//   - "unavailable" (type executions.Unavailable): http.StatusServiceUnavailable
+//   - error: internal error
 func DecodeListResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (any, error) {
 		if restoreBody {
@@ -159,6 +223,56 @@ func DecodeListResponse(decoder func(*http.Response) goahttp.Decoder, restoreBod
 			}
 			res := NewListExecutionRecordOK(body)
 			return res, nil
+		case http.StatusForbidden:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "list", err)
+			}
+			return nil, NewListForbidden(body)
+		case http.StatusBadRequest:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "list", err)
+			}
+			return nil, NewListInvalid(body)
+		case http.StatusNotFound:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "list", err)
+			}
+			return nil, NewListNotFound(body)
+		case http.StatusUnauthorized:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "list", err)
+			}
+			return nil, NewListUnauthorized(body)
+		case http.StatusServiceUnavailable:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "list", err)
+			}
+			return nil, NewListUnavailable(body)
 		default:
 			body, _ := io.ReadAll(resp.Body)
 			return nil, goahttp.ErrInvalidResponse("executions", "list", resp.StatusCode, string(body))
@@ -195,7 +309,11 @@ func (c *Client) BuildGetRequest(ctx context.Context, v any) (*http.Request, err
 // get endpoint. restoreBody controls whether the response body should be
 // restored after having been read.
 // DecodeGetResponse may return the following errors:
+//   - "forbidden" (type executions.Forbidden): http.StatusForbidden
+//   - "invalid" (type executions.Invalid): http.StatusBadRequest
 //   - "not_found" (type executions.NotFound): http.StatusNotFound
+//   - "unauthorized" (type executions.Unauthorized): http.StatusUnauthorized
+//   - "unavailable" (type executions.Unavailable): http.StatusServiceUnavailable
 //   - error: internal error
 func DecodeGetResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (any, error) {
@@ -229,6 +347,26 @@ func DecodeGetResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody
 			}
 			res := executions.NewExecutionRecord(vres)
 			return res, nil
+		case http.StatusForbidden:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "get", err)
+			}
+			return nil, NewGetForbidden(body)
+		case http.StatusBadRequest:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "get", err)
+			}
+			return nil, NewGetInvalid(body)
 		case http.StatusNotFound:
 			var (
 				body string
@@ -239,9 +377,275 @@ func DecodeGetResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody
 				return nil, goahttp.ErrDecodingError("executions", "get", err)
 			}
 			return nil, NewGetNotFound(body)
+		case http.StatusUnauthorized:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "get", err)
+			}
+			return nil, NewGetUnauthorized(body)
+		case http.StatusServiceUnavailable:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "get", err)
+			}
+			return nil, NewGetUnavailable(body)
 		default:
 			body, _ := io.ReadAll(resp.Body)
 			return nil, goahttp.ErrInvalidResponse("executions", "get", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildManifestRequest instantiates a HTTP request object with method and path
+// set to call the "executions" service "manifest" endpoint
+func (c *Client) BuildManifestRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		executionID string
+	)
+	{
+		p, ok := v.(*executions.ManifestPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("executions", "manifest", "*executions.ManifestPayload", v)
+		}
+		executionID = p.ExecutionID
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ManifestExecutionsPath(executionID)}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("executions", "manifest", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeManifestResponse returns a decoder for responses returned by the
+// executions manifest endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeManifestResponse may return the following errors:
+//   - "forbidden" (type executions.Forbidden): http.StatusForbidden
+//   - "invalid" (type executions.Invalid): http.StatusBadRequest
+//   - "not_found" (type executions.NotFound): http.StatusNotFound
+//   - "unauthorized" (type executions.Unauthorized): http.StatusUnauthorized
+//   - "unavailable" (type executions.Unavailable): http.StatusServiceUnavailable
+//   - error: internal error
+func DecodeManifestResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ManifestResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "manifest", err)
+			}
+			err = ValidateManifestResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("executions", "manifest", err)
+			}
+			res := NewManifestExecutionRecordingManifestOK(&body)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "manifest", err)
+			}
+			return nil, NewManifestForbidden(body)
+		case http.StatusBadRequest:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "manifest", err)
+			}
+			return nil, NewManifestInvalid(body)
+		case http.StatusNotFound:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "manifest", err)
+			}
+			return nil, NewManifestNotFound(body)
+		case http.StatusUnauthorized:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "manifest", err)
+			}
+			return nil, NewManifestUnauthorized(body)
+		case http.StatusServiceUnavailable:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "manifest", err)
+			}
+			return nil, NewManifestUnavailable(body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("executions", "manifest", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildChunkRequest instantiates a HTTP request object with method and path
+// set to call the "executions" service "chunk" endpoint
+func (c *Client) BuildChunkRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		executionID string
+		index       uint64
+	)
+	{
+		p, ok := v.(*executions.ChunkPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("executions", "chunk", "*executions.ChunkPayload", v)
+		}
+		executionID = p.ExecutionID
+		index = p.Index
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ChunkExecutionsPath(executionID, index)}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("executions", "chunk", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeChunkResponse returns a decoder for responses returned by the
+// executions chunk endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeChunkResponse may return the following errors:
+//   - "forbidden" (type executions.Forbidden): http.StatusForbidden
+//   - "invalid" (type executions.Invalid): http.StatusBadRequest
+//   - "not_found" (type executions.NotFound): http.StatusNotFound
+//   - "unauthorized" (type executions.Unauthorized): http.StatusUnauthorized
+//   - "unavailable" (type executions.Unavailable): http.StatusServiceUnavailable
+//   - error: internal error
+func DecodeChunkResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ChunkResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "chunk", err)
+			}
+			err = ValidateChunkResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("executions", "chunk", err)
+			}
+			res := NewChunkExecutionRecordingChunkOK(&body)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "chunk", err)
+			}
+			return nil, NewChunkForbidden(body)
+		case http.StatusBadRequest:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "chunk", err)
+			}
+			return nil, NewChunkInvalid(body)
+		case http.StatusNotFound:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "chunk", err)
+			}
+			return nil, NewChunkNotFound(body)
+		case http.StatusUnauthorized:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "chunk", err)
+			}
+			return nil, NewChunkUnauthorized(body)
+		case http.StatusServiceUnavailable:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "chunk", err)
+			}
+			return nil, NewChunkUnavailable(body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("executions", "chunk", resp.StatusCode, string(body))
 		}
 	}
 }

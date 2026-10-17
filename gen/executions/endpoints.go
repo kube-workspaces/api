@@ -15,17 +15,21 @@ import (
 
 // Endpoints wraps the "executions" service endpoints.
 type Endpoints struct {
-	Status goa.Endpoint
-	List   goa.Endpoint
-	Get    goa.Endpoint
+	Status   goa.Endpoint
+	List     goa.Endpoint
+	Get      goa.Endpoint
+	Manifest goa.Endpoint
+	Chunk    goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "executions" service with endpoints.
 func NewEndpoints(s Service) *Endpoints {
 	return &Endpoints{
-		Status: NewStatusEndpoint(s),
-		List:   NewListEndpoint(s),
-		Get:    NewGetEndpoint(s),
+		Status:   NewStatusEndpoint(s),
+		List:     NewListEndpoint(s),
+		Get:      NewGetEndpoint(s),
+		Manifest: NewManifestEndpoint(s),
+		Chunk:    NewChunkEndpoint(s),
 	}
 }
 
@@ -34,6 +38,8 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Status = m(e.Status)
 	e.List = m(e.List)
 	e.Get = m(e.Get)
+	e.Manifest = m(e.Manifest)
+	e.Chunk = m(e.Chunk)
 }
 
 // NewStatusEndpoint returns an endpoint function that calls the method
@@ -69,5 +75,23 @@ func NewGetEndpoint(s Service) goa.Endpoint {
 		}
 		vres := NewViewedExecutionRecord(res, "default")
 		return vres, nil
+	}
+}
+
+// NewManifestEndpoint returns an endpoint function that calls the method
+// "manifest" of service "executions".
+func NewManifestEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ManifestPayload)
+		return s.Manifest(ctx, p)
+	}
+}
+
+// NewChunkEndpoint returns an endpoint function that calls the method "chunk"
+// of service "executions".
+func NewChunkEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ChunkPayload)
+		return s.Chunk(ctx, p)
 	}
 }

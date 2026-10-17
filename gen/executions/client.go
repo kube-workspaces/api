@@ -15,21 +15,32 @@ import (
 
 // Client is the "executions" service client.
 type Client struct {
-	StatusEndpoint goa.Endpoint
-	ListEndpoint   goa.Endpoint
-	GetEndpoint    goa.Endpoint
+	StatusEndpoint   goa.Endpoint
+	ListEndpoint     goa.Endpoint
+	GetEndpoint      goa.Endpoint
+	ManifestEndpoint goa.Endpoint
+	ChunkEndpoint    goa.Endpoint
 }
 
 // NewClient initializes a "executions" service client given the endpoints.
-func NewClient(status, list, get goa.Endpoint) *Client {
+func NewClient(status, list, get, manifest, chunk goa.Endpoint) *Client {
 	return &Client{
-		StatusEndpoint: status,
-		ListEndpoint:   list,
-		GetEndpoint:    get,
+		StatusEndpoint:   status,
+		ListEndpoint:     list,
+		GetEndpoint:      get,
+		ManifestEndpoint: manifest,
+		ChunkEndpoint:    chunk,
 	}
 }
 
 // Status calls the "status" endpoint of the "executions" service.
+// Status may return the following errors:
+//   - "unauthorized" (type Unauthorized)
+//   - "forbidden" (type Forbidden)
+//   - "unavailable" (type Unavailable)
+//   - "invalid" (type Invalid)
+//   - "not_found" (type NotFound)
+//   - error: internal error
 func (c *Client) Status(ctx context.Context) (res *ExecutionStatus, err error) {
 	var ires any
 	ires, err = c.StatusEndpoint(ctx, nil)
@@ -40,6 +51,13 @@ func (c *Client) Status(ctx context.Context) (res *ExecutionStatus, err error) {
 }
 
 // List calls the "list" endpoint of the "executions" service.
+// List may return the following errors:
+//   - "unauthorized" (type Unauthorized)
+//   - "forbidden" (type Forbidden)
+//   - "unavailable" (type Unavailable)
+//   - "invalid" (type Invalid)
+//   - "not_found" (type NotFound)
+//   - error: internal error
 func (c *Client) List(ctx context.Context, p *ListPayload) (res []*ExecutionRecord, err error) {
 	var ires any
 	ires, err = c.ListEndpoint(ctx, p)
@@ -51,6 +69,10 @@ func (c *Client) List(ctx context.Context, p *ListPayload) (res []*ExecutionReco
 
 // Get calls the "get" endpoint of the "executions" service.
 // Get may return the following errors:
+//   - "unauthorized" (type Unauthorized)
+//   - "forbidden" (type Forbidden)
+//   - "unavailable" (type Unavailable)
+//   - "invalid" (type Invalid)
 //   - "not_found" (type NotFound)
 //   - error: internal error
 func (c *Client) Get(ctx context.Context, p *GetPayload) (res *ExecutionRecord, err error) {
@@ -60,4 +82,38 @@ func (c *Client) Get(ctx context.Context, p *GetPayload) (res *ExecutionRecord, 
 		return
 	}
 	return ires.(*ExecutionRecord), nil
+}
+
+// Manifest calls the "manifest" endpoint of the "executions" service.
+// Manifest may return the following errors:
+//   - "unauthorized" (type Unauthorized)
+//   - "forbidden" (type Forbidden)
+//   - "unavailable" (type Unavailable)
+//   - "invalid" (type Invalid)
+//   - "not_found" (type NotFound)
+//   - error: internal error
+func (c *Client) Manifest(ctx context.Context, p *ManifestPayload) (res *ExecutionRecordingManifest, err error) {
+	var ires any
+	ires, err = c.ManifestEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ExecutionRecordingManifest), nil
+}
+
+// Chunk calls the "chunk" endpoint of the "executions" service.
+// Chunk may return the following errors:
+//   - "unauthorized" (type Unauthorized)
+//   - "forbidden" (type Forbidden)
+//   - "unavailable" (type Unavailable)
+//   - "invalid" (type Invalid)
+//   - "not_found" (type NotFound)
+//   - error: internal error
+func (c *Client) Chunk(ctx context.Context, p *ChunkPayload) (res *ExecutionRecordingChunk, err error) {
+	var ires any
+	ires, err = c.ChunkEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ExecutionRecordingChunk), nil
 }

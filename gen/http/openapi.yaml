@@ -73,6 +73,26 @@ paths:
                         type: array
                         items:
                             $ref: '#/definitions/ExecutionRecord'
+                "400":
+                    description: Bad Request response.
+                    schema:
+                        type: string
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+                "503":
+                    description: Service Unavailable response.
+                    schema:
+                        type: string
             schemes:
                 - http
     /v1/executions/{execution_id}:
@@ -93,8 +113,115 @@ paths:
                     description: OK response.
                     schema:
                         $ref: '#/definitions/ExecutionRecord'
+                "400":
+                    description: Bad Request response.
+                    schema:
+                        type: string
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
                 "404":
                     description: Not Found response.
+                    schema:
+                        type: string
+                "503":
+                    description: Service Unavailable response.
+                    schema:
+                        type: string
+            schemes:
+                - http
+    /v1/executions/{execution_id}/recording:
+        get:
+            tags:
+                - executions
+            summary: manifest executions
+            description: Verify recording integrity and audit protected playback access
+            operationId: executions#manifest
+            parameters:
+                - name: execution_id
+                  in: path
+                  required: true
+                  type: string
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/ExecutionRecordingManifest'
+                        required:
+                            - recording_id
+                            - chunks
+                            - plaintext_bytes
+                            - verified
+                "400":
+                    description: Bad Request response.
+                    schema:
+                        type: string
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+                "503":
+                    description: Service Unavailable response.
+                    schema:
+                        type: string
+            schemes:
+                - http
+    /v1/executions/{execution_id}/recording/chunks/{index}:
+        get:
+            tags:
+                - executions
+            summary: chunk executions
+            description: Read a verified recording chunk with fresh scoped recording-read permission
+            operationId: executions#chunk
+            parameters:
+                - name: execution_id
+                  in: path
+                  required: true
+                  type: string
+                - name: index
+                  in: path
+                  required: true
+                  type: integer
+                  format: int64
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/ExecutionRecordingChunk'
+                        required:
+                            - index
+                            - data
+                "400":
+                    description: Bad Request response.
+                    schema:
+                        type: string
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+                "503":
+                    description: Service Unavailable response.
                     schema:
                         type: string
             schemes:
@@ -111,6 +238,26 @@ paths:
                     description: OK response.
                     schema:
                         $ref: '#/definitions/ExecutionStatus'
+                "400":
+                    description: Bad Request response.
+                    schema:
+                        type: string
+                "401":
+                    description: Unauthorized response.
+                    schema:
+                        type: string
+                "403":
+                    description: Forbidden response.
+                    schema:
+                        type: string
+                "404":
+                    description: Not Found response.
+                    schema:
+                        type: string
+                "503":
+                    description: Service Unavailable response.
+                    schema:
+                        type: string
             schemes:
                 - http
     /v1/images:
@@ -1334,7 +1481,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Quo enim repellendus repellat odio odit.
+                    example: Ducimus tempore facere inventore.
                 description: Default command-line args
                 example:
                     - --bind-addr
@@ -1424,11 +1571,11 @@ definitions:
             memory_limit:
                 type: string
                 description: Guest memory default
-                example: Harum nulla.
+                example: Odio quis sunt.
             memory_request:
                 type: string
                 description: Guest memory request default
-                example: Quidem dicta neque quia in.
+                example: Optio soluta unde laborum ab autem pariatur.
             name:
                 type: string
                 description: Display name
@@ -1436,11 +1583,11 @@ definitions:
             persistent_root_disk:
                 type: boolean
                 description: Import a per-workspace persistent root disk
-                example: true
+                example: false
             persistent_root_disk_size:
                 type: string
                 description: Persistent root capacity
-                example: Consequatur excepturi ab asperiores.
+                example: Asperiores reprehenderit nisi deleniti consequatur laudantium totam.
             privileged:
                 type: boolean
                 description: Run container in privileged mode
@@ -1458,7 +1605,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Minus est itaque ut doloremque.
+                    example: Enim dolores blanditiis consequatur eos.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -1473,7 +1620,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Quia voluptas rerum consequatur.
+                    example: Molestiae et suscipit reprehenderit nemo qui.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -1508,11 +1655,11 @@ definitions:
                   url: https://github.com/coder/code-server
                 - title: Docker Hub
                   url: https://hub.docker.com/r/codercom/code-server
-            memory_limit: Fuga quia.
-            memory_request: Dolores suscipit non aut ut mollitia delectus.
+            memory_limit: Non eum.
+            memory_request: Qui laudantium.
             name: Code Server (VS Code)
-            persistent_root_disk: true
-            persistent_root_disk_size: Eum minima quo.
+            persistent_root_disk: false
+            persistent_root_disk_size: Aut explicabo quae.
             privileged: false
             proxy_config:
                 custom_request_headers:
@@ -1520,8 +1667,8 @@ definitions:
                 inject_base_tag: true
                 needs_noop_sw: true
                 preserve_path_prefix: true
-                rewrite_host_absolute_paths: true
-                tls_insecure: true
+                rewrite_host_absolute_paths: false
+                tls_insecure: false
                 websocket_paths:
                     - /websockify
             remote_desktop:
@@ -1661,7 +1808,7 @@ definitions:
                     nvidia.com/gpu: "true"
                 additionalProperties:
                     type: string
-                    example: Quo tempore hic.
+                    example: Ut similique impedit.
             shared_memory:
                 type: boolean
                 description: Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML frameworks)
@@ -1723,10 +1870,10 @@ definitions:
                   value: "true"
             type: container
             vm_options:
-                import_cert_config_map_name: Rerum dolorum enim asperiores minus eum.
-                import_secret_name: Ratione molestiae.
-                root_disk_size: Et commodi sint.
-                storage_class_name: Accusamus voluptatem ex repellat saepe nulla.
+                import_cert_config_map_name: Sequi totam ratione ut minus dolorum.
+                import_secret_name: Id reiciendis tenetur consectetur consequatur.
+                root_disk_size: Reiciendis ut quasi commodi ratione.
+                storage_class_name: Facilis velit fugit odit modi repudiandae.
             volume_mounts:
                 - mount_path: /home/coder
                   name: my-workspace-data
@@ -1784,7 +1931,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Non incidunt consectetur porro.
+                    example: Cumque error ratione ut enim quos error.
                 description: Supported display transports
                 example:
                     - rfb
@@ -1857,7 +2004,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Natus ut a enim.
+                    example: Ut occaecati officia non.
                 description: Supported display transports
                 example:
                     - rfb
@@ -2030,6 +2177,10 @@ definitions:
                   id: 97f8c4b7a2
                   joined_at: "2026-09-19T15:04:05Z"
                   role: observer
+                - connected: false
+                  id: 97f8c4b7a2
+                  joined_at: "2026-09-19T15:04:05Z"
+                  role: observer
             participants: 3
             protocol: 1
         required:
@@ -2088,7 +2239,7 @@ definitions:
             end_time:
                 type: string
                 description: RFC3339 timestamp
-                example: "1997-07-04T23:29:21Z"
+                example: "2006-06-18T09:08:02Z"
                 format: date-time
             execution_id:
                 type: string
@@ -2132,7 +2283,7 @@ definitions:
             start_time:
                 type: string
                 description: RFC3339 timestamp
-                example: "1990-10-18T00:12:54Z"
+                example: "1974-06-17T20:07:37Z"
                 format: date-time
             state:
                 type: string
@@ -2169,7 +2320,7 @@ definitions:
             deny_reason: ""
             durability: none
             elevated: false
-            end_time: "1986-09-29T18:24:23Z"
+            end_time: "2015-02-23T06:09:38Z"
             execution_id: exec_9f82
             exit_code: 0
             grant_version: "1.0"
@@ -2179,7 +2330,7 @@ definitions:
             os_identity: root
             recording_id: rec_9f82
             recording_lost: false
-            start_time: "1974-07-22T11:57:02Z"
+            start_time: "2002-07-01T10:51:20Z"
             state: succeeded
             termination: graceful
             workspace_generation: 3
@@ -2195,6 +2346,146 @@ definitions:
             - durability
             - admitted
             - admission_time
+    ExecutionRecordingChunk:
+        title: ExecutionRecordingChunk
+        type: object
+        properties:
+            data:
+                type: string
+                description: Base64-encoded plaintext recording data
+                example:
+                    - 73
+                    - 109
+                    - 112
+                    - 101
+                    - 100
+                    - 105
+                    - 116
+                    - 32
+                    - 101
+                    - 115
+                    - 116
+                    - 32
+                    - 100
+                    - 101
+                    - 115
+                    - 101
+                    - 114
+                    - 117
+                    - 110
+                    - 116
+                    - 32
+                    - 108
+                    - 97
+                    - 98
+                    - 111
+                    - 114
+                    - 117
+                    - 109
+                    - 32
+                    - 97
+                    - 117
+                    - 116
+                    - 32
+                    - 100
+                    - 111
+                    - 108
+                    - 111
+                    - 114
+                    - 32
+                    - 109
+                    - 111
+                    - 108
+                    - 101
+                    - 115
+                    - 116
+                    - 105
+                    - 97
+                    - 115
+                    - 46
+                format: byte
+            index:
+                type: integer
+                description: Chunk index starting at 0
+                example: 0
+                format: int64
+        example:
+            data:
+                - 78
+                - 111
+                - 110
+                - 32
+                - 105
+                - 100
+                - 32
+                - 97
+                - 99
+                - 99
+                - 117
+                - 115
+                - 97
+                - 110
+                - 116
+                - 105
+                - 117
+                - 109
+                - 32
+                - 111
+                - 109
+                - 110
+                - 105
+                - 115
+                - 32
+                - 105
+                - 110
+                - 99
+                - 105
+                - 100
+                - 117
+                - 110
+                - 116
+                - 32
+                - 100
+                - 101
+                - 108
+                - 101
+                - 99
+                - 116
+                - 117
+                - 115
+                - 46
+            index: 0
+        required:
+            - index
+            - data
+    ExecutionRecordingManifest:
+        title: ExecutionRecordingManifest
+        type: object
+        properties:
+            chunks:
+                type: integer
+                example: 14012035708557544456
+                format: int64
+            plaintext_bytes:
+                type: integer
+                example: 4128640120331714402
+                format: int64
+            recording_id:
+                type: string
+                example: Qui praesentium.
+            verified:
+                type: boolean
+                example: false
+        example:
+            chunks: 4906088226013114939
+            plaintext_bytes: 1229344675944164746
+            recording_id: Autem velit ab.
+            verified: false
+        required:
+            - recording_id
+            - chunks
+            - plaintext_bytes
+            - verified
     ExecutionStatus:
         title: 'Mediatype identifier: application/vnd.execution-status+json; view=default'
         type: object
@@ -2265,7 +2556,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Ipsa est repudiandae ducimus recusandae tempora occaecati.
+                    example: Magnam iusto quod minus.
                 description: Default command-line args injected at workspace creation
                 example:
                     - --bind-addr
@@ -2354,10 +2645,10 @@ definitions:
                       url: https://hub.docker.com/r/codercom/code-server
             memory_limit:
                 type: string
-                example: Molestiae alias quaerat sit et vitae.
+                example: Voluptate voluptas dolorem qui aut inventore.
             memory_request:
                 type: string
-                example: Eum sapiente.
+                example: Est cupiditate ducimus.
             name:
                 type: string
                 description: Display name
@@ -2367,7 +2658,7 @@ definitions:
                 example: true
             persistent_root_disk_size:
                 type: string
-                example: Recusandae accusantium.
+                example: Temporibus at et et blanditiis rerum id.
             privileged:
                 type: boolean
                 description: Run container in privileged mode
@@ -2384,7 +2675,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Ut numquam atque beatae beatae.
+                    example: Aspernatur dolores delectus sint qui rem sint.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -2392,12 +2683,12 @@ definitions:
             vm_profile:
                 type: string
                 description: Controller-supported guest profile
-                example: Et modi et autem dolorum.
+                example: Ab sunt quibusdam voluptas.
             workspace_types:
                 type: array
                 items:
                     type: string
-                    example: Sunt voluptas praesentium officiis.
+                    example: Cumque molestiae eum nemo molestiae quia.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -2434,20 +2725,20 @@ definitions:
                   url: https://github.com/coder/code-server
                 - title: Docker Hub
                   url: https://hub.docker.com/r/codercom/code-server
-            memory_limit: Non ab corporis quam dicta.
-            memory_request: Id autem dolores non modi.
+            memory_limit: Excepturi veritatis unde pariatur eum officiis.
+            memory_request: Quasi harum nemo quo culpa.
             name: Code Server (VS Code)
-            persistent_root_disk: false
-            persistent_root_disk_size: Ad itaque qui repudiandae sunt voluptatem ullam.
+            persistent_root_disk: true
+            persistent_root_disk_size: Molestiae enim dolorum quia nulla.
             privileged: false
             proxy_config:
                 custom_request_headers:
                     x-tenant: workspaces
                 inject_base_tag: false
-                needs_noop_sw: false
+                needs_noop_sw: true
                 preserve_path_prefix: false
-                rewrite_host_absolute_paths: true
-                tls_insecure: false
+                rewrite_host_absolute_paths: false
+                tls_insecure: true
                 websocket_paths:
                     - /websockify
             remote_desktop:
@@ -2458,7 +2749,7 @@ definitions:
             tags:
                 - development
                 - vscode
-            vm_profile: Et odio occaecati deleniti ut.
+            vm_profile: Quas mollitia dolorem omnis saepe id vitae.
             workspace_types:
                 - container
         required:
@@ -2531,12 +2822,12 @@ definitions:
                     x-tenant: workspaces
                 additionalProperties:
                     type: string
-                    example: Adipisci dolorum corrupti.
+                    example: Exercitationem eum harum.
             inject_base_tag:
                 type: boolean
                 description: Inject a <base> tag into HTML responses to fix relative path resolution
                 default: false
-                example: false
+                example: true
             needs_noop_sw:
                 type: boolean
                 description: Serve a no-op ServiceWorker at /sw.js to prevent SW registration errors
@@ -2546,7 +2837,7 @@ definitions:
                 type: boolean
                 description: Forward the full proxy path (including /proxy/{ns}/{name}) to the pod instead of stripping it. Required for apps configured with a base URL matching the proxy prefix.
                 default: false
-                example: true
+                example: false
             rewrite_host_absolute_paths:
                 type: boolean
                 description: Rewrite requests with absolute paths that escape the proxy prefix using Referer header
@@ -2561,7 +2852,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Consequatur ut voluptatem recusandae non omnis.
+                    example: Minus ad ut quis natus.
                 description: Paths that use WebSocket (informational, all paths support WS transparently)
                 example:
                     - /websockify
@@ -2570,10 +2861,10 @@ definitions:
             custom_request_headers:
                 x-tenant: workspaces
             inject_base_tag: false
-            needs_noop_sw: true
+            needs_noop_sw: false
             preserve_path_prefix: true
-            rewrite_host_absolute_paths: false
-            tls_insecure: true
+            rewrite_host_absolute_paths: true
+            tls_insecure: false
             websocket_paths:
                 - /websockify
     ImageRemoteDesktop:
@@ -2593,7 +2884,7 @@ definitions:
             protocol:
                 type: string
                 description: 'Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform kw-agent)'
-                example: selkies
+                example: agent
                 enum:
                     - selkies
                     - agent
@@ -2601,7 +2892,7 @@ definitions:
         example:
             path: /
             port: 8080
-            protocol: selkies
+            protocol: agent
         required:
             - protocol
             - port
@@ -2761,25 +3052,25 @@ definitions:
             import_cert_config_map_name:
                 type: string
                 description: Same-namespace registry CA ConfigMap
-                example: Et suscipit sequi iusto excepturi itaque.
+                example: Est sint.
             import_secret_name:
                 type: string
                 description: Same-namespace CDI accessKeyId/secretKey Secret
-                example: Sit ut at non est voluptas et.
+                example: Qui quis porro neque quaerat nisi nisi.
             root_disk_size:
                 type: string
                 description: Persistent Windows root capacity, at least 80Gi
-                example: Voluptatem nobis ut.
+                example: Vero porro molestias ut dolor.
             storage_class_name:
                 type: string
                 description: Persistent root StorageClass; empty uses cluster default
-                example: Et est in.
+                example: Accusantium eos est.
         description: Namespaced Windows root import settings; credentials remain in Kubernetes Secrets
         example:
-            import_cert_config_map_name: Magnam explicabo explicabo ea et minus sunt.
-            import_secret_name: Vero quis.
-            root_disk_size: Illo sint porro eum facilis.
-            storage_class_name: Est et dolorem voluptatem quia in.
+            import_cert_config_map_name: Aut facilis qui rerum consequuntur veritatis aut.
+            import_secret_name: Architecto deserunt.
+            root_disk_size: Minus optio facilis eum.
+            storage_class_name: Tenetur atque.
     Volume:
         title: 'Mediatype identifier: application/vnd.volume+json; view=default'
         type: object
@@ -2800,7 +3091,7 @@ definitions:
                     workspace: my-workspace
                 additionalProperties:
                     type: string
-                    example: Atque in voluptas voluptatem dolorum magni.
+                    example: Voluptatem iste.
             name:
                 type: string
                 description: PVC name
@@ -2948,7 +3239,7 @@ definitions:
             provisioned:
                 type: boolean
                 description: Windows native setup and bootstrap removal have completed
-                example: true
+                example: false
             ready_replicas:
                 type: integer
                 description: Number of ready replicas
@@ -2972,7 +3263,7 @@ definitions:
             vm_profile:
                 type: string
                 description: Resolved guest profile; windows11-amd64-v1 uses display-only native provisioning
-                example: Perferendis qui.
+                example: Molestiae pariatur quo rerum.
             volume_mounts:
                 type: array
                 items:
@@ -3011,7 +3302,7 @@ definitions:
                 protocol: selkies
             stopped: false
             type: container
-            vm_profile: Et voluptas quis eum esse quo voluptatem.
+            vm_profile: Libero eum et fugiat dolorum.
             volume_mounts:
                 - mount_path: /home/coder
                   name: my-workspace-data
@@ -3120,13 +3411,13 @@ definitions:
         properties:
             password:
                 type: string
-                example: Ut delectus vel quos itaque vel.
+                example: Consequatur aut.
             username:
                 type: string
-                example: Et quos in rerum.
+                example: Voluptatibus in error.
         example:
-            password: Dolorem eius esse consequatur non et impedit.
-            username: Beatae vitae quidem voluptatem.
+            password: Nam distinctio natus.
+            username: Qui quia sunt sed.
         required:
             - username
             - password

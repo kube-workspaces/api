@@ -63,14 +63,34 @@ var ExecutionStatusResult = ResultType("application/vnd.execution-status+json", 
 })
 
 var ExecutionRecordingChunk = Type("ExecutionRecordingChunk", func() {
-	Description("Encrypted recording chunk streamed for replay (opaque in transport)")
+	Description("Verified, decrypted recording chunk; sensitive playback content")
 	Attribute("index", UInt64, "Chunk index starting at 0", func() { Example(0) })
-	Attribute("ciphertext", Bytes, "Ciphertext chunk", func() { MinLength(1) })
-	Required("index", "ciphertext")
+	Attribute("data", Bytes, "Base64-encoded plaintext recording data")
+	Required("index", "data")
+})
+
+var ExecutionRecordingManifest = Type("ExecutionRecordingManifest", func() {
+	Attribute("recording_id", String)
+	Attribute("chunks", UInt64)
+	Attribute("plaintext_bytes", Int64)
+	Attribute("verified", Boolean)
+	Required("recording_id", "chunks", "plaintext_bytes", "verified")
 })
 
 var _ = Service("executions", func() {
-	Description("Execution management: admission status, listing/replay and admission entry point")
+	Description("Scoped execution management status, history and protected recording replay")
+	Error("unauthorized", String, "A current user-bound credential is required")
+	Error("forbidden", String, "Scoped execution permission is required")
+	Error("unavailable", String, "Execution storage or policy is unavailable")
+	Error("invalid", String, "Invalid management request")
+	Error("not_found", String, "Execution not found")
+	HTTP(func() {
+		Response("unauthorized", StatusUnauthorized)
+		Response("forbidden", StatusForbidden)
+		Response("unavailable", StatusServiceUnavailable)
+		Response("invalid", StatusBadRequest)
+		Response("not_found", StatusNotFound)
+	})
 
 	Method("status", func() {
 		Description("Get execution management status (policy + storage readiness)")
@@ -109,11 +129,25 @@ var _ = Service("executions", func() {
 			Required("execution_id")
 		})
 		Result(ExecutionRecordResult)
-		Error("not_found", String, "Execution not found", func() { Example("execution not found") })
 		HTTP(func() {
 			GET("/v1/executions/{execution_id}")
 			Response(StatusOK)
-			Response("not_found", StatusNotFound)
 		})
+	})
+	Method("manifest", func() {
+		Description("Verify recording integrity and audit protected playback access")
+		Payload(func() { Attribute("execution_id", String); Required("execution_id") })
+		Result(ExecutionRecordingManifest)
+		HTTP(func() { GET("/v1/executions/{execution_id}/recording"); Response(StatusOK) })
+	})
+	Method("chunk", func() {
+		Description("Read a verified recording chunk with fresh scoped recording-read permission")
+		Payload(func() {
+			Attribute("execution_id", String)
+			Attribute("index", UInt64)
+			Required("execution_id", "index")
+		})
+		Result(ExecutionRecordingChunk)
+		HTTP(func() { GET("/v1/executions/{execution_id}/recording/chunks/{index}"); Response(StatusOK) })
 	})
 })

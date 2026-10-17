@@ -26,6 +26,13 @@ type Client struct {
 	// Get Doer is the HTTP client used to make requests to the get endpoint.
 	GetDoer goahttp.Doer
 
+	// Manifest Doer is the HTTP client used to make requests to the manifest
+	// endpoint.
+	ManifestDoer goahttp.Doer
+
+	// Chunk Doer is the HTTP client used to make requests to the chunk endpoint.
+	ChunkDoer goahttp.Doer
+
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -49,6 +56,8 @@ func NewClient(
 		StatusDoer:          doer,
 		ListDoer:            doer,
 		GetDoer:             doer,
+		ManifestDoer:        doer,
+		ChunkDoer:           doer,
 		RestoreResponseBody: restoreBody,
 		scheme:              scheme,
 		host:                host,
@@ -114,6 +123,44 @@ func (c *Client) Get() goa.Endpoint {
 		resp, err := c.GetDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("executions", "get", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// Manifest returns an endpoint that makes HTTP requests to the executions
+// service manifest server.
+func (c *Client) Manifest() goa.Endpoint {
+	var (
+		decodeResponse = DecodeManifestResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildManifestRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ManifestDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("executions", "manifest", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// Chunk returns an endpoint that makes HTTP requests to the executions service
+// chunk server.
+func (c *Client) Chunk() goa.Endpoint {
+	var (
+		decodeResponse = DecodeChunkResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildChunkRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ChunkDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("executions", "chunk", err)
 		}
 		return decodeResponse(resp)
 	}

@@ -67,6 +67,24 @@ type GetResponseBody struct {
 	RecordingLost *bool   `form:"recording_lost,omitempty" json:"recording_lost,omitempty" xml:"recording_lost,omitempty"`
 }
 
+// ManifestResponseBody is the type of the "executions" service "manifest"
+// endpoint HTTP response body.
+type ManifestResponseBody struct {
+	RecordingID    string `form:"recording_id" json:"recording_id" xml:"recording_id"`
+	Chunks         uint64 `form:"chunks" json:"chunks" xml:"chunks"`
+	PlaintextBytes int64  `form:"plaintext_bytes" json:"plaintext_bytes" xml:"plaintext_bytes"`
+	Verified       bool   `form:"verified" json:"verified" xml:"verified"`
+}
+
+// ChunkResponseBody is the type of the "executions" service "chunk" endpoint
+// HTTP response body.
+type ChunkResponseBody struct {
+	// Chunk index starting at 0
+	Index uint64 `form:"index" json:"index" xml:"index"`
+	// Base64-encoded plaintext recording data
+	Data []byte `form:"data" json:"data" xml:"data"`
+}
+
 // ExecutionRecordResponse is used to define fields on response body types.
 type ExecutionRecordResponse struct {
 	// Execution identifier
@@ -159,6 +177,28 @@ func NewGetResponseBody(res *executionsviews.ExecutionRecordView) *GetResponseBo
 	return body
 }
 
+// NewManifestResponseBody builds the HTTP response body from the result of the
+// "manifest" endpoint of the "executions" service.
+func NewManifestResponseBody(res *executions.ExecutionRecordingManifest) *ManifestResponseBody {
+	body := &ManifestResponseBody{
+		RecordingID:    res.RecordingID,
+		Chunks:         res.Chunks,
+		PlaintextBytes: res.PlaintextBytes,
+		Verified:       res.Verified,
+	}
+	return body
+}
+
+// NewChunkResponseBody builds the HTTP response body from the result of the
+// "chunk" endpoint of the "executions" service.
+func NewChunkResponseBody(res *executions.ExecutionRecordingChunk) *ChunkResponseBody {
+	body := &ChunkResponseBody{
+		Index: res.Index,
+		Data:  res.Data,
+	}
+	return body
+}
+
 // NewListPayload builds a executions service list endpoint payload.
 func NewListPayload(namespace *string, workspaceName *string, actorID *string, since *string, limit int) *executions.ListPayload {
 	v := &executions.ListPayload{}
@@ -175,6 +215,23 @@ func NewListPayload(namespace *string, workspaceName *string, actorID *string, s
 func NewGetPayload(executionID string) *executions.GetPayload {
 	v := &executions.GetPayload{}
 	v.ExecutionID = executionID
+
+	return v
+}
+
+// NewManifestPayload builds a executions service manifest endpoint payload.
+func NewManifestPayload(executionID string) *executions.ManifestPayload {
+	v := &executions.ManifestPayload{}
+	v.ExecutionID = executionID
+
+	return v
+}
+
+// NewChunkPayload builds a executions service chunk endpoint payload.
+func NewChunkPayload(executionID string, index uint64) *executions.ChunkPayload {
+	v := &executions.ChunkPayload{}
+	v.ExecutionID = executionID
+	v.Index = index
 
 	return v
 }
