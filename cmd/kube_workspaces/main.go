@@ -28,6 +28,7 @@ import (
 	dispstore "github.com/kube-workspaces/api/internal/display"
 	"github.com/kube-workspaces/api/internal/execution"
 	"github.com/kube-workspaces/api/internal/execution/management"
+	"github.com/kube-workspaces/api/internal/execution/qga"
 	executionstorage "github.com/kube-workspaces/api/internal/execution/storage"
 	"github.com/kube-workspaces/api/internal/k8s"
 	"github.com/kube-workspaces/api/internal/platform"
@@ -217,7 +218,34 @@ func main() {
 		if managementIssuer != nil {
 			issuerReady = managementIssuer.Ready
 		}
-		executionsSvc = kubeworkspaces.NewExecutions(execSvc, platform.NewConfigProvider(dynClient), issuerReady)
+		platProvider := platform.NewConfigProvider(dynClient)
+		var options []kubeworkspaces.ExecutionsOption
+		if issuerReady != nil {
+			options = append(options, kubeworkspaces.WithIssuerReadiness(issuerReady))
+		}
+		// The QGA pilot transport is an explicit opt-in: enabling it without a
+		// usable signing key or client configuration is a startup error, never
+		// a silent downgrade to a narrower transport.
+		qgaConfig, err := qga.ConfigFromEnv()
+		if err != nil {
+			log.Fatal(ctx, err)
+		}
+		if qgaConfig.Enabled {
+			restConfig, err := k8s.GetRESTConfig()
+			if err != nil {
+				log.Fatal(ctx, fmt.Errorf("QGA pilot transport requires a usable rest configuration: %w", err))
+			}
+			clientset, err := k8s.GetClientset()
+			if err != nil {
+				log.Fatal(ctx, fmt.Errorf("QGA pilot transport requires a usable clientset: %w", err))
+			}
+			runtime, err := qga.NewRuntime(qgaConfig, dynClient, platProvider, restConfig, clientset)
+			if err != nil {
+				log.Fatal(ctx, fmt.Errorf("QGA pilot transport could not be initialized: %w", err))
+			}
+			options = append(options, kubeworkspaces.WithQGA(runtime))
+		}
+		executionsSvc = kubeworkspaces.NewExecutions(execSvc, platProvider, options...)
 	}
 
 	// Wrap the services in endpoints that can be invoked from other services

@@ -27,6 +27,14 @@ type ExecutionRecord struct {
 	View string
 }
 
+// ExecutionCommand is the viewed result type that is projected based on a view.
+type ExecutionCommand struct {
+	// Type to project
+	Projected *ExecutionCommandView
+	// View to render
+	View string
+}
+
 // ExecutionStatusView is a type that runs validations on a projected type.
 type ExecutionStatusView struct {
 	// Whether VM execution is enabled by policy
@@ -79,6 +87,39 @@ type ExecutionRecordView struct {
 	RecordingLost *bool
 }
 
+// ExecutionCommandView is a type that runs validations on a projected type.
+type ExecutionCommandView struct {
+	// Execution identifier
+	ExecutionID *string
+	// Recording identifier
+	RecordingID   *string
+	Namespace     *string
+	WorkspaceName *string
+	WorkspaceUID  *string
+	// RFC3339 timestamp
+	AdmissionTime *string
+	// Storage mode: ephemeral|external|bundled
+	Mode *string
+	// none|durable
+	Durability *string
+	// Final command outcome
+	Outcome *string
+	// Final lifecycle state
+	State *string
+	// Guest process exit code when known
+	ExitCode *int
+	// Standard output, truncated to the pilot output bound
+	Stdout []byte
+	// Standard error, truncated to the pilot output bound
+	Stderr []byte
+	// Output was truncated at the 16 KiB bound
+	Truncated *bool
+	// Guest-measured duration in milliseconds
+	DurationMs *uint64
+	// Runner denial or transport-loss note
+	Denial *string
+}
+
 var (
 	// ExecutionStatusMap is a map indexing the attribute names of ExecutionStatus
 	// by view name.
@@ -120,6 +161,28 @@ var (
 			"recording_lost",
 		},
 	}
+	// ExecutionCommandMap is a map indexing the attribute names of
+	// ExecutionCommand by view name.
+	ExecutionCommandMap = map[string][]string{
+		"default": {
+			"execution_id",
+			"recording_id",
+			"namespace",
+			"workspace_name",
+			"workspace_uid",
+			"admission_time",
+			"mode",
+			"durability",
+			"outcome",
+			"state",
+			"exit_code",
+			"stdout",
+			"stderr",
+			"truncated",
+			"duration_ms",
+			"denial",
+		},
+	}
 )
 
 // ValidateExecutionStatus runs the validations defined on the viewed result
@@ -140,6 +203,18 @@ func ValidateExecutionRecord(result *ExecutionRecord) (err error) {
 	switch result.View {
 	case "default", "":
 		err = ValidateExecutionRecordView(result.Projected)
+	default:
+		err = goa.InvalidEnumValueError("view", result.View, []any{"default"})
+	}
+	return
+}
+
+// ValidateExecutionCommand runs the validations defined on the viewed result
+// type ExecutionCommand.
+func ValidateExecutionCommand(result *ExecutionCommand) (err error) {
+	switch result.View {
+	case "default", "":
+		err = ValidateExecutionCommandView(result.Projected)
 	default:
 		err = goa.InvalidEnumValueError("view", result.View, []any{"default"})
 	}
@@ -233,6 +308,53 @@ func ValidateExecutionRecordView(result *ExecutionRecordView) (err error) {
 	}
 	if result.EndTime != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("result.end_time", *result.EndTime, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateExecutionCommandView runs the validations defined on
+// ExecutionCommandView using the "default" view.
+func ValidateExecutionCommandView(result *ExecutionCommandView) (err error) {
+	if result.ExecutionID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("execution_id", "result"))
+	}
+	if result.RecordingID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("recording_id", "result"))
+	}
+	if result.Namespace == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("namespace", "result"))
+	}
+	if result.WorkspaceName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("workspace_name", "result"))
+	}
+	if result.Outcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("outcome", "result"))
+	}
+	if result.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "result"))
+	}
+	if result.AdmissionTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("result.admission_time", *result.AdmissionTime, goa.FormatDateTime))
+	}
+	if result.Mode != nil {
+		if !(*result.Mode == "ephemeral" || *result.Mode == "external" || *result.Mode == "bundled") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.mode", *result.Mode, []any{"ephemeral", "external", "bundled"}))
+		}
+	}
+	if result.Durability != nil {
+		if !(*result.Durability == "none" || *result.Durability == "durable") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.durability", *result.Durability, []any{"none", "durable"}))
+		}
+	}
+	if result.Outcome != nil {
+		if !(*result.Outcome == "succeeded" || *result.Outcome == "failed" || *result.Outcome == "timed_out" || *result.Outcome == "unknown") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.outcome", *result.Outcome, []any{"succeeded", "failed", "timed_out", "unknown"}))
+		}
+	}
+	if result.State != nil {
+		if !(*result.State == "succeeded" || *result.State == "failed" || *result.State == "cancelled" || *result.State == "timed_out" || *result.State == "revoked" || *result.State == "unknown" || *result.State == "recording_lost") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.state", *result.State, []any{"succeeded", "failed", "cancelled", "timed_out", "revoked", "unknown", "recording_lost"}))
+		}
 	}
 	return
 }

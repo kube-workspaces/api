@@ -18,16 +18,18 @@ type Client struct {
 	StatusEndpoint   goa.Endpoint
 	ListEndpoint     goa.Endpoint
 	GetEndpoint      goa.Endpoint
+	StartEndpoint    goa.Endpoint
 	ManifestEndpoint goa.Endpoint
 	ChunkEndpoint    goa.Endpoint
 }
 
 // NewClient initializes a "executions" service client given the endpoints.
-func NewClient(status, list, get, manifest, chunk goa.Endpoint) *Client {
+func NewClient(status, list, get, start, manifest, chunk goa.Endpoint) *Client {
 	return &Client{
 		StatusEndpoint:   status,
 		ListEndpoint:     list,
 		GetEndpoint:      get,
+		StartEndpoint:    start,
 		ManifestEndpoint: manifest,
 		ChunkEndpoint:    chunk,
 	}
@@ -82,6 +84,23 @@ func (c *Client) Get(ctx context.Context, p *GetPayload) (res *ExecutionRecord, 
 		return
 	}
 	return ires.(*ExecutionRecord), nil
+}
+
+// Start calls the "start" endpoint of the "executions" service.
+// Start may return the following errors:
+//   - "unauthorized" (type Unauthorized)
+//   - "forbidden" (type Forbidden)
+//   - "unavailable" (type Unavailable)
+//   - "invalid" (type Invalid)
+//   - "not_found" (type NotFound)
+//   - error: internal error
+func (c *Client) Start(ctx context.Context, p *StartPayload) (res *ExecutionCommand, err error) {
+	var ires any
+	ires, err = c.StartEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ExecutionCommand), nil
 }
 
 // Manifest calls the "manifest" endpoint of the "executions" service.

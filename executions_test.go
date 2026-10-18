@@ -79,7 +79,7 @@ func TestExecutionHTTPAuthorizationAndReplay(t *testing.T) {
 		}
 	}
 	issuerErr := errors.New("issuer unavailable")
-	svc := NewExecutions(execution.NewService(store), platform.NewConfigProvider(client), func(context.Context) error { return issuerErr })
+	svc := NewExecutions(execution.NewService(store), platform.NewConfigProvider(client), WithIssuerReadiness(func(context.Context) error { return issuerErr }))
 	mux := goahttp.NewMuxer()
 	server := svr.New(gen.NewEndpoints(svc), mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, nil, nil)
 	svr.Mount(mux, server)

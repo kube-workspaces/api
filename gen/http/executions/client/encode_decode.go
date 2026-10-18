@@ -404,6 +404,136 @@ func DecodeGetResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody
 	}
 }
 
+// BuildStartRequest instantiates a HTTP request object with method and path
+// set to call the "executions" service "start" endpoint
+func (c *Client) BuildStartRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: StartExecutionsPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("executions", "start", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeStartRequest returns an encoder for requests sent to the executions
+// start server.
+func EncodeStartRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*executions.StartPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("executions", "start", "*executions.StartPayload", v)
+		}
+		body := NewStartRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("executions", "start", err)
+		}
+		return nil
+	}
+}
+
+// DecodeStartResponse returns a decoder for responses returned by the
+// executions start endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeStartResponse may return the following errors:
+//   - "forbidden" (type executions.Forbidden): http.StatusForbidden
+//   - "invalid" (type executions.Invalid): http.StatusBadRequest
+//   - "not_found" (type executions.NotFound): http.StatusNotFound
+//   - "unauthorized" (type executions.Unauthorized): http.StatusUnauthorized
+//   - "unavailable" (type executions.Unavailable): http.StatusServiceUnavailable
+//   - error: internal error
+func DecodeStartResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body StartResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "start", err)
+			}
+			p := NewStartExecutionCommandOK(&body)
+			view := "default"
+			vres := &executionsviews.ExecutionCommand{Projected: p, View: view}
+			if err = executionsviews.ValidateExecutionCommand(vres); err != nil {
+				return nil, goahttp.ErrValidationError("executions", "start", err)
+			}
+			res := executions.NewExecutionCommand(vres)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "start", err)
+			}
+			return nil, NewStartForbidden(body)
+		case http.StatusBadRequest:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "start", err)
+			}
+			return nil, NewStartInvalid(body)
+		case http.StatusNotFound:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "start", err)
+			}
+			return nil, NewStartNotFound(body)
+		case http.StatusUnauthorized:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "start", err)
+			}
+			return nil, NewStartUnauthorized(body)
+		case http.StatusServiceUnavailable:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "start", err)
+			}
+			return nil, NewStartUnavailable(body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("executions", "start", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildManifestRequest instantiates a HTTP request object with method and path
 // set to call the "executions" service "manifest" endpoint
 func (c *Client) BuildManifestRequest(ctx context.Context, v any) (*http.Request, error) {

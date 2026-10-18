@@ -8,8 +8,10 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
+	"unicode/utf8"
 
 	executions "github.com/kube-workspaces/api/gen/executions"
 	goa "goa.design/goa/v3/pkg"
@@ -86,6 +88,76 @@ func BuildGetPayload(executionsGetExecutionID string) (*executions.GetPayload, e
 	}
 	v := &executions.GetPayload{}
 	v.ExecutionID = executionID
+
+	return v, nil
+}
+
+// BuildStartPayload builds the payload for the executions start endpoint from
+// CLI flags.
+func BuildStartPayload(executionsStartBody string) (*executions.StartPayload, error) {
+	var err error
+	var body StartRequestBody
+	{
+		err = json.Unmarshal([]byte(executionsStartBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"args\": [\n         \"Officiis et est in.\",\n         \"Voluptatem nobis ut.\",\n         \"Vero quis.\"\n      ],\n      \"cwd\": \"C:\\\\Temp\",\n      \"deadline_seconds\": 9,\n      \"executable\": \"C:\\\\Windows\\\\System32\\\\cmd.exe\",\n      \"namespace\": \"team-a\",\n      \"workspace_name\": \"vm-1\"\n   }'")
+		}
+		if body.Args == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("args", "body"))
+		}
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.namespace", body.Namespace, "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"))
+		if utf8.RuneCountInString(body.Namespace) > 63 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.namespace", body.Namespace, utf8.RuneCountInString(body.Namespace), 63, false))
+		}
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.workspace_name", body.WorkspaceName, "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"))
+		if utf8.RuneCountInString(body.WorkspaceName) > 253 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.workspace_name", body.WorkspaceName, utf8.RuneCountInString(body.WorkspaceName), 253, false))
+		}
+		if utf8.RuneCountInString(body.Executable) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.executable", body.Executable, utf8.RuneCountInString(body.Executable), 1, true))
+		}
+		if utf8.RuneCountInString(body.Executable) > 1024 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.executable", body.Executable, utf8.RuneCountInString(body.Executable), 1024, false))
+		}
+		if len(body.Args) > 64 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.args", body.Args, len(body.Args), 64, false))
+		}
+		if body.Cwd != nil {
+			if utf8.RuneCountInString(*body.Cwd) > 1024 {
+				err = goa.MergeErrors(err, goa.InvalidLengthError("body.cwd", *body.Cwd, utf8.RuneCountInString(*body.Cwd), 1024, false))
+			}
+		}
+		if body.DeadlineSeconds < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.deadline_seconds", body.DeadlineSeconds, 1, true))
+		}
+		if body.DeadlineSeconds > 20 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.deadline_seconds", body.DeadlineSeconds, 20, false))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &executions.StartPayload{
+		Namespace:       body.Namespace,
+		WorkspaceName:   body.WorkspaceName,
+		Executable:      body.Executable,
+		Cwd:             body.Cwd,
+		DeadlineSeconds: body.DeadlineSeconds,
+	}
+	if body.Args != nil {
+		v.Args = make([]string, len(body.Args))
+		for i, val := range body.Args {
+			v.Args[i] = val
+		}
+	} else {
+		v.Args = []string{}
+	}
+	{
+		var zero int
+		if v.DeadlineSeconds == zero {
+			v.DeadlineSeconds = 20
+		}
+	}
 
 	return v, nil
 }

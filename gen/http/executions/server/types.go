@@ -8,9 +8,29 @@
 package server
 
 import (
+	"unicode/utf8"
+
 	executions "github.com/kube-workspaces/api/gen/executions"
 	executionsviews "github.com/kube-workspaces/api/gen/executions/views"
+	goa "goa.design/goa/v3/pkg"
 )
+
+// StartRequestBody is the type of the "executions" service "start" endpoint
+// HTTP request body.
+type StartRequestBody struct {
+	// Workspace namespace
+	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty" xml:"namespace,omitempty"`
+	// Workspace name
+	WorkspaceName *string `form:"workspace_name,omitempty" json:"workspace_name,omitempty" xml:"workspace_name,omitempty"`
+	// Absolute path or name of the program to run
+	Executable *string `form:"executable,omitempty" json:"executable,omitempty" xml:"executable,omitempty"`
+	// Arguments passed to the executable verbatim
+	Args []string `form:"args,omitempty" json:"args,omitempty" xml:"args,omitempty"`
+	// Optional working directory for the new process
+	Cwd *string `form:"cwd,omitempty" json:"cwd,omitempty" xml:"cwd,omitempty"`
+	// Guest execution deadline in seconds
+	DeadlineSeconds *int `form:"deadline_seconds,omitempty" json:"deadline_seconds,omitempty" xml:"deadline_seconds,omitempty"`
+}
 
 // StatusResponseBody is the type of the "executions" service "status" endpoint
 // HTTP response body.
@@ -68,6 +88,40 @@ type GetResponseBody struct {
 	ExitCode      *int    `form:"exit_code,omitempty" json:"exit_code,omitempty" xml:"exit_code,omitempty"`
 	Termination   *string `form:"termination,omitempty" json:"termination,omitempty" xml:"termination,omitempty"`
 	RecordingLost *bool   `form:"recording_lost,omitempty" json:"recording_lost,omitempty" xml:"recording_lost,omitempty"`
+}
+
+// StartResponseBody is the type of the "executions" service "start" endpoint
+// HTTP response body.
+type StartResponseBody struct {
+	// Execution identifier
+	ExecutionID string `form:"execution_id" json:"execution_id" xml:"execution_id"`
+	// Recording identifier
+	RecordingID   string  `form:"recording_id" json:"recording_id" xml:"recording_id"`
+	Namespace     string  `form:"namespace" json:"namespace" xml:"namespace"`
+	WorkspaceName string  `form:"workspace_name" json:"workspace_name" xml:"workspace_name"`
+	WorkspaceUID  *string `form:"workspace_uid,omitempty" json:"workspace_uid,omitempty" xml:"workspace_uid,omitempty"`
+	// RFC3339 timestamp
+	AdmissionTime *string `form:"admission_time,omitempty" json:"admission_time,omitempty" xml:"admission_time,omitempty"`
+	// Storage mode: ephemeral|external|bundled
+	Mode *string `form:"mode,omitempty" json:"mode,omitempty" xml:"mode,omitempty"`
+	// none|durable
+	Durability *string `form:"durability,omitempty" json:"durability,omitempty" xml:"durability,omitempty"`
+	// Final command outcome
+	Outcome string `form:"outcome" json:"outcome" xml:"outcome"`
+	// Final lifecycle state
+	State string `form:"state" json:"state" xml:"state"`
+	// Guest process exit code when known
+	ExitCode *int `form:"exit_code,omitempty" json:"exit_code,omitempty" xml:"exit_code,omitempty"`
+	// Standard output, truncated to the pilot output bound
+	Stdout []byte `form:"stdout,omitempty" json:"stdout,omitempty" xml:"stdout,omitempty"`
+	// Standard error, truncated to the pilot output bound
+	Stderr []byte `form:"stderr,omitempty" json:"stderr,omitempty" xml:"stderr,omitempty"`
+	// Output was truncated at the 16 KiB bound
+	Truncated *bool `form:"truncated,omitempty" json:"truncated,omitempty" xml:"truncated,omitempty"`
+	// Guest-measured duration in milliseconds
+	DurationMs *uint64 `form:"duration_ms,omitempty" json:"duration_ms,omitempty" xml:"duration_ms,omitempty"`
+	// Runner denial or transport-loss note
+	Denial *string `form:"denial,omitempty" json:"denial,omitempty" xml:"denial,omitempty"`
 }
 
 // ManifestResponseBody is the type of the "executions" service "manifest"
@@ -181,6 +235,30 @@ func NewGetResponseBody(res *executionsviews.ExecutionRecordView) *GetResponseBo
 	return body
 }
 
+// NewStartResponseBody builds the HTTP response body from the result of the
+// "start" endpoint of the "executions" service.
+func NewStartResponseBody(res *executionsviews.ExecutionCommandView) *StartResponseBody {
+	body := &StartResponseBody{
+		ExecutionID:   *res.ExecutionID,
+		RecordingID:   *res.RecordingID,
+		Namespace:     *res.Namespace,
+		WorkspaceName: *res.WorkspaceName,
+		WorkspaceUID:  res.WorkspaceUID,
+		AdmissionTime: res.AdmissionTime,
+		Mode:          res.Mode,
+		Durability:    res.Durability,
+		Outcome:       *res.Outcome,
+		State:         *res.State,
+		ExitCode:      res.ExitCode,
+		Stdout:        res.Stdout,
+		Stderr:        res.Stderr,
+		Truncated:     res.Truncated,
+		DurationMs:    res.DurationMs,
+		Denial:        res.Denial,
+	}
+	return body
+}
+
 // NewManifestResponseBody builds the HTTP response body from the result of the
 // "manifest" endpoint of the "executions" service.
 func NewManifestResponseBody(res *executions.ExecutionRecordingManifest) *ManifestResponseBody {
@@ -223,6 +301,28 @@ func NewGetPayload(executionID string) *executions.GetPayload {
 	return v
 }
 
+// NewStartPayload builds a executions service start endpoint payload.
+func NewStartPayload(body *StartRequestBody) *executions.StartPayload {
+	v := &executions.StartPayload{
+		Namespace:     *body.Namespace,
+		WorkspaceName: *body.WorkspaceName,
+		Executable:    *body.Executable,
+		Cwd:           body.Cwd,
+	}
+	if body.DeadlineSeconds != nil {
+		v.DeadlineSeconds = *body.DeadlineSeconds
+	}
+	v.Args = make([]string, len(body.Args))
+	for i, val := range body.Args {
+		v.Args[i] = val
+	}
+	if body.DeadlineSeconds == nil {
+		v.DeadlineSeconds = 20
+	}
+
+	return v
+}
+
 // NewManifestPayload builds a executions service manifest endpoint payload.
 func NewManifestPayload(executionID string) *executions.ManifestPayload {
 	v := &executions.ManifestPayload{}
@@ -238,4 +338,65 @@ func NewChunkPayload(executionID string, index uint64) *executions.ChunkPayload 
 	v.Index = index
 
 	return v
+}
+
+// ValidateStartRequestBody runs the validations defined on StartRequestBody
+func ValidateStartRequestBody(body *StartRequestBody) (err error) {
+	if body.Namespace == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("namespace", "body"))
+	}
+	if body.WorkspaceName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("workspace_name", "body"))
+	}
+	if body.Executable == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("executable", "body"))
+	}
+	if body.Args == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("args", "body"))
+	}
+	if body.Namespace != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.namespace", *body.Namespace, "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"))
+	}
+	if body.Namespace != nil {
+		if utf8.RuneCountInString(*body.Namespace) > 63 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.namespace", *body.Namespace, utf8.RuneCountInString(*body.Namespace), 63, false))
+		}
+	}
+	if body.WorkspaceName != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.workspace_name", *body.WorkspaceName, "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"))
+	}
+	if body.WorkspaceName != nil {
+		if utf8.RuneCountInString(*body.WorkspaceName) > 253 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.workspace_name", *body.WorkspaceName, utf8.RuneCountInString(*body.WorkspaceName), 253, false))
+		}
+	}
+	if body.Executable != nil {
+		if utf8.RuneCountInString(*body.Executable) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.executable", *body.Executable, utf8.RuneCountInString(*body.Executable), 1, true))
+		}
+	}
+	if body.Executable != nil {
+		if utf8.RuneCountInString(*body.Executable) > 1024 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.executable", *body.Executable, utf8.RuneCountInString(*body.Executable), 1024, false))
+		}
+	}
+	if len(body.Args) > 64 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.args", body.Args, len(body.Args), 64, false))
+	}
+	if body.Cwd != nil {
+		if utf8.RuneCountInString(*body.Cwd) > 1024 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.cwd", *body.Cwd, utf8.RuneCountInString(*body.Cwd), 1024, false))
+		}
+	}
+	if body.DeadlineSeconds != nil {
+		if *body.DeadlineSeconds < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.deadline_seconds", *body.DeadlineSeconds, 1, true))
+		}
+	}
+	if body.DeadlineSeconds != nil {
+		if *body.DeadlineSeconds > 20 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.deadline_seconds", *body.DeadlineSeconds, 20, false))
+		}
+	}
+	return
 }

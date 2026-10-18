@@ -22,6 +22,7 @@ type Server struct {
 	Status   http.Handler
 	List     http.Handler
 	Get      http.Handler
+	Start    http.Handler
 	Manifest http.Handler
 	Chunk    http.Handler
 }
@@ -56,12 +57,14 @@ func New(
 			{"Status", "GET", "/v1/executions/status"},
 			{"List", "GET", "/v1/executions"},
 			{"Get", "GET", "/v1/executions/{execution_id}"},
+			{"Start", "POST", "/v1/executions/start"},
 			{"Manifest", "GET", "/v1/executions/{execution_id}/recording"},
 			{"Chunk", "GET", "/v1/executions/{execution_id}/recording/chunks/{index}"},
 		},
 		Status:   NewStatusHandler(e.Status, mux, decoder, encoder, errhandler, formatter),
 		List:     NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
 		Get:      NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
+		Start:    NewStartHandler(e.Start, mux, decoder, encoder, errhandler, formatter),
 		Manifest: NewManifestHandler(e.Manifest, mux, decoder, encoder, errhandler, formatter),
 		Chunk:    NewChunkHandler(e.Chunk, mux, decoder, encoder, errhandler, formatter),
 	}
@@ -75,6 +78,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Status = m(s.Status)
 	s.List = m(s.List)
 	s.Get = m(s.Get)
+	s.Start = m(s.Start)
 	s.Manifest = m(s.Manifest)
 	s.Chunk = m(s.Chunk)
 }
@@ -87,6 +91,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountStatusHandler(mux, h.Status)
 	MountListHandler(mux, h.List)
 	MountGetHandler(mux, h.Get)
+	MountStartHandler(mux, h.Start)
 	MountManifestHandler(mux, h.Manifest)
 	MountChunkHandler(mux, h.Chunk)
 }
@@ -225,6 +230,59 @@ func NewGetHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "get")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "executions")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountStartHandler configures the mux to serve the "executions" service
+// "start" endpoint.
+func MountStartHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/v1/executions/start", f)
+}
+
+// NewStartHandler creates a HTTP handler which loads the HTTP request and
+// calls the "executions" service "start" endpoint.
+func NewStartHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeStartRequest(mux, decoder)
+		encodeResponse = EncodeStartResponse(encoder)
+		encodeError    = EncodeStartError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "start")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "executions")
 		payload, err := decodeRequest(r)
 		if err != nil {

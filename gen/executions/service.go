@@ -21,6 +21,9 @@ type Service interface {
 	List(context.Context, *ListPayload) (res []*ExecutionRecord, err error)
 	// Get an execution record and its last known outcome
 	Get(context.Context, *GetPayload) (res *ExecutionRecord, err error)
+	// Execute one bounded SYSTEM command in an eligible running Windows VM and
+	// return its recorded outcome synchronously
+	Start(context.Context, *StartPayload) (res *ExecutionCommand, err error)
 	// Verify recording integrity and audit protected playback access
 	Manifest(context.Context, *ManifestPayload) (res *ExecutionRecordingManifest, err error)
 	// Read a verified recording chunk with fresh scoped recording-read permission
@@ -41,12 +44,45 @@ const ServiceName = "executions"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [5]string{"status", "list", "get", "manifest", "chunk"}
+var MethodNames = [6]string{"status", "list", "get", "start", "manifest", "chunk"}
 
 // ChunkPayload is the payload type of the executions service chunk method.
 type ChunkPayload struct {
 	ExecutionID string
 	Index       uint64
+}
+
+// ExecutionCommand is the result type of the executions service start method.
+type ExecutionCommand struct {
+	// Execution identifier
+	ExecutionID string
+	// Recording identifier
+	RecordingID   string
+	Namespace     string
+	WorkspaceName string
+	WorkspaceUID  *string
+	// RFC3339 timestamp
+	AdmissionTime *string
+	// Storage mode: ephemeral|external|bundled
+	Mode *string
+	// none|durable
+	Durability *string
+	// Final command outcome
+	Outcome string
+	// Final lifecycle state
+	State string
+	// Guest process exit code when known
+	ExitCode *int
+	// Standard output, truncated to the pilot output bound
+	Stdout []byte
+	// Standard error, truncated to the pilot output bound
+	Stderr []byte
+	// Output was truncated at the 16 KiB bound
+	Truncated *bool
+	// Guest-measured duration in milliseconds
+	DurationMs *uint64
+	// Runner denial or transport-loss note
+	Denial *string
 }
 
 // ExecutionRecord is the result type of the executions service get method.
@@ -143,6 +179,22 @@ type ListPayload struct {
 // method.
 type ManifestPayload struct {
 	ExecutionID string
+}
+
+// StartPayload is the payload type of the executions service start method.
+type StartPayload struct {
+	// Workspace namespace
+	Namespace string
+	// Workspace name
+	WorkspaceName string
+	// Absolute path or name of the program to run
+	Executable string
+	// Arguments passed to the executable verbatim
+	Args []string
+	// Optional working directory for the new process
+	Cwd *string
+	// Guest execution deadline in seconds
+	DeadlineSeconds int
 }
 
 // Scoped execution permission is required
@@ -271,6 +323,19 @@ func NewViewedExecutionRecord(res *ExecutionRecord, view string) *executionsview
 	return &executionsviews.ExecutionRecord{Projected: p, View: "default"}
 }
 
+// NewExecutionCommand initializes result type ExecutionCommand from viewed
+// result type ExecutionCommand.
+func NewExecutionCommand(vres *executionsviews.ExecutionCommand) *ExecutionCommand {
+	return newExecutionCommand(vres.Projected)
+}
+
+// NewViewedExecutionCommand initializes viewed result type ExecutionCommand
+// from result type ExecutionCommand using the given view.
+func NewViewedExecutionCommand(res *ExecutionCommand, view string) *executionsviews.ExecutionCommand {
+	p := newExecutionCommandView(res)
+	return &executionsviews.ExecutionCommand{Projected: p, View: "default"}
+}
+
 // newExecutionStatus converts projected type ExecutionStatus to service type
 // ExecutionStatus.
 func newExecutionStatus(vres *executionsviews.ExecutionStatusView) *ExecutionStatus {
@@ -384,6 +449,66 @@ func newExecutionRecordView(res *ExecutionRecord) *executionsviews.ExecutionReco
 		ExitCode:            res.ExitCode,
 		Termination:         res.Termination,
 		RecordingLost:       res.RecordingLost,
+	}
+	return vres
+}
+
+// newExecutionCommand converts projected type ExecutionCommand to service type
+// ExecutionCommand.
+func newExecutionCommand(vres *executionsviews.ExecutionCommandView) *ExecutionCommand {
+	res := &ExecutionCommand{
+		WorkspaceUID:  vres.WorkspaceUID,
+		AdmissionTime: vres.AdmissionTime,
+		Mode:          vres.Mode,
+		Durability:    vres.Durability,
+		ExitCode:      vres.ExitCode,
+		Stdout:        vres.Stdout,
+		Stderr:        vres.Stderr,
+		Truncated:     vres.Truncated,
+		DurationMs:    vres.DurationMs,
+		Denial:        vres.Denial,
+	}
+	if vres.ExecutionID != nil {
+		res.ExecutionID = *vres.ExecutionID
+	}
+	if vres.RecordingID != nil {
+		res.RecordingID = *vres.RecordingID
+	}
+	if vres.Namespace != nil {
+		res.Namespace = *vres.Namespace
+	}
+	if vres.WorkspaceName != nil {
+		res.WorkspaceName = *vres.WorkspaceName
+	}
+	if vres.Outcome != nil {
+		res.Outcome = *vres.Outcome
+	}
+	if vres.State != nil {
+		res.State = *vres.State
+	}
+	return res
+}
+
+// newExecutionCommandView projects result type ExecutionCommand to projected
+// type ExecutionCommandView using the "default" view.
+func newExecutionCommandView(res *ExecutionCommand) *executionsviews.ExecutionCommandView {
+	vres := &executionsviews.ExecutionCommandView{
+		ExecutionID:   &res.ExecutionID,
+		RecordingID:   &res.RecordingID,
+		Namespace:     &res.Namespace,
+		WorkspaceName: &res.WorkspaceName,
+		WorkspaceUID:  res.WorkspaceUID,
+		AdmissionTime: res.AdmissionTime,
+		Mode:          res.Mode,
+		Durability:    res.Durability,
+		Outcome:       &res.Outcome,
+		State:         &res.State,
+		ExitCode:      res.ExitCode,
+		Stdout:        res.Stdout,
+		Stderr:        res.Stderr,
+		Truncated:     res.Truncated,
+		DurationMs:    res.DurationMs,
+		Denial:        res.Denial,
 	}
 	return vres
 }

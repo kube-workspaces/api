@@ -18,6 +18,7 @@ type Endpoints struct {
 	Status   goa.Endpoint
 	List     goa.Endpoint
 	Get      goa.Endpoint
+	Start    goa.Endpoint
 	Manifest goa.Endpoint
 	Chunk    goa.Endpoint
 }
@@ -28,6 +29,7 @@ func NewEndpoints(s Service) *Endpoints {
 		Status:   NewStatusEndpoint(s),
 		List:     NewListEndpoint(s),
 		Get:      NewGetEndpoint(s),
+		Start:    NewStartEndpoint(s),
 		Manifest: NewManifestEndpoint(s),
 		Chunk:    NewChunkEndpoint(s),
 	}
@@ -38,6 +40,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Status = m(e.Status)
 	e.List = m(e.List)
 	e.Get = m(e.Get)
+	e.Start = m(e.Start)
 	e.Manifest = m(e.Manifest)
 	e.Chunk = m(e.Chunk)
 }
@@ -74,6 +77,20 @@ func NewGetEndpoint(s Service) goa.Endpoint {
 			return nil, err
 		}
 		vres := NewViewedExecutionRecord(res, "default")
+		return vres, nil
+	}
+}
+
+// NewStartEndpoint returns an endpoint function that calls the method "start"
+// of service "executions".
+func NewStartEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*StartPayload)
+		res, err := s.Start(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		vres := NewViewedExecutionCommand(res, "default")
 		return vres, nil
 	}
 }

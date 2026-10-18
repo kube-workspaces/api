@@ -26,6 +26,9 @@ type Client struct {
 	// Get Doer is the HTTP client used to make requests to the get endpoint.
 	GetDoer goahttp.Doer
 
+	// Start Doer is the HTTP client used to make requests to the start endpoint.
+	StartDoer goahttp.Doer
+
 	// Manifest Doer is the HTTP client used to make requests to the manifest
 	// endpoint.
 	ManifestDoer goahttp.Doer
@@ -56,6 +59,7 @@ func NewClient(
 		StatusDoer:          doer,
 		ListDoer:            doer,
 		GetDoer:             doer,
+		StartDoer:           doer,
 		ManifestDoer:        doer,
 		ChunkDoer:           doer,
 		RestoreResponseBody: restoreBody,
@@ -123,6 +127,30 @@ func (c *Client) Get() goa.Endpoint {
 		resp, err := c.GetDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("executions", "get", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// Start returns an endpoint that makes HTTP requests to the executions service
+// start server.
+func (c *Client) Start() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeStartRequest(c.encoder)
+		decodeResponse = DecodeStartResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildStartRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.StartDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("executions", "start", err)
 		}
 		return decodeResponse(resp)
 	}

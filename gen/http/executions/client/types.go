@@ -13,6 +13,23 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
+// StartRequestBody is the type of the "executions" service "start" endpoint
+// HTTP request body.
+type StartRequestBody struct {
+	// Workspace namespace
+	Namespace string `form:"namespace" json:"namespace" xml:"namespace"`
+	// Workspace name
+	WorkspaceName string `form:"workspace_name" json:"workspace_name" xml:"workspace_name"`
+	// Absolute path or name of the program to run
+	Executable string `form:"executable" json:"executable" xml:"executable"`
+	// Arguments passed to the executable verbatim
+	Args []string `form:"args" json:"args" xml:"args"`
+	// Optional working directory for the new process
+	Cwd *string `form:"cwd,omitempty" json:"cwd,omitempty" xml:"cwd,omitempty"`
+	// Guest execution deadline in seconds
+	DeadlineSeconds int `form:"deadline_seconds" json:"deadline_seconds" xml:"deadline_seconds"`
+}
+
 // StatusResponseBody is the type of the "executions" service "status" endpoint
 // HTTP response body.
 type StatusResponseBody struct {
@@ -67,6 +84,40 @@ type GetResponseBody struct {
 	RecordingLost *bool   `form:"recording_lost,omitempty" json:"recording_lost,omitempty" xml:"recording_lost,omitempty"`
 }
 
+// StartResponseBody is the type of the "executions" service "start" endpoint
+// HTTP response body.
+type StartResponseBody struct {
+	// Execution identifier
+	ExecutionID *string `form:"execution_id,omitempty" json:"execution_id,omitempty" xml:"execution_id,omitempty"`
+	// Recording identifier
+	RecordingID   *string `form:"recording_id,omitempty" json:"recording_id,omitempty" xml:"recording_id,omitempty"`
+	Namespace     *string `form:"namespace,omitempty" json:"namespace,omitempty" xml:"namespace,omitempty"`
+	WorkspaceName *string `form:"workspace_name,omitempty" json:"workspace_name,omitempty" xml:"workspace_name,omitempty"`
+	WorkspaceUID  *string `form:"workspace_uid,omitempty" json:"workspace_uid,omitempty" xml:"workspace_uid,omitempty"`
+	// RFC3339 timestamp
+	AdmissionTime *string `form:"admission_time,omitempty" json:"admission_time,omitempty" xml:"admission_time,omitempty"`
+	// Storage mode: ephemeral|external|bundled
+	Mode *string `form:"mode,omitempty" json:"mode,omitempty" xml:"mode,omitempty"`
+	// none|durable
+	Durability *string `form:"durability,omitempty" json:"durability,omitempty" xml:"durability,omitempty"`
+	// Final command outcome
+	Outcome *string `form:"outcome,omitempty" json:"outcome,omitempty" xml:"outcome,omitempty"`
+	// Final lifecycle state
+	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
+	// Guest process exit code when known
+	ExitCode *int `form:"exit_code,omitempty" json:"exit_code,omitempty" xml:"exit_code,omitempty"`
+	// Standard output, truncated to the pilot output bound
+	Stdout []byte `form:"stdout,omitempty" json:"stdout,omitempty" xml:"stdout,omitempty"`
+	// Standard error, truncated to the pilot output bound
+	Stderr []byte `form:"stderr,omitempty" json:"stderr,omitempty" xml:"stderr,omitempty"`
+	// Output was truncated at the 16 KiB bound
+	Truncated *bool `form:"truncated,omitempty" json:"truncated,omitempty" xml:"truncated,omitempty"`
+	// Guest-measured duration in milliseconds
+	DurationMs *uint64 `form:"duration_ms,omitempty" json:"duration_ms,omitempty" xml:"duration_ms,omitempty"`
+	// Runner denial or transport-loss note
+	Denial *string `form:"denial,omitempty" json:"denial,omitempty" xml:"denial,omitempty"`
+}
+
 // ManifestResponseBody is the type of the "executions" service "manifest"
 // endpoint HTTP response body.
 type ManifestResponseBody struct {
@@ -118,6 +169,33 @@ type ExecutionRecordResponse struct {
 	ExitCode      *int    `form:"exit_code,omitempty" json:"exit_code,omitempty" xml:"exit_code,omitempty"`
 	Termination   *string `form:"termination,omitempty" json:"termination,omitempty" xml:"termination,omitempty"`
 	RecordingLost *bool   `form:"recording_lost,omitempty" json:"recording_lost,omitempty" xml:"recording_lost,omitempty"`
+}
+
+// NewStartRequestBody builds the HTTP request body from the payload of the
+// "start" endpoint of the "executions" service.
+func NewStartRequestBody(p *executions.StartPayload) *StartRequestBody {
+	body := &StartRequestBody{
+		Namespace:       p.Namespace,
+		WorkspaceName:   p.WorkspaceName,
+		Executable:      p.Executable,
+		Cwd:             p.Cwd,
+		DeadlineSeconds: p.DeadlineSeconds,
+	}
+	if p.Args != nil {
+		body.Args = make([]string, len(p.Args))
+		for i, val := range p.Args {
+			body.Args[i] = val
+		}
+	} else {
+		body.Args = []string{}
+	}
+	{
+		var zero int
+		if body.DeadlineSeconds == zero {
+			body.DeadlineSeconds = 20
+		}
+	}
+	return body
 }
 
 // NewStatusExecutionStatusOK builds a "executions" service "status" endpoint
@@ -288,6 +366,68 @@ func NewGetUnauthorized(body string) executions.Unauthorized {
 
 // NewGetUnavailable builds a executions service get endpoint unavailable error.
 func NewGetUnavailable(body string) executions.Unavailable {
+	v := executions.Unavailable(body)
+
+	return v
+}
+
+// NewStartExecutionCommandOK builds a "executions" service "start" endpoint
+// result from a HTTP "OK" response.
+func NewStartExecutionCommandOK(body *StartResponseBody) *executionsviews.ExecutionCommandView {
+	v := &executionsviews.ExecutionCommandView{
+		ExecutionID:   body.ExecutionID,
+		RecordingID:   body.RecordingID,
+		Namespace:     body.Namespace,
+		WorkspaceName: body.WorkspaceName,
+		WorkspaceUID:  body.WorkspaceUID,
+		AdmissionTime: body.AdmissionTime,
+		Mode:          body.Mode,
+		Durability:    body.Durability,
+		Outcome:       body.Outcome,
+		State:         body.State,
+		ExitCode:      body.ExitCode,
+		Stdout:        body.Stdout,
+		Stderr:        body.Stderr,
+		Truncated:     body.Truncated,
+		DurationMs:    body.DurationMs,
+		Denial:        body.Denial,
+	}
+
+	return v
+}
+
+// NewStartForbidden builds a executions service start endpoint forbidden error.
+func NewStartForbidden(body string) executions.Forbidden {
+	v := executions.Forbidden(body)
+
+	return v
+}
+
+// NewStartInvalid builds a executions service start endpoint invalid error.
+func NewStartInvalid(body string) executions.Invalid {
+	v := executions.Invalid(body)
+
+	return v
+}
+
+// NewStartNotFound builds a executions service start endpoint not_found error.
+func NewStartNotFound(body string) executions.NotFound {
+	v := executions.NotFound(body)
+
+	return v
+}
+
+// NewStartUnauthorized builds a executions service start endpoint unauthorized
+// error.
+func NewStartUnauthorized(body string) executions.Unauthorized {
+	v := executions.Unauthorized(body)
+
+	return v
+}
+
+// NewStartUnavailable builds a executions service start endpoint unavailable
+// error.
+func NewStartUnavailable(body string) executions.Unavailable {
 	v := executions.Unavailable(body)
 
 	return v

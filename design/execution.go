@@ -78,6 +78,35 @@ var ExecutionRecordingManifest = Type("ExecutionRecordingManifest", func() {
 	Required("recording_id", "chunks", "plaintext_bytes", "verified")
 })
 
+var ExecutionCommandResult = ResultType("application/vnd.execution-command+json", func() {
+	Description("Synchronous outcome of one pilot command execution")
+	Attributes(func() {
+		Attribute("execution_id", String, "Execution identifier", func() { Example("exec_9f82") })
+		Attribute("recording_id", String, "Recording identifier", func() { Example("rec_9f82") })
+		Attribute("namespace", String, func() { Example("team-a") })
+		Attribute("workspace_name", String, func() { Example("vm-1") })
+		Attribute("workspace_uid", String, func() { Example("abc123") })
+		Attribute("admission_time", String, "RFC3339 timestamp", func() { Format(FormatDateTime); Example("2026-10-17T00:00:00Z") })
+		Attribute("mode", String, "Storage mode: ephemeral|external|bundled", func() { Enum("ephemeral", "external", "bundled"); Example("ephemeral") })
+		Attribute("durability", String, "none|durable", func() { Enum("none", "durable"); Example("none") })
+		Attribute("outcome", String, "Final command outcome", func() {
+			Enum("succeeded", "failed", "timed_out", "unknown")
+			Example("succeeded")
+		})
+		Attribute("state", String, "Final lifecycle state", func() {
+			Enum("succeeded", "failed", "cancelled", "timed_out", "revoked", "unknown", "recording_lost")
+			Example("succeeded")
+		})
+		Attribute("exit_code", Int, "Guest process exit code when known", func() { Example(0) })
+		Attribute("stdout", Bytes, "Standard output, truncated to the pilot output bound")
+		Attribute("stderr", Bytes, "Standard error, truncated to the pilot output bound")
+		Attribute("truncated", Boolean, "Output was truncated at the 16 KiB bound", func() { Example(false) })
+		Attribute("duration_ms", UInt64, "Guest-measured duration in milliseconds", func() { Example(120) })
+		Attribute("denial", String, "Runner denial or transport-loss note", func() { Example("transport lost; do not rerun") })
+	})
+	Required("execution_id", "recording_id", "namespace", "workspace_name", "outcome", "state")
+})
+
 var _ = Service("executions", func() {
 	Description("Scoped execution management status, history and protected recording replay")
 	Error("unauthorized", String, "A current user-bound credential is required")
@@ -135,6 +164,45 @@ var _ = Service("executions", func() {
 			Response(StatusOK)
 		})
 	})
+	Method("start", func() {
+		Description("Execute one bounded SYSTEM command in an eligible running Windows VM and return its recorded outcome synchronously")
+		Payload(func() {
+			Attribute("namespace", String, "Workspace namespace", func() {
+				Pattern("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+				MaxLength(63)
+				Example("team-a")
+			})
+			Attribute("workspace_name", String, "Workspace name", func() {
+				Pattern("^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$")
+				MaxLength(253)
+				Example("vm-1")
+			})
+			Attribute("executable", String, "Absolute path or name of the program to run", func() {
+				MinLength(1)
+				MaxLength(1024)
+				Example(`C:\Windows\System32\cmd.exe`)
+			})
+			Attribute("args", ArrayOf(String), "Arguments passed to the executable verbatim", func() {
+				MaxLength(64)
+			})
+			Attribute("cwd", String, "Optional working directory for the new process", func() {
+				MaxLength(1024)
+				Example(`C:\Temp`)
+			})
+			Attribute("deadline_seconds", Int, "Guest execution deadline in seconds", func() {
+				Minimum(1)
+				Maximum(20)
+				Default(20)
+			})
+			Required("namespace", "workspace_name", "executable", "args")
+		})
+		Result(ExecutionCommandResult)
+		HTTP(func() {
+			POST("/v1/executions/start")
+			Response(StatusOK)
+		})
+	})
+
 	Method("manifest", func() {
 		Description("Verify recording integrity and audit protected playback access")
 		Payload(func() { Attribute("execution_id", String); Required("execution_id") })
