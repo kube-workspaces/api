@@ -21,6 +21,11 @@ import (
 func fixture(t *testing.T, current CurrentIdentity) (*Service, storage.EnrollmentStore, pki.Identity) {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Second)
+	return fixtureAt(t, current, now)
+}
+
+func fixtureAt(t *testing.T, current CurrentIdentity, now time.Time) (*Service, storage.EnrollmentStore, pki.Identity) {
+	t.Helper()
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)

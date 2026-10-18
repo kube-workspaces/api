@@ -51,24 +51,69 @@ func (s *Service) Mint(ctx context.Context, identity pki.Identity, lifetime time
 	if identity.Role != pki.RoleGuest || lifetime < time.Second || lifetime > MaxBootstrapLifetime {
 		return "", ErrDenied
 	}
-	if _, err := identity.URI(); err != nil {
-		return "", ErrDenied
-	}
-	if err := s.current(ctx, identity); err != nil {
-		return "", ErrDenied
-	}
-	if err := s.store.Ready(ctx); err != nil {
-		return "", ErrUnavailable
-	}
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", ErrUnavailable
 	}
-	c := storage.EnrollmentCredential{TokenHash: digest(raw[:]), Namespace: identity.Namespace, WorkspaceName: identity.WorkspaceName, WorkspaceUID: identity.WorkspaceUID, Generation: identity.Generation, RevocationEpoch: identity.RevocationEpoch, ExpiresAt: s.now().Add(lifetime)}
-	if err := s.store.Create(ctx, c); err != nil {
-		return "", ErrUnavailable
+	token := base64.RawURLEncoding.EncodeToString(raw[:])
+	if err := s.Register(ctx, identity, token, s.now().Add(lifetime)); err != nil {
+		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(raw[:]), nil
+	return token, nil
+}
+
+// Register imports only trusted controller provisioning material, never an
+// end-user token request. Repeated imports preserve committed CSR/certificate
+// state; an existing token cannot be rebound, extended or reset to unused.
+func (s *Service) Register(ctx context.Context, i pki.Identity, token string, expiresAt time.Time) error {
+	if i.Role != pki.RoleGuest || len(token) != 43 {
+		return ErrDenied
+	}
+	if _, err := i.URI(); err != nil {
+		return ErrDenied
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil || len(raw) != 32 || base64.RawURLEncoding.EncodeToString(raw) != token {
+		return ErrDenied
+	}
+	// PostgreSQL timestamps have microsecond precision. Canonicalize before
+	// comparing imports so an API restart cannot mistake rounding for rebinding.
+	expiresAt = expiresAt.UTC().Truncate(time.Microsecond)
+	now := s.now()
+	if !now.Before(expiresAt) || expiresAt.After(now.Add(MaxBootstrapLifetime)) {
+		return ErrDenied
+	}
+	if err := s.current(ctx, i); err != nil {
+		return ErrDenied
+	}
+	if err := s.store.Ready(ctx); err != nil {
+		return ErrUnavailable
+	}
+	if !s.now().Before(expiresAt) {
+		return ErrDenied
+	}
+	c := storage.EnrollmentCredential{TokenHash: digest(raw), Namespace: i.Namespace, WorkspaceName: i.WorkspaceName, WorkspaceUID: i.WorkspaceUID, Generation: i.Generation, RevocationEpoch: i.RevocationEpoch, ExpiresAt: expiresAt}
+	err = s.store.Create(ctx, c)
+	if err == nil {
+		if !s.now().Before(expiresAt) {
+			return ErrDenied
+		}
+		return nil
+	}
+	if !errors.Is(err, storage.ErrConflict) {
+		return ErrUnavailable
+	}
+	existing, err := s.store.Get(ctx, c.TokenHash)
+	if err != nil {
+		return ErrUnavailable
+	}
+	if identity(existing) != i || !existing.ExpiresAt.Equal(expiresAt) {
+		return ErrDenied
+	}
+	if !s.now().Before(expiresAt) {
+		return ErrDenied
+	}
+	return nil
 }
 
 func identity(c storage.EnrollmentCredential) pki.Identity {
