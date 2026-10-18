@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -321,8 +322,13 @@ func (p *ConfigProvider) loadFromCluster(ctx context.Context) (*Config, error) {
 }
 
 func (p *ConfigProvider) getSecret(ctx context.Context, name, key string) (string, error) {
-	// Try kube-workspaces-system namespace first, then default
-	for _, ns := range []string{"kube-workspaces-system", "default"} {
+	// Helm creates auth Secrets in the release namespace. An explicit pod
+	// namespace must never fall through to another installation's signing key.
+	namespaces := []string{LocalAuthSystemNamespace, "default"}
+	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
+		namespaces = []string{ns}
+	}
+	for _, ns := range namespaces {
 		obj, err := p.dynamicClient.Resource(secretGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			continue

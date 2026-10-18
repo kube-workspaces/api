@@ -39,6 +39,53 @@ func signingKeyFixture(key string) *unstructured.Unstructured {
 	}}
 }
 
+func TestAuthSecretsUsePodNamespace(t *testing.T) {
+	for _, namespace := range []string{"", "kube-workspaces-system", "custom-install"} {
+		t.Run("namespace="+namespace, func(t *testing.T) {
+			t.Setenv("POD_NAMESPACE", namespace)
+			ns := namespace
+			if ns == "" {
+				ns = LocalAuthSystemNamespace
+			}
+			config := authConfigFixture(true)
+			unstructured.SetNestedMap(config.Object, map[string]interface{}{
+				"issuerURL": "https://idp.example.com", "clientID": "client",
+				"clientSecret": map[string]interface{}{"name": "oidc", "key": "key"},
+			}, "spec", "oidc")
+			key := signingKeyFixture("installation-key")
+			key.SetNamespace(ns)
+			oidc := signingKeyFixture("installation-client-secret")
+			oidc.SetName("oidc")
+			oidc.SetNamespace(ns)
+			client := fake.NewSimpleDynamicClient(runtime.NewScheme(), config, key, oidc)
+			provider := NewConfigProvider(client)
+			cfg, err := provider.GetConfig(context.Background())
+			if err != nil || string(cfg.SigningKey) != "installation-key" || cfg.ClientSecret != "installation-client-secret" {
+				t.Fatalf("namespace=%q config=%+v err=%v", namespace, cfg, err)
+			}
+			for _, action := range client.Actions() {
+				if action.GetResource() == secretGVR && action.GetNamespace() != ns {
+					t.Fatalf("looked up auth Secret in %q, want %q", action.GetNamespace(), ns)
+				}
+			}
+		})
+	}
+}
+
+func TestAuthSecretsDoNotFallBackFromExplicitPodNamespace(t *testing.T) {
+	t.Setenv("POD_NAMESPACE", "custom-install")
+	client := fake.NewSimpleDynamicClient(runtime.NewScheme(), authConfigFixture(true), signingKeyFixture("other-installation-key"))
+	provider := NewConfigProvider(client)
+	if cfg, err := provider.GetConfig(context.Background()); err == nil || cfg != nil {
+		t.Fatalf("used another installation's Secret: cfg=%+v err=%v", cfg, err)
+	}
+	for _, action := range client.Actions() {
+		if action.GetResource() == secretGVR && action.GetNamespace() != "custom-install" {
+			t.Fatalf("cross-installation Secret lookup in %q", action.GetNamespace())
+		}
+	}
+}
+
 // Exercise the HTTP boundary rather than just the config parser: a failed read
 // must never run the protected handler or advertise anonymous/admin mode.
 func TestAuthConfigurationFailureDeniesRequests(t *testing.T) {
