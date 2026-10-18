@@ -722,6 +722,9 @@ func TestAudioAckEnablesUpstreamSession(t *testing.T) {
 	if !bytes.Equal(enable, []byte{255, 1, 0, 0}) {
 		t.Fatalf("upstream enable: %x", enable)
 	}
+	// Reading the fixture's setup message does not synchronize with the
+	// broker's subsequent publication of the live audio state.
+	awaitAudio(t, b, 1)
 	live, _, _, err := b.currentAudio()
 	if err != nil || !live {
 		t.Fatalf("upstream audio not live: %v", live)
