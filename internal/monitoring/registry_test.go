@@ -87,6 +87,7 @@ func TestPrivateReportsRequireTokenEvenWithDisabledAuth(t *testing.T) {
 func TestHijackedStreamCountsOnceAndShutdownRemovesConnection(t *testing.T) {
 	r := New("api")
 	ready := make(chan struct{})
+	echoed := make(chan struct{})
 	done := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		s := r.Start(Metadata{Category: "console", Transport: "tcp", ByteLayer: "websocket_stream"})
@@ -109,6 +110,7 @@ func TestHijackedStreamCountsOnceAndShutdownRemovesConnection(t *testing.T) {
 			return
 		}
 		_, _ = c.Write(buf)
+		close(echoed)
 		_, _ = c.Read(make([]byte, 1))
 	}))
 	defer server.Close()
@@ -124,6 +126,9 @@ func TestHijackedStreamCountsOnceAndShutdownRemovesConnection(t *testing.T) {
 	_, _ = io.ReadFull(c, b)
 	_, _ = c.Write([]byte("test"))
 	_, _ = io.ReadFull(c, make([]byte, 4))
+	// Receiving TCP bytes does not synchronize with the wrapper's accounting,
+	// which runs after the underlying Write returns.
+	<-echoed
 	snap := r.Snapshot()
 	if len(snap.Connections) != 1 || snap.Connections[0].ToWorkspace != 4 || snap.Connections[0].ToClient != 4 {
 		t.Fatalf("stream or handshake double-counted: %+v", snap)
