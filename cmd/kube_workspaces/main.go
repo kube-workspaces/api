@@ -27,6 +27,7 @@ import (
 	"github.com/kube-workspaces/api/internal/auth"
 	dispstore "github.com/kube-workspaces/api/internal/display"
 	"github.com/kube-workspaces/api/internal/execution"
+	"github.com/kube-workspaces/api/internal/execution/management"
 	executionstorage "github.com/kube-workspaces/api/internal/execution/storage"
 	"github.com/kube-workspaces/api/internal/k8s"
 	"github.com/kube-workspaces/api/internal/platform"
@@ -102,6 +103,11 @@ func main() {
 		log.Fatal(ctx, err)
 	}
 	log.Print(ctx, log.KV{K: "execution-storage-mode", V: string(executionStorage.Mode)})
+	managementConfig, err := management.ConfigFromEnv()
+	if err != nil {
+		log.Fatal(ctx, err)
+	}
+	log.Print(ctx, log.KV{K: "management-issuer-enabled", V: managementConfig.Enabled})
 
 	// Initialize the services.
 	wsClient, err := k8s.NewWorkspaceClient()
@@ -162,6 +168,7 @@ func main() {
 	// membership/control) and the shared-display WebSocket route so both see
 	// the same one-controller-plus-observers state per workspace.
 	displaySessions := dispstore.NewSessions()
+	var managementIssuer *management.Runtime
 	{
 		workspacesSvc = kubeworkspaces.NewWorkspaces(wsClient, imageClient, coreClient, authProvider, podDefaultClient)
 		volumesSvc = kubeworkspaces.NewVolumes(authProvider)
@@ -197,7 +204,20 @@ func main() {
 			}
 		}
 		execSvc := execution.NewService(execStore)
-		executionsSvc = kubeworkspaces.NewExecutions(execSvc, platform.NewConfigProvider(dynClient))
+		startupCtx, startupCancel := context.WithTimeout(ctx, 30*time.Second)
+		managementIssuer, err = management.Open(startupCtx, managementConfig, executionStorage, execStore, dynClient, authProvider)
+		startupCancel()
+		if err != nil {
+			log.Fatal(ctx, fmt.Errorf("configured management issuer could not be initialized"))
+		}
+		if managementIssuer != nil {
+			defer managementIssuer.Close()
+		}
+		var issuerReady func(context.Context) error
+		if managementIssuer != nil {
+			issuerReady = managementIssuer.Ready
+		}
+		executionsSvc = kubeworkspaces.NewExecutions(execSvc, platform.NewConfigProvider(dynClient), issuerReady)
 	}
 
 	// Wrap the services in endpoints that can be invoked from other services
@@ -256,6 +276,18 @@ func main() {
 
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
+	if managementIssuer != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := managementIssuer.Run(ctx); err != nil && ctx.Err() == nil {
+				select {
+				case errc <- fmt.Errorf("management bootstrap worker stopped"):
+				case <-ctx.Done():
+				}
+			}
+		}()
+	}
 
 	// Start the servers and send errors (if any) to the error channel.
 	switch *hostF {

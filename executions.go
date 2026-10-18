@@ -31,14 +31,19 @@ func managementError(name, message string) error {
 
 // executions service implementation.
 type executionssrvc struct {
-	execSvc *execution.Service
-	plat    *platform.ConfigProvider
+	execSvc     *execution.Service
+	plat        *platform.ConfigProvider
+	issuerReady func(context.Context) error
 }
 
 // NewExecutions returns the executions service implementation.
-func NewExecutions(execSvc *execution.Service, plat *platform.ConfigProvider) executions.Service {
+func NewExecutions(execSvc *execution.Service, plat *platform.ConfigProvider, issuerReadiness ...func(context.Context) error) executions.Service {
 	execSvc.WithReplayAuthorizer(managementReplayAuthorizer{})
-	return &executionssrvc{execSvc: execSvc, plat: plat}
+	s := &executionssrvc{execSvc: execSvc, plat: plat}
+	if len(issuerReadiness) > 0 {
+		s.issuerReady = issuerReadiness[0]
+	}
+	return s
 }
 
 type managementReplayAuthorizer struct{}
@@ -115,6 +120,7 @@ func (s *executionssrvc) Status(ctx context.Context) (*executions.ExecutionStatu
 		StorageMode:      mode,
 		Durable:          durable,
 		StorageAvailable: available,
+		IssuerReady:      policy.Enabled && available && s.issuerReady != nil && s.issuerReady(ctx) == nil,
 	}, nil
 }
 

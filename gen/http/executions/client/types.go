@@ -26,6 +26,9 @@ type StatusResponseBody struct {
 	Durable *bool `form:"durable,omitempty" json:"durable,omitempty" xml:"durable,omitempty"`
 	// Store is Ready and can admit work
 	StorageAvailable *bool `form:"storage_available,omitempty" json:"storage_available,omitempty" xml:"storage_available,omitempty"`
+	// Opt-in management issuer prerequisites and initial bootstrap sync are ready;
+	// not a guest execution capability
+	IssuerReady *bool `form:"issuer_ready,omitempty" json:"issuer_ready,omitempty" xml:"issuer_ready,omitempty"`
 }
 
 // GetResponseBody is the type of the "executions" service "get" endpoint HTTP
@@ -126,6 +129,7 @@ func NewStatusExecutionStatusOK(body *StatusResponseBody) *executionsviews.Execu
 		StorageMode:      body.StorageMode,
 		Durable:          body.Durable,
 		StorageAvailable: body.StorageAvailable,
+		IssuerReady:      body.IssuerReady,
 	}
 
 	return v

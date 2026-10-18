@@ -126,6 +126,23 @@ func identity(c storage.EnrollmentCredential) pki.Identity {
 // workspace identity; a reset while issuance commits is checked again before
 // returning, and subsequent TLS authorization independently fences stale leaves.
 func (s *Service) Enroll(ctx context.Context, token string, csrDER []byte) ([]byte, error) {
+	return s.enroll(ctx, token, csrDER, nil)
+}
+
+// EnrollBound prevents a token for one machine from being redeemed through a
+// transport request naming another scope/incarnation. Expected identity must
+// come from current authoritative resolution, never the caller's certificate.
+func (s *Service) EnrollBound(ctx context.Context, expected pki.Identity, token string, csrDER []byte) ([]byte, error) {
+	if expected.Role != pki.RoleGuest {
+		return nil, ErrDenied
+	}
+	if _, err := expected.URI(); err != nil {
+		return nil, ErrDenied
+	}
+	return s.enroll(ctx, token, csrDER, &expected)
+}
+
+func (s *Service) enroll(ctx context.Context, token string, csrDER []byte, expected *pki.Identity) ([]byte, error) {
 	if len(token) != 43 || len(csrDER) == 0 || len(csrDER) > 16*1024 {
 		return nil, ErrDenied
 	}
@@ -147,6 +164,9 @@ func (s *Service) Enroll(ctx context.Context, token string, csrDER []byte) ([]by
 		return nil, ErrDenied
 	}
 	i := identity(c)
+	if expected != nil && i != *expected {
+		return nil, ErrDenied
+	}
 	if err := s.current(ctx, i); err != nil {
 		return nil, ErrDenied
 	}

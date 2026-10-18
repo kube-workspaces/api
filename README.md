@@ -289,7 +289,7 @@ each HTTP request; token role claims do not grant management authority.
 
 | Route | Permission / behavior |
 |---|---|
-| `GET /v1/executions/status` | Authenticated user-bound identity; policy and storage status, not a guest-execution capability promise. |
+| `GET /v1/executions/status` | Authenticated user-bound identity; policy/storage status and opt-in `issuer_ready`, not a guest-execution capability promise. |
 | `GET /v1/executions?namespace=team&workspace_name=vm` | Exact workspace scope and `workspace.execution.manage`; optional actor/since/limit filters only narrow that scope. |
 | `GET /v1/executions/{id}` | `workspace.execution.manage` on the recorded scope; inaccessible IDs return 404. |
 | `GET /v1/executions/{id}/recording` | Independent `workspace.execution.recordings.read`; verify the authenticated manifest and full chunk chain, then audit access before returning recording metadata. |
@@ -308,6 +308,12 @@ Every admission reserves both execution and recording IDs atomically before
 opening its sink. Recording-write failures latch, cannot be finalized as success,
 and preserve available evidence on abort. There is no guest process-start route
 until authenticated guest transport and runners are implemented.
+
+The optional management issuer now supports protected mounted CA credentials,
+shared-ledger initialization and a metadata-only protected-bootstrap import
+worker. Its configuration, trust rotation and readiness contract are documented
+in [`internal/execution/management/README.md`](internal/execution/management/README.md).
+It remains disabled by default and exposes no public enrollment/start route.
 
 Disposable PostgreSQL/S3 integration checks are opt-in:
 

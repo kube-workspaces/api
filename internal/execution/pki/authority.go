@@ -26,6 +26,9 @@ type Authority struct {
 	signer      crypto.Signer
 }
 
+func (a *Authority) String() string   { return "management CA authority (private signer redacted)" }
+func (a *Authority) GoString() string { return a.String() }
+
 func NewAuthority(caDER []byte, signer crypto.Signer) (*Authority, error) {
 	cert, err := x509.ParseCertificate(caDER)
 	if err != nil || signer == nil || !cert.IsCA || !cert.BasicConstraintsValid || cert.KeyUsage&x509.KeyUsageCertSign == 0 {

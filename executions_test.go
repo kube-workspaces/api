@@ -3,6 +3,8 @@ package kubeworkspaces
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +15,7 @@ import (
 	"github.com/kube-workspaces/api/internal/auth"
 	"github.com/kube-workspaces/api/internal/execution"
 	"github.com/kube-workspaces/api/internal/execution/storage"
+	"github.com/kube-workspaces/api/internal/platform"
 	goahttp "goa.design/goa/v3/http"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -51,7 +54,8 @@ func TestExecutionHTTPAuthorizationAndReplay(t *testing.T) {
 		"data":     map[string]interface{}{"key": base64.StdEncoding.EncodeToString([]byte(key))},
 	}}
 	users := schema.GroupVersionResource{Group: "kubeworkspaces.io", Version: "v1alpha1", Resource: "users"}
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{users: "UserList"}, user, cfg, secret)
+	policy := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "kubeworkspaces.io/v1alpha1", "kind": "PlatformConfig", "metadata": map[string]interface{}{"name": "default"}, "spec": map[string]interface{}{"vmExecution": map[string]interface{}{"enabled": true, "allowElevated": false}}}}
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{users: "UserList"}, user, cfg, secret, policy)
 	provider := auth.NewConfigProvider(client)
 	store, err := storage.Open(ctx, storage.Options{Mode: "ephemeral", EphemeralDir: t.TempDir(), EphemeralMaxBytes: 1 << 20})
 	if err != nil {
@@ -74,7 +78,8 @@ func TestExecutionHTTPAuthorizationAndReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	svc := NewExecutions(execution.NewService(store), nil)
+	issuerErr := errors.New("issuer unavailable")
+	svc := NewExecutions(execution.NewService(store), platform.NewConfigProvider(client), func(context.Context) error { return issuerErr })
 	mux := goahttp.NewMuxer()
 	server := svr.New(gen.NewEndpoints(svc), mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, nil, nil)
 	svr.Mount(mux, server)
@@ -98,6 +103,26 @@ func TestExecutionHTTPAuthorizationAndReplay(t *testing.T) {
 		}
 	}
 	request("/v1/executions/vm", token, 200)
+	checkStatus := func(wantIssuer bool) {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodGet, "/v1/executions/status", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		var body map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 200 || body["issuer_ready"] != wantIssuer {
+			t.Fatalf("issuer readiness response: %d %s", w.Code, w.Body.String())
+		}
+	}
+	checkStatus(false)
+	issuerErr = nil
+	checkStatus(true)
+	issuerErr = errors.New("issuer unavailable again")
+	checkStatus(false)
+	request("/v1/executions/status", legacy, 401)
 	request("/v1/executions?namespace=team&workspace_name=vm", token, 200)
 	request("/v1/executions", token, 403)
 	request("/v1/executions/other", token, 404)

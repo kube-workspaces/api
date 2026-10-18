@@ -1,8 +1,9 @@
 # CSR-bound bootstrap enrollment ledger
 
 This is an internal enrollment service, production identity resolver, protected
-bootstrap importer and storage contract. No HTTP enrollment route, startup CA/
-import worker, guest token delivery or guest key persistence is enabled yet.
+bootstrap importer and storage contract. The opt-in `management` runtime now owns
+startup CA loading and the protected import worker. No HTTP enrollment route,
+guest token delivery or guest key persistence is enabled yet.
 
 ## Current identity and protected controller bootstrap
 

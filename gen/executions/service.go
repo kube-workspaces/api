@@ -114,6 +114,9 @@ type ExecutionStatus struct {
 	Durable bool
 	// Store is Ready and can admit work
 	StorageAvailable bool
+	// Opt-in management issuer prerequisites and initial bootstrap sync are ready;
+	// not a guest execution capability
+	IssuerReady bool
 }
 
 // GetPayload is the payload type of the executions service get method.
@@ -287,6 +290,9 @@ func newExecutionStatus(vres *executionsviews.ExecutionStatusView) *ExecutionSta
 	if vres.StorageAvailable != nil {
 		res.StorageAvailable = *vres.StorageAvailable
 	}
+	if vres.IssuerReady != nil {
+		res.IssuerReady = *vres.IssuerReady
+	}
 	return res
 }
 
@@ -299,6 +305,7 @@ func newExecutionStatusView(res *ExecutionStatus) *executionsviews.ExecutionStat
 		StorageMode:      &res.StorageMode,
 		Durable:          &res.Durable,
 		StorageAvailable: &res.StorageAvailable,
+		IssuerReady:      &res.IssuerReady,
 	}
 	return vres
 }

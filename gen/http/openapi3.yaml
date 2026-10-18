@@ -577,6 +577,7 @@ paths:
                                 allow_elevated: false
                                 durable: false
                                 enabled: false
+                                issuer_ready: false
                                 storage_available: false
                                 storage_mode: disabled
                 "400":
@@ -4624,6 +4625,10 @@ components:
                     type: boolean
                     description: Whether VM execution is enabled by policy
                     example: false
+                issuer_ready:
+                    type: boolean
+                    description: Opt-in management issuer prerequisites and initial bootstrap sync are ready; not a guest execution capability
+                    example: false
                 storage_available:
                     type: boolean
                     description: Store is Ready and can admit work
@@ -4642,6 +4647,7 @@ components:
                 allow_elevated: false
                 durable: false
                 enabled: false
+                issuer_ready: false
                 storage_available: false
                 storage_mode: disabled
             required:
@@ -4650,6 +4656,7 @@ components:
                 - storage_mode
                 - durable
                 - storage_available
+                - issuer_ready
         Image:
             type: object
             properties:

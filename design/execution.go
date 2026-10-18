@@ -58,8 +58,9 @@ var ExecutionStatusResult = ResultType("application/vnd.execution-status+json", 
 		Attribute("storage_mode", String, "Storage mode: disabled|ephemeral|external|bundled", func() { Enum("disabled", "ephemeral", "external", "bundled"); Example("disabled") })
 		Attribute("durable", Boolean, "Metadata and recordings are durable (not ephemeral)", func() { Example(false) })
 		Attribute("storage_available", Boolean, "Store is Ready and can admit work", func() { Example(false) })
+		Attribute("issuer_ready", Boolean, "Opt-in management issuer prerequisites and initial bootstrap sync are ready; not a guest execution capability", func() { Example(false) })
 	})
-	Required("enabled", "allow_elevated", "storage_mode", "durable", "storage_available")
+	Required("enabled", "allow_elevated", "storage_mode", "durable", "storage_available", "issuer_ready")
 })
 
 var ExecutionRecordingChunk = Type("ExecutionRecordingChunk", func() {

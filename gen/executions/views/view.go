@@ -39,6 +39,9 @@ type ExecutionStatusView struct {
 	Durable *bool
 	// Store is Ready and can admit work
 	StorageAvailable *bool
+	// Opt-in management issuer prerequisites and initial bootstrap sync are ready;
+	// not a guest execution capability
+	IssuerReady *bool
 }
 
 // ExecutionRecordView is a type that runs validations on a projected type.
@@ -86,6 +89,7 @@ var (
 			"storage_mode",
 			"durable",
 			"storage_available",
+			"issuer_ready",
 		},
 	}
 	// ExecutionRecordMap is a map indexing the attribute names of ExecutionRecord
@@ -159,6 +163,9 @@ func ValidateExecutionStatusView(result *ExecutionStatusView) (err error) {
 	}
 	if result.StorageAvailable == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("storage_available", "result"))
+	}
+	if result.IssuerReady == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("issuer_ready", "result"))
 	}
 	if result.StorageMode != nil {
 		if !(*result.StorageMode == "disabled" || *result.StorageMode == "ephemeral" || *result.StorageMode == "external" || *result.StorageMode == "bundled") {
