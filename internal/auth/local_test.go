@@ -1,13 +1,123 @@
 package auth
 
 import (
+	"context"
+	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/dynamic/fake"
+	ktesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/util/retry"
 )
+
+// The dynamic fake does not enforce resourceVersion, so this reactor models
+// Kubernetes status conflicts, including a concurrent successful login.
+func TestLocalLoginRecordsStatusWithResourceVersionConflicts(t *testing.T) {
+	for _, mode := range []string{"no conflict", "concurrent login", "persistent conflict"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			user := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "kubeworkspaces.io/v1alpha1", "kind": "User",
+				"metadata": map[string]interface{}{"name": "admin-at-local", "uid": "original-user", "resourceVersion": "1"},
+				"spec": map[string]interface{}{
+					"email": "admin@local", "role": "admin",
+					"localAuth": map[string]interface{}{"enabled": true, "passwordSecretRef": map[string]interface{}{"name": "password"}},
+				},
+				"status": map[string]interface{}{"loginCount": int64(4), "failedLoginAttempts": int64(2), "lockedUntil": time.Now().Add(-time.Hour).Format(time.RFC3339), "ready": true},
+			}}
+			hash, err := bcrypt.GenerateFromPassword([]byte("test-password"), bcrypt.MinCost)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "v1", "kind": "Secret",
+				"metadata": map[string]interface{}{"name": "password", "namespace": LocalAuthSystemNamespace},
+				"data":     map[string]interface{}{"passwordHash": base64.StdEncoding.EncodeToString(hash)},
+			}}
+			client := fake.NewSimpleDynamicClient(runtime.NewScheme(), user, secret)
+			writes, conflicts := 0, 0
+			client.PrependReactor("update", "users", func(action ktesting.Action) (bool, runtime.Object, error) {
+				if action.GetSubresource() != "status" {
+					t.Fatalf("unexpected User update outside status")
+				}
+				writes++
+				obj := action.(ktesting.UpdateAction).GetObject().(*unstructured.Unstructured)
+				stored, err := client.Tracker().Get(userGVR, "", user.GetName())
+				if err != nil {
+					t.Fatal(err)
+				}
+				current := stored.(*unstructured.Unstructured).DeepCopy()
+				if mode == "concurrent login" && writes == 1 {
+					current.SetResourceVersion("2")
+					unstructured.SetNestedField(current.Object, int64(8), "status", "loginCount")
+					unstructured.SetNestedField(current.Object, "updated-by-controller", "status", "message")
+					if err := client.Tracker().Update(userGVR, current, ""); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if mode == "persistent conflict" || obj.GetResourceVersion() != current.GetResourceVersion() {
+					conflicts++
+					return true, nil, k8serrors.NewConflict(userGVR.GroupResource(), user.GetName(), errors.New("stale resource version"))
+				}
+				next := obj.DeepCopy()
+				rv, _ := strconv.Atoi(current.GetResourceVersion())
+				next.SetResourceVersion(strconv.Itoa(rv + 1))
+				return true, next, client.Tracker().Update(userGVR, next, "")
+			})
+			provider := NewConfigProvider(client)
+			provider.config = &Config{Enabled: true, LocalAuthEnabled: true, SigningKey: []byte(strings.Repeat("k", 32)), TokenExpiry: time.Hour}
+			provider.lastFetch = time.Now()
+			handler := NewLocalAuthHandler(provider)
+			rec := httptest.NewRecorder()
+			handler.HandleLocalLogin(rec, httptest.NewRequest(http.MethodPost, "/auth/login/local", strings.NewReader(`{"email":"admin@local","password":"test-password"}`)))
+			if rec.Code != http.StatusOK || len(rec.Result().Cookies()) != 1 {
+				t.Fatalf("login = %d %s; expected session cookie", rec.Code, rec.Body.String())
+			}
+			current, err := provider.GetUser(ctx, user.GetName())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "persistent conflict" {
+				if writes != retry.DefaultRetry.Steps {
+					t.Fatalf("writes = %d, want bounded retries %d", writes, retry.DefaultRetry.Steps)
+				}
+				return
+			}
+			wantCount, wantWrites := int64(5), 1
+			if mode == "concurrent login" {
+				wantCount, wantWrites = 9, 2
+				message, _, _ := unstructured.NestedString(current.Object, "status", "message")
+				if message != "updated-by-controller" || conflicts != 1 {
+					t.Fatalf("lost concurrent update or did not retry: message=%q conflicts=%d", message, conflicts)
+				}
+			}
+			count, _, _ := unstructured.NestedInt64(current.Object, "status", "loginCount")
+			failed, _, _ := unstructured.NestedInt64(current.Object, "status", "failedLoginAttempts")
+			lastLogin, _, _ := unstructured.NestedString(current.Object, "status", "lastLogin")
+			_, locked, _ := unstructured.NestedString(current.Object, "status", "lockedUntil")
+			ready, _, _ := unstructured.NestedBool(current.Object, "status", "ready")
+			if count != wantCount || failed != 0 || locked || !ready || writes != wantWrites {
+				t.Fatalf("unexpected login status: %+v (writes=%d, want=%d)", current.Object["status"], writes, wantWrites)
+			}
+			if _, err := time.Parse(time.RFC3339, lastLogin); err != nil {
+				t.Fatalf("invalid lastLogin %q: %v", lastLogin, err)
+			}
+			if user.GetResourceVersion() != "1" {
+				t.Fatal("mutated the authenticated User snapshot")
+			}
+		})
+	}
+}
 
 func TestGeneratePassword(t *testing.T) {
 	p1, err := GeneratePassword()

@@ -15,6 +15,7 @@ import (
 	"goa.design/clue/log"
 	"golang.org/x/crypto/bcrypt"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/util/retry"
 )
 
 const (
@@ -177,9 +178,6 @@ func (h *LocalAuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Reque
 		writeJSONError(w, http.StatusUnauthorized, "invalid_credentials", "invalid email or password")
 		return
 	}
-
-	// Success: reset failure tracking.
-	h.resetLoginFailures(ctx, userCR)
 
 	email, _, _ := unstructured.NestedString(userCR.Object, "spec", "email")
 	displayName, _, _ := unstructured.NestedString(userCR.Object, "spec", "displayName")
@@ -451,19 +449,29 @@ func (h *LocalAuthHandler) recordFailedLogin(ctx context.Context, userCR *unstru
 	}
 }
 
-func (h *LocalAuthHandler) resetLoginFailures(ctx context.Context, userCR *unstructured.Unstructured) {
-	unstructured.SetNestedField(userCR.Object, int64(0), "status", "failedLoginAttempts")
-	unstructured.RemoveNestedField(userCR.Object, "status", "lockedUntil")
-	if _, err := h.provider.UpdateUserStatus(ctx, userCR); err != nil {
-		log.Printf(ctx, "auth: failed to reset login failures: %v", err)
-	}
-}
-
 func (h *LocalAuthHandler) updateLastLogin(ctx context.Context, userCR *unstructured.Unstructured) {
-	loginCount, _, _ := unstructured.NestedInt64(userCR.Object, "status", "loginCount")
-	unstructured.SetNestedField(userCR.Object, loginCount+1, "status", "loginCount")
-	unstructured.SetNestedField(userCR.Object, time.Now().Format(time.RFC3339), "status", "lastLogin")
-	if _, err := h.provider.UpdateUserStatus(ctx, userCR); err != nil {
+	// Reset failures and record the successful login together. Separate writes
+	// using userCR's original resourceVersion conflict with each other, even
+	// without concurrent controller activity.
+	lastLogin := time.Now().Format(time.RFC3339)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := h.provider.GetUser(ctx, userCR.GetName())
+		if err != nil {
+			return err
+		}
+		// Do not apply login metadata to a replacement account with the same name.
+		if current.GetUID() != userCR.GetUID() {
+			return fmt.Errorf("user was replaced during login")
+		}
+		loginCount, _, _ := unstructured.NestedInt64(current.Object, "status", "loginCount")
+		unstructured.SetNestedField(current.Object, loginCount+1, "status", "loginCount")
+		unstructured.SetNestedField(current.Object, lastLogin, "status", "lastLogin")
+		unstructured.SetNestedField(current.Object, int64(0), "status", "failedLoginAttempts")
+		unstructured.RemoveNestedField(current.Object, "status", "lockedUntil")
+		_, err = h.provider.UpdateUserStatus(ctx, current)
+		return err
+	})
+	if err != nil {
 		log.Printf(ctx, "auth: failed to update last login: %v", err)
 	}
 }
