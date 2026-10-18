@@ -2,8 +2,12 @@
 
 This package is an API-side issuer and reference verifier. It is **not yet wired
 to a guest listener or a public execution-start route**. Enrollment, certificate
-issuance, mTLS peer validation, guest-side implementation, live policy/epoch
+issuance, mTLS peer validation, guest listener integration, live policy/epoch
 updates and runner integration remain separate prerequisites.
+
+The guest repository's independent Rust `kw-management` verifier consumes the
+byte-identical `testdata/management-v1.json` interoperability vector. Both sides
+test the synthetic public-key signature; it is never an installation trust key.
 
 ## Envelope
 
