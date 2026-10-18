@@ -36,6 +36,9 @@ func VerifiedAPIFingerprint(state tls.ConnectionState) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// CertificateIdentity checks the management leaf shape and extracts identity.
+// It does not verify trust or time; peers must first pass normal TLS chain
+// verification and the current-authorization callback.
 func CertificateIdentity(cert *x509.Certificate) (Identity, error) {
 	if cert == nil || cert.IsCA || len(cert.URIs) != 1 || len(cert.ExtKeyUsage) != 1 || len(cert.UnknownExtKeyUsage) != 0 || cert.KeyUsage != x509.KeyUsageDigitalSignature || len(cert.IPAddresses) != 0 || len(cert.EmailAddresses) != 0 {
 		return Identity{}, ErrCertificate

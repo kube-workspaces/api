@@ -27,6 +27,10 @@ func TestEmbeddedMigrationsAreDiscoverable(t *testing.T) {
 	if err != nil || next != 2 {
 		t.Fatalf("second migration = %d, %v", next, err)
 	}
+	third, err := src.Next(next)
+	if err != nil || third != 3 {
+		t.Fatalf("enrollment migration = %d, %v", third, err)
+	}
 	r, _, err := src.ReadUp(v)
 	if err != nil {
 		t.Fatal(err)
