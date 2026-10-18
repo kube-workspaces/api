@@ -48,10 +48,13 @@ const (
 	StateRecordingLost State = "recording_lost"
 )
 
-// Terminal reports whether the state is a final outcome.
+// Terminal reports whether the state is a final outcome. StateUnknown is
+// terminal: the synchronous pilot transports have no late-outcome channel, so
+// a lost guest transport is a permanently uncertain final result that must
+// never be silently rerun or overwritten.
 func (s State) Terminal() bool {
 	switch s {
-	case StateSucceeded, StateFailed, StateCancelled, StateTimedOut, StateRevoked, StateRecordingLost:
+	case StateSucceeded, StateFailed, StateCancelled, StateTimedOut, StateRevoked, StateRecordingLost, StateUnknown:
 		return true
 	default:
 		return false
@@ -67,11 +70,9 @@ func validTransition(from, to State) bool {
 	}
 	switch from {
 	case "", StateAdmitted:
-		return to == StateRunning || to == StateUnknown
+		return to == StateRunning
 	case StateRunning:
-		return to == StateRunning || to == StateUnknown
-	case StateUnknown:
-		return to == StateUnknown
+		return to == StateRunning
 	}
 	return false
 }

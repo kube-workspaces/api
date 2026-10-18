@@ -130,6 +130,15 @@ type Signer struct {
 	keyID   string
 }
 
+// PublicKey returns a copy of the verification key guests pin. It never exposes
+// private material.
+func (s *Signer) PublicKey() ed25519.PublicKey {
+	return append(ed25519.PublicKey(nil), s.private.Public().(ed25519.PublicKey)...)
+}
+
+// KeyID is the pinned-key fingerprint guests use to select this key.
+func (s *Signer) KeyID() string { return s.keyID }
+
 func NewSigner(private ed25519.PrivateKey) (*Signer, error) {
 	if len(private) != ed25519.PrivateKeySize {
 		return nil, ErrInvalid

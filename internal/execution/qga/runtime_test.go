@@ -1,0 +1,282 @@
+package qga
+
+import (
+	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/kube-workspaces/api/internal/execution/grants"
+)
+
+type stubResolver struct {
+	target  Target
+	err     error
+	called  [2]string
+	invoked bool
+}
+
+func (s *stubResolver) Resolve(_ context.Context, namespace, name string) (Target, error) {
+	s.called = [2]string{namespace, name}
+	s.invoked = true
+	return s.target, s.err
+}
+
+func testRuntime(t *testing.T, fake *fakeExec) (*Runtime, *stubResolver, *grants.Signer) {
+	t.Helper()
+	signer, err := grants.NewSigner(ed25519.NewKeyFromSeed(make([]byte, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := &stubResolver{target: testTarget()}
+	runtime, err := NewRuntimeWithExec(signer, resolver, fake.run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.now = func() time.Time { return time.Unix(2_000_000_000, 0) }
+	return runtime, resolver, signer
+}
+
+// capturedFile rebuilds one staged file from the recorded write chunks.
+func (f *fakeExec) capturedFile(path string) []byte {
+	var content []byte
+	for _, call := range f.calls {
+		var request struct {
+			Execute   string          `json:"execute"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		_ = json.Unmarshal(call.stdin, &request)
+		if request.Execute != "guest-file-write" {
+			continue
+		}
+		var args struct {
+			Handle  int64  `json:"handle"`
+			Offset  int64  `json:"offset"`
+			DataB64 string `json:"data-b64"`
+		}
+		_ = json.Unmarshal(request.Arguments, &args)
+		if f.handles[args.Handle] != path {
+			continue
+		}
+		data, err := base64.StdEncoding.DecodeString(args.DataB64)
+		if err != nil {
+			return nil
+		}
+		if int64(len(content)) != args.Offset {
+			return nil
+		}
+		content = append(content, data...)
+	}
+	return content
+}
+
+func TestExecuteIssuesVerifiableGrantOverQGA(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	runtime, resolver, signer := testRuntime(t, fake)
+	// The start endpoint resolves before executing; mirror that sequence.
+	target, err := runtime.Resolve(context.Background(), "team", "vm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resolver.invoked || resolver.called != [2]string{"team", "vm"} {
+		t.Fatalf("resolver was not consulted: %+v", resolver.called)
+	}
+	cwd := `C:\Temp`
+	result, err := runtime.Execute(context.Background(), target, Command{
+		ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1",
+		Executable: `C:\Windows\System32\cmd.exe`, Args: []string{"/c", "echo hi"},
+		Cwd: &cwd, DeadlineSeconds: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != "completed" || string(result.Stdout) != "hello\n" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	keys := fake.capturedFile(keysFilePath)
+	expectedKeys, err := publicKeyFileJSON(signer.PublicKey())
+	if err != nil || string(keys) != string(expectedKeys) {
+		t.Fatalf("staged keys file drifted:\ngot  %s\nwant %s (%v)", keys, expectedKeys, err)
+	}
+	envelope := fake.capturedFile(dataDirPath + `\qga-request-exec_1.json`)
+	var framed struct {
+		Grant   string          `json:"grant"`
+		Request json.RawMessage `json:"request"`
+	}
+	if err := json.Unmarshal(envelope, &framed); err != nil || framed.Grant == "" || len(framed.Request) == 0 {
+		t.Fatalf("staged envelope is malformed: %v", err)
+	}
+	var request qgaRequest
+	if err := json.Unmarshal(framed.Request, &request); err != nil {
+		t.Fatal(err)
+	}
+	// The guest relies on the exact field framing pinned by the Rust contract.
+	raw := string(framed.Request)
+	order := []string{`"version":`, `"challenge":`, `"transport_target_sha256":`, `"actor_uid":`, `"namespace":`, `"workspace_name":`, `"workspace_uid":`, `"provisioning_generation":`, `"execution_id":`, `"recording_id":`, `"operation":`, `"os_identity":`, `"elevated":`, `"policy_version":`, `"revocation_epoch":`, `"executable":`, `"args":`, `"cwd":`, `"deadline_seconds":`}
+	previous := -1
+	for _, field := range order {
+		index := strings.Index(raw, field)
+		if index < 0 || index <= previous {
+			t.Fatalf("request field order drifted at %s:\n%s", field, raw)
+		}
+		previous = index
+	}
+	if !strings.Contains(raw, `"cwd":"C:\\Temp"`) || request.Cwd == nil || *request.Cwd != cwd {
+		t.Fatalf("an explicit cwd must round-trip: %s", raw)
+	}
+	if request.Version != 1 || request.Operation != "command" || request.OSIdentity != "SYSTEM" || !request.Elevated ||
+		request.PolicyVersion != policyVersion || request.DeadlineSeconds != 20 || request.ActorUID != "user-1" ||
+		request.Namespace != "team" || request.WorkspaceName != "vm" || request.WorkspaceUID != "workspace-uid" ||
+		request.ProvisioningGeneration != "vm-uid" || request.ExecutionID != "exec_1" || request.RecordingID != "rec_1" ||
+		request.Executable != `C:\Windows\System32\cmd.exe` || len(request.Args) != 2 {
+		t.Fatalf("unexpected request: %+v", request)
+	}
+	// Reproduce the guest's expected binding from the digest-authenticated
+	// request alone and consume the grant exactly once.
+	expected := grants.BindingQGA{
+		ActorUID:               request.ActorUID,
+		Namespace:              request.Namespace,
+		WorkspaceName:          request.WorkspaceName,
+		WorkspaceUID:           request.WorkspaceUID,
+		ProvisioningGeneration: request.ProvisioningGeneration,
+		ExecutionID:            request.ExecutionID,
+		RecordingID:            request.RecordingID,
+		Operation:              request.Operation,
+		OSIdentity:             request.OSIdentity,
+		Elevated:               request.Elevated,
+		PolicyVersion:          request.PolicyVersion,
+		RevocationEpoch:        request.RevocationEpoch,
+		Challenge:              request.Challenge,
+		Transport:              grants.TransportQGAPodExec,
+		TransportTargetSHA256:  request.TransportTargetSHA256,
+		RequestSHA256:          grants.Digest(framed.Request),
+	}
+	if expected.TransportTargetSHA256 != grants.Digest([]byte("team/vm-uid/"+testPodUID)) {
+		t.Fatalf("transport target digest is wrong: %s", expected.TransportTargetSHA256)
+	}
+	public := signer.PublicKey()
+	verifier, err := grants.NewVerifier(map[string]ed25519.PublicKey{grants.KeyID(public): public}, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(2_000_000_000, 0)
+	claims, err := verifier.ConsumeQGA(framed.Grant, expected, now)
+	if err != nil {
+		t.Fatalf("grant was not verifiable: %v", err)
+	}
+	if claims.Binding.ExecutionID != "exec_1" || claims.ExpiresAt-claims.IssuedAt != 60 {
+		t.Fatalf("unexpected claims: %+v", claims)
+	}
+	if _, err := verifier.ConsumeQGA(framed.Grant, expected, now); !errors.Is(err, grants.ErrReplay) {
+		t.Fatalf("expected single-use enforcement, got %v", err)
+	}
+}
+
+func TestExecuteSerializesNilCwdAsNullAndEmptyArgs(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	runtime, _, _ := testRuntime(t, fake)
+	if _, err := runtime.Execute(context.Background(), testTarget(), Command{
+		ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1",
+		Executable: "whoami", Args: nil, Cwd: nil, DeadlineSeconds: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := string(fake.capturedFile(dataDirPath + `\qga-request-exec_1.json`))
+	if !strings.Contains(raw, `"cwd":null`) || !strings.Contains(raw, `"args":[]`) {
+		t.Fatalf("nil cwd/args framing drifted: %s", raw)
+	}
+}
+
+func TestExecuteRejectsUnstageableCommands(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	runtime, _, _ := testRuntime(t, fake)
+	huge := strings.Repeat("a", MaxArgBytes+1)
+	cwd := " x"
+	for name, command := range map[string]Command{
+		"missing-actor":       {ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "whoami", DeadlineSeconds: 20},
+		"missing-execution":   {ActorUID: "user-1", RecordingID: "rec_1", Executable: "whoami", DeadlineSeconds: 20},
+		"hostile-execution":   {ActorUID: "user-1", ExecutionID: "../up", RecordingID: "rec_1", Executable: "whoami", DeadlineSeconds: 20},
+		"missing-recording":   {ActorUID: "user-1", ExecutionID: "exec_1", Executable: "whoami", DeadlineSeconds: 20},
+		"empty-executable":    {ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", DeadlineSeconds: 20},
+		"padded-executable":   {ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: " whoami", DeadlineSeconds: 20},
+		"executable-controls": {ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "who\x00ami", DeadlineSeconds: 20},
+		"too-many-args":       {ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "whoami", Args: make([]string, MaxArgs+1), DeadlineSeconds: 20},
+		"oversized-arg":       {ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "whoami", Args: []string{huge}, DeadlineSeconds: 20},
+		"arg-controls":        {ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "whoami", Args: []string{"a\nb"}, DeadlineSeconds: 20},
+		"blank-cwd":           {ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "whoami", Cwd: &cwd, DeadlineSeconds: 20},
+		"zero-deadline":       {ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "whoami"},
+		"excessive-deadline":  {ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "whoami", DeadlineSeconds: MaxDeadlineSeconds + 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := runtime.Execute(context.Background(), testTarget(), command); !errors.Is(err, ErrTransport) {
+				t.Fatalf("expected ErrTransport, got %v", err)
+			}
+		})
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("rejected commands must not reach the guest")
+	}
+}
+
+func TestExecuteRejectsOversizedFraming(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	runtime, _, _ := testRuntime(t, fake)
+	args := make([]string, MaxArgs)
+	for i := range args {
+		args[i] = strings.Repeat("a", MaxArgBytes)
+	}
+	if _, err := runtime.Execute(context.Background(), testTarget(), Command{
+		ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1",
+		Executable: "whoami", Args: args, DeadlineSeconds: 20,
+	}); !errors.Is(err, ErrRequestTooLarge) {
+		t.Fatalf("expected ErrRequestTooLarge, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("oversized requests must not reach the guest")
+	}
+}
+
+func TestResolveDelegatesAndPropagatesFailures(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	runtime, resolver, _ := testRuntime(t, fake)
+	target, err := runtime.Resolve(context.Background(), "team", "vm")
+	if err != nil || target != testTarget() {
+		t.Fatalf("unexpected resolved target: %+v, %v", target, err)
+	}
+	if !resolver.invoked || resolver.called != [2]string{"team", "vm"} {
+		t.Fatalf("resolver was not consulted: %+v", resolver.called)
+	}
+	for name, resolverErr := range map[string]error{"denied": ErrDenied, "unavailable": ErrUnavailable} {
+		t.Run(name, func(t *testing.T) {
+			runtime.resolver = &stubResolver{err: resolverErr}
+			if _, err := runtime.Resolve(context.Background(), "team", "vm"); !errors.Is(err, resolverErr) {
+				t.Fatalf("expected %v, got %v", resolverErr, err)
+			}
+		})
+	}
+}
+
+func TestExecuteReturnsNothingWithoutRunnerResult(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	fake.failExecute = "guest-exec"
+	runtime, _, _ := testRuntime(t, fake)
+	result, err := runtime.Execute(context.Background(), testTarget(), Command{
+		ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "whoami", DeadlineSeconds: 20,
+	})
+	if !errors.Is(err, ErrTransport) || result != nil {
+		t.Fatalf("expected a nil unknown outcome, got %+v, %v", result, err)
+	}
+}
+
+func TestNewRuntimeRequiresExplicitEnablement(t *testing.T) {
+	if _, err := NewRuntime(Config{}, nil, nil, nil, nil); !errors.Is(err, ErrConfiguration) {
+		t.Fatalf("expected ErrConfiguration, got %v", err)
+	}
+	if _, err := NewRuntimeWithExec(nil, &stubResolver{}, newFakeExec(nil).run); !errors.Is(err, ErrConfiguration) {
+		t.Fatalf("expected ErrConfiguration, got %v", err)
+	}
+}
