@@ -200,7 +200,7 @@ func (a Artifact) valid(extension string) bool {
 	if stem == "con" || stem == "prn" || stem == "aux" || stem == "nul" {
 		return false
 	}
-	return !(len(stem) == 4 && (strings.HasPrefix(stem, "com") || strings.HasPrefix(stem, "lpt")) && stem[3] >= '1' && stem[3] <= '9')
+	return len(stem) != 4 || (!strings.HasPrefix(stem, "com") && !strings.HasPrefix(stem, "lpt")) || stem[3] < '1' || stem[3] > '9'
 }
 
 func version(s string, parts int) ([]uint64, bool) {
