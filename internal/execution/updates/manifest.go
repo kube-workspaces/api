@@ -1,6 +1,8 @@
-// Package updates verifies publisher-authenticated agent-update manifests and
-// bounded payload streams. It grants no permission to install, downloads nothing
-// and does not implement the updater, management transport or job lifecycle.
+// Package updates verifies publisher-authenticated agent-update manifests,
+// authenticated machine inventory reports and the write-ahead upgrade journal,
+// plus bounded payload streams. It grants no permission to install, downloads
+// nothing and does not implement the updater, management transport or job
+// lifecycle.
 package updates
 
 import (

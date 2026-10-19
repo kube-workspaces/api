@@ -1,4 +1,4 @@
-# Agent update manifest v1 — offline verification foundation
+# Agent update contracts — offline verification foundation
 
 `updates.Verify` and workspace-agent's `kw_management::updates::verify` verify
 the same publisher-signed manifest contract. These libraries implement no
@@ -91,3 +91,28 @@ is exercised independently from signature failure. They cover substitution,
 domain confusion, duplicate/unknown/case-confused fields, Windows path/device
 names, numeric bounds, rollback ambiguity, payload loss/flood and mutable-copy
 isolation. Go additionally supplies a signed-parser fuzz target.
+
+## Authenticated machine inventory
+
+`VerifyInventory` and Rust `kw_management::updates::inventory::verify`
+authenticate `management.inventory.v1`. The exact payload bytes are signed
+under ASCII `kw-management-inventory/v1` plus one NUL with a pinned agent
+identity keyring, then bound to the independently minted 256-bit nonce and a
+60-second freshness window with no future skew. The verified payload SHA-256 is
+the inventory digest later pinned as `expected_installed_inventory_sha256`.
+
+The schema (`testdata/inventory-v1.json`) carries namespace/name, workspace and
+VM UIDs, revocation epoch, OS/architecture, inventory timestamp/nonce, agent
+version and build digest, supported management/updater protocol ranges,
+registered MSI ProductCode/UpgradeCode/version/install-directory entries
+(exactly one agent UpgradeCode registration, at most eight), the optional IDD
+package/INF/device/driver-version identity, pending-reboot state and the
+optional updater journal/active-attempt observation. Every string field is
+ASCII-bounded and both verifiers require a byte-identical canonical re-encode,
+so Go and Rust accept exactly the same byte set; an absent driver or attempt
+section must appear as explicit JSON null.
+
+Inventory is signed evidence, never upgrade authority: availability comparison,
+start-time re-read and admission remain separate. The fixture bytes are
+byte-identical to workspace-agent's `tests/testdata/inventory-v1*.json` and are
+signed by the synthetic test seed `[0x5A; 32]`, never a deployed identity.
