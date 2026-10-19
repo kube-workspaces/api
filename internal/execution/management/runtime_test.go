@@ -95,7 +95,7 @@ func createObject(t *testing.T, f *runtimeFixture, resource schema.GroupVersionR
 
 func (f *runtimeFixture) addGuest(t *testing.T, name, uid, generation string) string {
 	t.Helper()
-	createObject(t, f, wsResource, "team", map[string]interface{}{"apiVersion": "kubeworkspaces.io/v1alpha1", "kind": "Workspace", "metadata": map[string]interface{}{"namespace": "team", "name": name, "uid": uid, "resourceVersion": "1"}, "spec": map[string]interface{}{"type": "vm"}})
+	createObject(t, f, wsResource, "team", map[string]interface{}{"apiVersion": "kubeworkspaces.io/v1alpha1", "kind": "Workspace", "metadata": map[string]interface{}{"namespace": "team", "name": name, "uid": uid, "resourceVersion": "1"}, "spec": map[string]interface{}{"type": "vm"}, "status": map[string]interface{}{"managementExecution": map[string]interface{}{"vmUID": generation, "revocationEpoch": int64(0)}}})
 	createObject(t, f, vmResource, "team", map[string]interface{}{"apiVersion": "kubevirt.io/v1", "kind": "VirtualMachine", "metadata": map[string]interface{}{"namespace": "team", "name": name, "uid": generation, "resourceVersion": "1", "ownerReferences": []interface{}{map[string]interface{}{"apiVersion": "kubeworkspaces.io/v1alpha1", "kind": "Workspace", "name": name, "uid": uid, "controller": true}}}, "spec": map[string]interface{}{"running": true}})
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {

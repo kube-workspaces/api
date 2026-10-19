@@ -35,7 +35,8 @@ func windowsFixtures() (*unstructured.Unstructured, *unstructured.Unstructured, 
 			"name": "vm", "namespace": "team", "uid": "workspace-uid", "resourceVersion": "1",
 			"annotations": map[string]interface{}{"kubeworkspaces.io/windows-provisioned-generation": testGeneration},
 		},
-		"spec": map[string]interface{}{"type": "vm", "vmProfile": map[string]interface{}{"id": windowsProfileID, "generation": testGeneration}},
+		"spec":   map[string]interface{}{"type": "vm", "vmProfile": map[string]interface{}{"id": windowsProfileID, "generation": testGeneration}},
+		"status": map[string]interface{}{"managementExecution": map[string]interface{}{"vmUID": "vm-uid", "revocationEpoch": int64(0)}},
 	}}
 	vm := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "kubevirt.io/v1", "kind": "VirtualMachine",

@@ -200,7 +200,7 @@ func TestStartExecutesRecordsAndReturnsOutcome(t *testing.T) {
 		t.Fatalf("expected start and result chunks, got %d", reader.Manifest().Chunks)
 	}
 	startChunk, err := reader.ReadChunk(context.Background(), 0)
-	if err != nil || !strings.Contains(string(startChunk), `"executable":"whoami"`) || !strings.Contains(string(startChunk), `"type":"start"`) {
+	if err != nil || !strings.Contains(string(startChunk), `"executable":"whoami"`) || !strings.Contains(string(startChunk), `"type":"start"`) || !strings.Contains(string(startChunk), `"provisioning_generation":"vm-uid"`) || !strings.Contains(string(startChunk), `"revocation_epoch":0`) {
 		t.Fatalf("unexpected start chunk: %q (%v)", startChunk, err)
 	}
 	resultChunk, err := reader.ReadChunk(context.Background(), 1)
@@ -245,6 +245,10 @@ func TestStartMapsGuestOutcomes(t *testing.T) {
 		"transport-loss": {
 			execErr:     errors.New("pod exec failed"),
 			wantOutcome: "unknown", wantState: "unknown", wantDenial: "transport lost; do not rerun",
+		},
+		"revoked-before-dispatch": {
+			execErr:     qga.ErrDenied,
+			wantOutcome: "failed", wantState: "revoked", wantDenial: "execution authority changed before dispatch",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

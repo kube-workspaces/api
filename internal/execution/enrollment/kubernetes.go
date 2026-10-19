@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/kube-workspaces/api/internal/execution"
 	"github.com/kube-workspaces/api/internal/execution/pki"
 	"github.com/kube-workspaces/api/internal/platform"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -25,7 +26,7 @@ type executionPolicyReader interface {
 
 // KubernetesResolver performs uncached reads through the Kubernetes API. A VM
 // UID is the management incarnation: root reset/recreation changes it, VMI
-// restart does not. Nonzero epochs fail until a controller-owned source exists.
+// restart does not. Epochs come only from VM-bound controller-owned status.
 type KubernetesResolver struct {
 	client dynamic.Interface
 	policy executionPolicyReader
@@ -100,7 +101,11 @@ func resolveIdentity(ws, vm *unstructured.Unstructured) (pki.Identity, error) {
 			return pki.Identity{}, ErrDenied
 		}
 	}
-	i := pki.Identity{Role: pki.RoleGuest, Namespace: ws.GetNamespace(), WorkspaceName: ws.GetName(), WorkspaceUID: string(ws.GetUID()), Generation: string(vm.GetUID()), RevocationEpoch: 0}
+	epoch, err := execution.CurrentEpoch(ws, string(vm.GetUID()))
+	if err != nil {
+		return pki.Identity{}, ErrDenied
+	}
+	i := pki.Identity{Role: pki.RoleGuest, Namespace: ws.GetNamespace(), WorkspaceName: ws.GetName(), WorkspaceUID: string(ws.GetUID()), Generation: string(vm.GetUID()), RevocationEpoch: epoch}
 	if _, err := i.URI(); err != nil {
 		return pki.Identity{}, ErrDenied
 	}
@@ -164,7 +169,7 @@ func (r *KubernetesResolver) Resolve(ctx context.Context, namespace, name string
 // Authorize can be passed directly as Service.CurrentIdentity. It never trusts
 // generation/epoch values supplied by a CSR, request body or certificate alone.
 func (r *KubernetesResolver) Authorize(ctx context.Context, expected pki.Identity) error {
-	if expected.Role != pki.RoleGuest || expected.RevocationEpoch != 0 {
+	if expected.Role != pki.RoleGuest {
 		return ErrDenied
 	}
 	if _, err := expected.URI(); err != nil {

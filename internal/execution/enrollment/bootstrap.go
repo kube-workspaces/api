@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/kube-workspaces/api/internal/execution/pki"
@@ -31,8 +32,12 @@ type bootstrapDocument struct {
 	ExpiresAt       time.Time `json:"expires_at"`
 }
 
-func bootstrapSecretName(workspaceUID, vmUID string) string {
-	h := sha256.Sum256([]byte(workspaceUID + "/" + vmUID))
+func bootstrapSecretName(workspaceUID, vmUID string, epoch ...uint64) string {
+	identity := workspaceUID + "/" + vmUID
+	if len(epoch) > 0 && epoch[0] != 0 {
+		identity += "/" + strconv.FormatUint(epoch[0], 10)
+	}
+	h := sha256.Sum256([]byte(identity))
 	return "kw-mgmt-" + hex.EncodeToString(h[:16])
 }
 
@@ -63,7 +68,7 @@ func (b *BootstrapImporter) Import(ctx context.Context, namespace, name string) 
 	if err != nil {
 		return err
 	}
-	secretName := bootstrapSecretName(i.WorkspaceUID, i.Generation)
+	secretName := bootstrapSecretName(i.WorkspaceUID, i.Generation, i.RevocationEpoch)
 	obj, err := b.client.Resource(schema.GroupVersionResource{Version: "v1", Resource: "secrets"}).Namespace(b.namespace).Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
 		return lookupError(err)

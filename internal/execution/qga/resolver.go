@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kube-workspaces/api/internal/execution"
 	"github.com/kube-workspaces/api/internal/platform"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,10 +49,11 @@ type Target struct {
 	WorkspaceUID  string
 	// VMUID is the controller-owned VirtualMachine UID: the management
 	// provisioning generation (reset/recreation changes it; VMI reboot does not).
-	VMUID   string
-	PodName string
-	PodUID  string
-	Domain  string
+	VMUID           string
+	PodName         string
+	PodUID          string
+	Domain          string
+	RevocationEpoch uint64
 }
 
 // Resolver performs uncached, bounded reads through the Kubernetes API and
@@ -202,6 +204,10 @@ func (r *Resolver) snapshot(ctx context.Context, namespace, name string) (Target
 	if !validVM(ws, vm) {
 		return Target{}, ErrDenied
 	}
+	epoch, err := execution.CurrentEpoch(ws, string(vm.GetUID()))
+	if err != nil {
+		return Target{}, ErrDenied
+	}
 	vmi, err := r.client.Resource(vmiResource).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return Target{}, lookupError(err)
@@ -214,13 +220,14 @@ func (r *Resolver) snapshot(ctx context.Context, namespace, name string) (Target
 		return Target{}, err
 	}
 	return Target{
-		Namespace:     namespace,
-		WorkspaceName: name,
-		WorkspaceUID:  string(ws.GetUID()),
-		VMUID:         string(vm.GetUID()),
-		PodName:       pod.GetName(),
-		PodUID:        string(pod.GetUID()),
-		Domain:        namespace + "_" + name,
+		Namespace:       namespace,
+		WorkspaceName:   name,
+		WorkspaceUID:    string(ws.GetUID()),
+		VMUID:           string(vm.GetUID()),
+		PodName:         pod.GetName(),
+		PodUID:          string(pod.GetUID()),
+		Domain:          namespace + "_" + name,
+		RevocationEpoch: epoch,
 	}, nil
 }
 

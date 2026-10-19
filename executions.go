@@ -194,26 +194,28 @@ func validateStartCommand(p *executions.StartPayload) error {
 // recordingStart is the committed first recording chunk: the durable record of
 // exactly what was requested, before any guest process exists.
 type recordingStart struct {
-	Type            string   `json:"type"`
-	Time            string   `json:"time"`
-	Executable      string   `json:"executable"`
-	Args            []string `json:"args"`
-	Cwd             *string  `json:"cwd"`
-	DeadlineSeconds int      `json:"deadline_seconds"`
+	ProvisioningGeneration string   `json:"provisioning_generation"`
+	RevocationEpoch        uint64   `json:"revocation_epoch"`
+	Type                   string   `json:"type"`
+	Time                   string   `json:"time"`
+	Executable             string   `json:"executable"`
+	Args                   []string `json:"args"`
+	Cwd                    *string  `json:"cwd"`
+	DeadlineSeconds        int      `json:"deadline_seconds"`
 }
 
 // recordingResult is the committed second recording chunk: the authoritative
 // runner outcome, recorded verbatim as guest evidence.
 type recordingResult struct {
-	Type       string  `json:"type"`
-	Time       string  `json:"time"`
-	Outcome    string  `json:"outcome"`
-	ExitCode   *int    `json:"exit_code"`
-	StdoutB64  string  `json:"stdout_b64"`
-	StderrB64  string  `json:"stderr_b64"`
-	Truncated  bool    `json:"truncated"`
-	DurationMS uint64  `json:"duration_ms"`
-	Denial     string  `json:"denial"`
+	Type       string `json:"type"`
+	Time       string `json:"time"`
+	Outcome    string `json:"outcome"`
+	ExitCode   *int   `json:"exit_code"`
+	StdoutB64  string `json:"stdout_b64"`
+	StderrB64  string `json:"stderr_b64"`
+	Truncated  bool   `json:"truncated"`
+	DurationMS uint64 `json:"duration_ms"`
+	Denial     string `json:"denial"`
 }
 
 // mapGuestResult turns the authoritative runner result into the terminal
@@ -221,6 +223,10 @@ type recordingResult struct {
 // an unrecognized outcome string — is a permanently uncertain outcome, never
 // success.
 func mapGuestResult(result *qga.GuestResult, execErr error) (storage.ExecutionOutcome, string, string) {
+	if errors.Is(execErr, qga.ErrDenied) {
+		const revoked = "execution authority changed before dispatch"
+		return storage.ExecutionOutcome{State: storage.StateRevoked, Termination: revoked}, "failed", revoked
+	}
 	if execErr != nil || result == nil {
 		const lost = "transport lost; do not rerun"
 		return storage.ExecutionOutcome{State: storage.StateUnknown, Termination: lost}, "unknown", lost
@@ -324,12 +330,14 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	}
 	rec := session.Record()
 	chunk, err := json.Marshal(recordingStart{
-		Type:            "start",
-		Time:            time.Now().UTC().Format(time.RFC3339),
-		Executable:      p.Executable,
-		Args:            p.Args,
-		Cwd:             p.Cwd,
-		DeadlineSeconds: p.DeadlineSeconds,
+		ProvisioningGeneration: target.VMUID,
+		RevocationEpoch:        target.RevocationEpoch,
+		Type:                   "start",
+		Time:                   time.Now().UTC().Format(time.RFC3339),
+		Executable:             p.Executable,
+		Args:                   p.Args,
+		Cwd:                    p.Cwd,
+		DeadlineSeconds:        p.DeadlineSeconds,
 	})
 	if err == nil {
 		err = session.AppendChunk(ctx, chunk)

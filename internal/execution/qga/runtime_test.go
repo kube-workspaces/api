@@ -77,6 +77,7 @@ func (f *fakeExec) capturedFile(path string) []byte {
 func TestExecuteIssuesVerifiableGrantOverQGA(t *testing.T) {
 	fake := newFakeExec(successRunnerResult())
 	runtime, resolver, signer := testRuntime(t, fake)
+	resolver.target.RevocationEpoch = 7
 	// The start endpoint resolves before executing; mirror that sequence.
 	target, err := runtime.Resolve(context.Background(), "team", "vm")
 	if err != nil {
@@ -132,7 +133,7 @@ func TestExecuteIssuesVerifiableGrantOverQGA(t *testing.T) {
 		request.PolicyVersion != policyVersion || request.DeadlineSeconds != 20 || request.ActorUID != "user-1" ||
 		request.Namespace != "team" || request.WorkspaceName != "vm" || request.WorkspaceUID != "workspace-uid" ||
 		request.ProvisioningGeneration != "vm-uid" || request.ExecutionID != "exec_1" || request.RecordingID != "rec_1" ||
-		request.Executable != `C:\Windows\System32\cmd.exe` || len(request.Args) != 2 {
+		request.Executable != `C:\Windows\System32\cmd.exe` || len(request.Args) != 2 || request.RevocationEpoch != 7 {
 		t.Fatalf("unexpected request: %+v", request)
 	}
 	// Reproduce the guest's expected binding from the digest-authenticated
@@ -173,6 +174,17 @@ func TestExecuteIssuesVerifiableGrantOverQGA(t *testing.T) {
 	}
 	if _, err := verifier.ConsumeQGA(framed.Grant, expected, now); !errors.Is(err, grants.ErrReplay) {
 		t.Fatalf("expected single-use enforcement, got %v", err)
+	}
+}
+
+func TestExecuteFencesRevocationSinceAdmissionBeforeGuestStaging(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	runtime, resolver, _ := testRuntime(t, fake)
+	target := resolver.target
+	resolver.target.RevocationEpoch++
+	_, err := runtime.Execute(context.Background(), target, Command{ActorUID: "user", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "cmd.exe", DeadlineSeconds: 1})
+	if !errors.Is(err, ErrDenied) || len(fake.calls) != 0 {
+		t.Fatalf("stale admission reached guest: err=%v calls=%d", err, len(fake.calls))
 	}
 }
 

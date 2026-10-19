@@ -85,6 +85,46 @@ func TestControllerBootstrapImportAndEnrollment(t *testing.T) {
 	}
 }
 
+func TestRevocationFencesImportedBootstrapAndIssuedIdentity(t *testing.T) {
+	ctx := context.Background()
+	b, s, client, secret := bootstrapFixture(t)
+	createBootstrap(t, client, secret)
+	if err := b.Import(ctx, "team", "vm"); err != nil {
+		t.Fatal(err)
+	}
+	var doc bootstrapDocument
+	if err := json.Unmarshal(secret.Data["bootstrap.json"], &doc); err != nil {
+		t.Fatal(err)
+	}
+	request := csr(t)
+	if _, err := s.Enroll(ctx, doc.Token, request); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := client.Resource(workspaceResource).Namespace("team").Get(ctx, "vm", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Revocation denies even before controller acknowledgment.
+	unstructured.SetNestedField(ws.Object, int64(2), "spec", "executionRevocationEpoch")
+	if _, err := client.Resource(workspaceResource).Namespace("team").Update(ctx, ws, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Enroll(ctx, doc.Token, request); !errors.Is(err, ErrDenied) {
+		t.Fatal("revoked credential returned a cached certificate", err)
+	}
+	unstructured.SetNestedField(ws.Object, int64(2), "status", "managementExecution", "revocationEpoch")
+	if _, err := client.Resource(workspaceResource).Namespace("team").UpdateStatus(ctx, ws, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Enroll(ctx, doc.Token, request); !errors.Is(err, ErrDenied) {
+		t.Fatal("old credential authorized after epoch acknowledgment", err)
+	}
+	// The old protected Secret is not a source for the new epoch.
+	if err := b.Import(ctx, "team", "vm"); !errors.Is(err, ErrDenied) {
+		t.Fatal("old bootstrap material imported for new epoch", err)
+	}
+}
+
 func TestBootstrapImporterRejectsUntrustedMaterial(t *testing.T) {
 	for _, test := range []string{"tenant-namespace", "unlabelled", "mutable", "foreign-label", "foreign-name", "foreign-binding", "epoch", "expired", "overlong", "unknown-field", "legacy-desktop"} {
 		t.Run(test, func(t *testing.T) {

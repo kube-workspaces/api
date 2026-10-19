@@ -139,6 +139,15 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 	if err := validateCommand(command); err != nil {
 		return nil, err
 	}
+	// Recording admission can take time. Re-resolve before staging any guest
+	// bytes so revocation/reset since the initial admission fences this command.
+	current, err := r.resolver.Resolve(ctx, target.Namespace, target.WorkspaceName)
+	if err != nil {
+		return nil, err
+	}
+	if current != target {
+		return nil, ErrDenied
+	}
 	challenge, err := grants.NewChallenge()
 	if err != nil {
 		return nil, fmt.Errorf("%w: cannot mint a challenge", ErrTransport)
@@ -163,7 +172,7 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 		OSIdentity:             "SYSTEM",
 		Elevated:               true,
 		PolicyVersion:          policyVersion,
-		RevocationEpoch:        0,
+		RevocationEpoch:        target.RevocationEpoch,
 		Executable:             command.Executable,
 		Args:                   args,
 		Cwd:                    command.Cwd,
@@ -185,7 +194,7 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 		OSIdentity:             "SYSTEM",
 		Elevated:               true,
 		PolicyVersion:          policyVersion,
-		RevocationEpoch:        0,
+		RevocationEpoch:        target.RevocationEpoch,
 		Challenge:              challenge,
 		Transport:              grants.TransportQGAPodExec,
 		TransportTargetSHA256:  grants.Digest([]byte(target.identity())),

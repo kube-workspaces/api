@@ -24,6 +24,7 @@ func kubernetesFixture() (*unstructured.Unstructured, *unstructured.Unstructured
 		"apiVersion": "kubeworkspaces.io/v1alpha1", "kind": "Workspace",
 		"metadata": map[string]interface{}{"name": "vm", "namespace": "team", "uid": "workspace-uid", "resourceVersion": "1"},
 		"spec":     map[string]interface{}{"type": "vm"},
+		"status":   map[string]interface{}{"managementExecution": map[string]interface{}{"vmUID": "vm-uid", "revocationEpoch": int64(0)}},
 	}}
 	vm := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "kubevirt.io/v1", "kind": "VirtualMachine",
@@ -79,6 +80,10 @@ func TestKubernetesResolverFreshIncarnationAndPolicy(t *testing.T) {
 		t.Fatal("reset identity reused", err)
 	}
 	expected.Generation = "reset-vm-uid"
+	unstructured.SetNestedField(ws.Object, "reset-vm-uid", "status", "managementExecution", "vmUID")
+	if _, err := client.Resource(workspaceResource).Namespace("team").UpdateStatus(ctx, ws, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.Authorize(ctx, expected); err != nil {
 		t.Fatal(err)
 	}
@@ -153,6 +158,18 @@ func TestKubernetesResolverWindowsAndEpochContract(t *testing.T) {
 	i.RevocationEpoch = 1
 	if err := r.Authorize(context.Background(), i); !errors.Is(err, ErrDenied) {
 		t.Fatal("unsupported epoch silently authorized", err)
+	}
+	unstructured.SetNestedField(ws.Object, int64(1), "status", "managementExecution", "revocationEpoch")
+	if _, err := client.Resource(workspaceResource).Namespace("team").UpdateStatus(context.Background(), ws, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Authorize(context.Background(), i); err != nil {
+		t.Fatal("controller-owned nonzero epoch denied", err)
+	}
+	old := i
+	old.RevocationEpoch = 0
+	if err := r.Authorize(context.Background(), old); !errors.Is(err, ErrDenied) {
+		t.Fatal("old epoch authorized after revocation", err)
 	}
 	ws.SetAnnotations(nil)
 	if _, err := client.Resource(workspaceResource).Namespace("team").Update(context.Background(), ws, metav1.UpdateOptions{}); err != nil {
