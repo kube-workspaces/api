@@ -114,7 +114,7 @@ func (r AdmissionRequest) validate() error {
 		return fmt.Errorf("%w: actor is required", ErrAdmissionDenied)
 	}
 	switch r.Operation {
-	case storage.OperationCommand, storage.OperationScript, storage.OperationShell:
+	case storage.OperationCommand, storage.OperationScript, storage.OperationShell, storage.OperationUpgrade:
 	default:
 		return fmt.Errorf("%w: unknown operation", ErrAdmissionDenied)
 	}

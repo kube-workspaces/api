@@ -15,6 +15,7 @@ import (
 
 	kubeworkspaces "github.com/kube-workspaces/api"
 	agent "github.com/kube-workspaces/api/gen/agent"
+	agentupgrades "github.com/kube-workspaces/api/gen/agentupgrades"
 	display "github.com/kube-workspaces/api/gen/display"
 	executions "github.com/kube-workspaces/api/gen/executions"
 	health "github.com/kube-workspaces/api/gen/health"
@@ -30,6 +31,7 @@ import (
 	"github.com/kube-workspaces/api/internal/execution/management"
 	"github.com/kube-workspaces/api/internal/execution/qga"
 	executionstorage "github.com/kube-workspaces/api/internal/execution/storage"
+	"github.com/kube-workspaces/api/internal/execution/upgrades"
 	"github.com/kube-workspaces/api/internal/k8s"
 	"github.com/kube-workspaces/api/internal/platform"
 	"goa.design/clue/debug"
@@ -155,15 +157,16 @@ func main() {
 	}
 
 	var (
-		workspacesSvc workspaces.Service
-		volumesSvc    volumes.Service
-		imagesSvc     images.Service
-		namespacesSvc namespaces.Service
-		sshkeysSvc    sshkeys.Service
-		healthSvc     health.Service
-		displaySvc    display.Service
-		agentSvc      agent.Service
-		executionsSvc executions.Service
+		workspacesSvc    workspaces.Service
+		volumesSvc       volumes.Service
+		imagesSvc        images.Service
+		namespacesSvc    namespaces.Service
+		sshkeysSvc       sshkeys.Service
+		healthSvc        health.Service
+		displaySvc       display.Service
+		agentSvc         agent.Service
+		executionsSvc    executions.Service
+		agentUpgradesSvc agentupgrades.Service
 	)
 	// The sessions registry is shared by the Goa display service (REST
 	// membership/control) and the shared-display WebSocket route so both see
@@ -230,6 +233,7 @@ func main() {
 		if err != nil {
 			log.Fatal(ctx, err)
 		}
+		var qgaEligibility kubeworkspaces.UpgradeEligibility
 		if qgaConfig.Enabled {
 			restConfig, err := k8s.GetRESTConfig()
 			if err != nil {
@@ -244,22 +248,48 @@ func main() {
 				log.Fatal(ctx, fmt.Errorf("QGA pilot transport could not be initialized: %w", err))
 			}
 			options = append(options, kubeworkspaces.WithQGA(runtime))
+			qgaEligibility = runtime
 		}
 		executionsSvc = kubeworkspaces.NewExecutions(execSvc, platProvider, options...)
+
+		// Durable agent-upgrade attempt store. Persistent modes open the
+		// postgres store on the same execution database and never fall back
+		// to RAM; ephemeral mode gets a bounded process-local store; disabled
+		// execution storage leaves agent upgrades unavailable.
+		var upgradeAttempts executionstorage.AgentUpgradeStore
+		switch {
+		case executionStorage.Persistent() && executionStorage.DatabaseURL != "":
+			attempts, err := executionstorage.NewPostgresAgentUpgrades(ctx, executionStorage.DatabaseURL)
+			if err != nil {
+				log.Fatal(ctx, fmt.Errorf("configured agent-upgrade attempt store could not be initialized"))
+			}
+			upgradeAttempts = attempts
+			defer upgradeAttempts.Close()
+		case executionStorage.Mode == execution.StorageEphemeral:
+			attempts, err := executionstorage.NewMemoryAgentUpgrades(executionstorage.DefaultMemoryUpgradeAttempts)
+			if err != nil {
+				log.Fatal(ctx, fmt.Errorf("agent-upgrade attempt store could not be initialized: %w", err))
+			}
+			upgradeAttempts = attempts
+		}
+		log.Print(ctx, log.KV{K: "agent-upgrade-attempts-ready-at-start", V: upgradeAttempts != nil})
+		upgradeSvc := upgrades.NewService(execStore, upgradeAttempts)
+		agentUpgradesSvc = kubeworkspaces.NewAgentUpgrades(upgradeSvc, platProvider, qgaEligibility)
 	}
 
 	// Wrap the services in endpoints that can be invoked from other services
 	// potentially running in different processes.
 	var (
-		workspacesEndpoints *workspaces.Endpoints
-		volumesEndpoints    *volumes.Endpoints
-		imagesEndpoints     *images.Endpoints
-		namespacesEndpoints *namespaces.Endpoints
-		sshkeysEndpoints    *sshkeys.Endpoints
-		healthEndpoints     *health.Endpoints
-		displayEndpoints    *display.Endpoints
-		agentEndpoints      *agent.Endpoints
-		executionsEndpoints *executions.Endpoints
+		workspacesEndpoints    *workspaces.Endpoints
+		volumesEndpoints       *volumes.Endpoints
+		imagesEndpoints        *images.Endpoints
+		namespacesEndpoints    *namespaces.Endpoints
+		sshkeysEndpoints       *sshkeys.Endpoints
+		healthEndpoints        *health.Endpoints
+		displayEndpoints       *display.Endpoints
+		agentEndpoints         *agent.Endpoints
+		executionsEndpoints    *executions.Endpoints
+		agentUpgradesEndpoints *agentupgrades.Endpoints
 	)
 	{
 		workspacesEndpoints = workspaces.NewEndpoints(workspacesSvc)
@@ -288,6 +318,8 @@ func main() {
 		agentEndpoints.Use(log.Endpoint)
 		executionsEndpoints = executions.NewEndpoints(executionsSvc)
 		executionsEndpoints.Use(log.Endpoint)
+		agentUpgradesEndpoints = agentupgrades.NewEndpoints(agentUpgradesSvc)
+		agentUpgradesEndpoints.Use(log.Endpoint)
 	}
 
 	// Create channel used by both the signal handler and server goroutines
@@ -341,7 +373,7 @@ func main() {
 			} else if u.Port() == "" {
 				u.Host = net.JoinHostPort(u.Host, "80")
 			}
-			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, agentEndpoints, executionsEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, displaySessions, &wg, errc, *dbgF)
+			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, agentEndpoints, executionsEndpoints, agentUpgradesEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, displaySessions, &wg, errc, *dbgF)
 		}
 
 	default:

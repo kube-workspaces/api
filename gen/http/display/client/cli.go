@@ -63,7 +63,7 @@ func BuildJoinPayload(displayJoinBody string, displayJoinName string, displayJoi
 	{
 		err = json.Unmarshal([]byte(displayJoinBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"role\": \"observer\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"role\": \"controller\"\n   }'")
 		}
 		if !(body.Role == "observer" || body.Role == "controller") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", body.Role, []any{"observer", "controller"}))

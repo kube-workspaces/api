@@ -18,10 +18,12 @@ import (
 
 	kubeworkspaces "github.com/kube-workspaces/api"
 	genagent "github.com/kube-workspaces/api/gen/agent"
+	genagentupgrades "github.com/kube-workspaces/api/gen/agentupgrades"
 	gendisplay "github.com/kube-workspaces/api/gen/display"
 	genexecutions "github.com/kube-workspaces/api/gen/executions"
 	health "github.com/kube-workspaces/api/gen/health"
 	agentsvr "github.com/kube-workspaces/api/gen/http/agent/server"
+	agentupgradessvr "github.com/kube-workspaces/api/gen/http/agentupgrades/server"
 	displaysvr "github.com/kube-workspaces/api/gen/http/display/server"
 	executionssvr "github.com/kube-workspaces/api/gen/http/executions/server"
 	healthsvr "github.com/kube-workspaces/api/gen/http/health/server"
@@ -63,7 +65,7 @@ var godocFS embed.FS
 
 // handleHTTPServer starts configures and starts a HTTP server on the given
 // URL. It shuts down the server if any error is received in the error channel.
-func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, displayEndpoints *gendisplay.Endpoints, agentEndpoints *genagent.Endpoints, executionsEndpoints *genexecutions.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, displaySessions *display.Sessions, wg *sync.WaitGroup, errc chan error, dbg bool) {
+func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, displayEndpoints *gendisplay.Endpoints, agentEndpoints *genagent.Endpoints, executionsEndpoints *genexecutions.Endpoints, agentUpgradesEndpoints *genagentupgrades.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, displaySessions *display.Sessions, wg *sync.WaitGroup, errc chan error, dbg bool) {
 	monitor := monitoring.New("api")
 	if err := monitoring.Listen(ctx, monitor, ":9090", os.Getenv("KW_MONITORING_TOKEN")); err != nil {
 		log.Fatal(ctx, err)
@@ -99,15 +101,16 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	// the service input and output data structures to HTTP requests and
 	// responses.
 	var (
-		workspacesServer *workspacessvr.Server
-		volumesServer    *volumessvr.Server
-		imagesServer     *imagessvr.Server
-		namespacesServer *namespacessvr.Server
-		sshkeysServer    *sshkeyssvr.Server
-		healthServer     *healthsvr.Server
-		displayServer    *displaysvr.Server
-		agentServer      *agentsvr.Server
-		executionsServer *executionssvr.Server
+		workspacesServer    *workspacessvr.Server
+		volumesServer       *volumessvr.Server
+		imagesServer        *imagessvr.Server
+		namespacesServer    *namespacessvr.Server
+		sshkeysServer       *sshkeyssvr.Server
+		healthServer        *healthsvr.Server
+		displayServer       *displaysvr.Server
+		agentServer         *agentsvr.Server
+		executionsServer    *executionssvr.Server
+		agentUpgradesServer *agentupgradessvr.Server
 	)
 	{
 		eh := errorHandler(ctx)
@@ -117,6 +120,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		namespacesServer = namespacessvr.New(namespacesEndpoints, mux, dec, enc, eh, nil)
 		sshkeysServer = sshkeyssvr.New(sshkeysEndpoints, mux, dec, enc, eh, nil)
 		executionsServer = executionssvr.New(executionsEndpoints, mux, dec, enc, eh, nil)
+		agentUpgradesServer = agentupgradessvr.New(agentUpgradesEndpoints, mux, dec, enc, eh, nil)
 		healthServer = healthsvr.New(healthEndpoints, mux, dec, enc, eh, nil)
 		displayServer = displaysvr.New(displayEndpoints, mux, dec, enc, eh, nil)
 		agentServer = agentsvr.New(agentEndpoints, mux, dec, enc, eh, nil)
@@ -129,6 +133,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	namespacessvr.Mount(mux, namespacesServer)
 	sshkeyssvr.Mount(mux, sshkeysServer)
 	executionssvr.Mount(mux, executionsServer)
+	agentupgradessvr.Mount(mux, agentUpgradesServer)
 	healthsvr.Mount(mux, healthServer)
 	displaysvr.Mount(mux, displayServer)
 	agentsvr.Mount(mux, agentServer)
@@ -2150,7 +2155,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		next := handler
 		debugHandler := debug.HTTP()(next)
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/v1/executions" || strings.HasPrefix(r.URL.Path, "/v1/executions/") {
+			if isProtectedExecutionPath(r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -2231,6 +2236,9 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	for _, m := range healthServer.Mounts {
 		log.Printf(ctx, "HTTP %q mounted on %s %s", m.Method, m.Verb, m.Pattern)
 	}
+	for _, m := range agentUpgradesServer.Mounts {
+		log.Printf(ctx, "HTTP %q mounted on %s %s", m.Method, m.Verb, m.Pattern)
+	}
 
 	(*wg).Add(1)
 	go func() {
@@ -2256,10 +2264,18 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	}()
 }
 
+// isProtectedExecutionPath matches execution history/recording routes and
+// agent-upgrade attempt metadata: both carry protected operational evidence
+// that must never enter shared logs or browser caches.
+func isProtectedExecutionPath(path string) bool {
+	return path == "/v1/executions" || strings.HasPrefix(path, "/v1/executions/") ||
+		strings.Contains(path, "/agent-upgrades")
+}
+
 // Execution history and decrypted recordings must not enter shared/browser caches.
 func executionPrivacyHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/executions" || strings.HasPrefix(r.URL.Path, "/v1/executions/") {
+		if isProtectedExecutionPath(r.URL.Path) {
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 		}

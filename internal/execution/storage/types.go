@@ -25,6 +25,9 @@ const (
 	OperationCommand Operation = "command"
 	OperationScript  Operation = "script"
 	OperationShell   Operation = "shell"
+	// OperationUpgrade admits the mandatory recording of one durable agent
+	// upgrade attempt; it never runs a process by itself.
+	OperationUpgrade Operation = "upgrade"
 )
 
 // State is the monotonic lifecycle state of an execution.
