@@ -1,0 +1,2 @@
+# Publisher-signed fixtures bind exact bytes, including line endings.
+/internal/execution/updates/testdata/*.json text eol=lf

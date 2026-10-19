@@ -114,6 +114,7 @@ func TestManifestRejectsPublisherAndByteSubstitution(t *testing.T) {
 		{"signature-substitution", raw, make([]byte, 64), id, Digest(raw), keys, ErrSignature},
 		{"domain-confusion", raw, ed25519.Sign(private, raw), id, Digest(raw), keys, ErrSignature},
 		{"whitespace-substitution", append(append([]byte{}, raw...), ' '), sig, id, Digest(append(append([]byte{}, raw...), ' ')), keys, ErrSignature},
+		{"line-ending-substitution", bytes.ReplaceAll(raw, []byte("\n"), []byte("\r\n")), sig, id, Digest(raw), keys, ErrDigest},
 		{"oversize", bytes.Repeat([]byte{' '}, MaxManifestBytes+1), sig, id, Digest(raw), keys, ErrInvalid},
 		{"non-utf8", []byte{0xff}, sig, id, Digest([]byte{0xff}), keys, ErrInvalid},
 	} {

@@ -21,6 +21,10 @@ The manifest cannot supply trust roots, expected digest or a download URL.
 - Signature/public-key byte inputs are raw 64/32-byte values. The shared fixture
   metadata encodes them as canonical, unpadded base64url for test transport.
 
+The signed test fixtures are pinned to LF by `.gitattributes` in both repos;
+Windows checkout must not rewrite their bytes. Runtime verification never
+normalizes line endings or whitespace to make a changed signature pass.
+
 Use a dedicated publisher key, independent of API grant and management CA keys.
 Rotation is an explicit operator keyring update; retiring a key denies manifests
 signed by it. There is no key fetch, algorithm negotiation, unsigned mode,
