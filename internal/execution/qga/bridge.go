@@ -207,10 +207,19 @@ func (b *Bridge) stageFile(ctx context.Context, target Target, path string, cont
 	}
 	for offset := 0; offset < len(content); offset += fileWriteChunkBytes {
 		end := min(offset+fileWriteChunkBytes, len(content))
-		write := map[string]any{"handle": handle, "offset": offset, "data-b64": base64.StdEncoding.EncodeToString(content[offset:end])}
-		if err := b.qga(ctx, target, "guest-file-write", write, nil); err != nil {
+		// QGA advances the handle's file position itself. Its write schema uses
+		// buf-b64 (not guest-exec's data spelling) and has no offset argument.
+		write := map[string]any{"handle": handle, "buf-b64": base64.StdEncoding.EncodeToString(content[offset:end])}
+		var written struct {
+			Count int64 `json:"count"`
+		}
+		if err := b.qga(ctx, target, "guest-file-write", write, &written); err != nil {
 			closeHandle()
 			return transportErr(err)
+		}
+		if written.Count != int64(end-offset) {
+			closeHandle()
+			return fmt.Errorf("%w: guest-file-write returned an incomplete count", ErrTransport)
 		}
 	}
 	if err := b.qga(ctx, target, "guest-file-flush", map[string]any{"handle": handle}, nil); err != nil {
@@ -266,7 +275,7 @@ type guestExecStatus struct {
 
 // Run stages the pinned keys and the signed envelope, invokes the fixed
 // installed runner through the QEMU guest agent, polls for its bounded JSON
-// result and best-effort deletes the staged envelope. A guest refusal to spawn
+// result and best-effort clears the staged envelope. A guest refusal to spawn
 // the runner returns ErrNotStarted: a deterministic "nothing ran" failure. Any
 // other protocol failure without a parsed result returns ErrTransport: an
 // unknown outcome.
@@ -281,15 +290,18 @@ func (b *Bridge) Run(ctx context.Context, target Target, executionID string, env
 	if err := b.stageFile(ctx, target, keysFilePath, keysJSON); err != nil {
 		return nil, err
 	}
-	if err := b.stageFile(ctx, target, envelopePath, envelope); err != nil {
-		return nil, err
-	}
-	// Cleanup must survive request cancellation but stay bounded.
+	// QGA has no guest-file-delete RPC. Truncate and close through supported
+	// file operations to remove sensitive envelope bytes without a shell or a
+	// second guest process. Install cleanup before staging so partial writes
+	// are cleared too; cleanup survives request cancellation but stays bounded.
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 		defer cancel()
-		_ = b.qga(cleanup, target, "guest-file-delete", map[string]any{"path": envelopePath}, nil)
+		_ = b.stageFile(cleanup, target, envelopePath, nil)
 	}()
+	if err := b.stageFile(ctx, target, envelopePath, envelope); err != nil {
+		return nil, err
+	}
 	var started guestExecStart
 	start := map[string]any{
 		"path":           runnerPath,

@@ -55,8 +55,7 @@ func (f *fakeExec) capturedFile(path string) []byte {
 		}
 		var args struct {
 			Handle  int64  `json:"handle"`
-			Offset  int64  `json:"offset"`
-			DataB64 string `json:"data-b64"`
+			DataB64 string `json:"buf-b64"`
 		}
 		_ = json.Unmarshal(request.Arguments, &args)
 		if f.handles[args.Handle] != path {
@@ -64,9 +63,6 @@ func (f *fakeExec) capturedFile(path string) []byte {
 		}
 		data, err := base64.StdEncoding.DecodeString(args.DataB64)
 		if err != nil {
-			return nil
-		}
-		if int64(len(content)) != args.Offset {
 			return nil
 		}
 		content = append(content, data...)

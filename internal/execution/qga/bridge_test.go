@@ -21,18 +21,19 @@ type execCall struct {
 // fakeExec scripts the QEMU guest agent behind one launcher: it stages files
 // through QGA file calls and replays a canned runner result.
 type fakeExec struct {
-	calls          []execCall
-	files          map[string][]byte
-	handles        map[int64]string
-	nextHandle     int64
-	statusCalls    int
-	result         []byte
-	failExecute    string
-	rawExecute     string
-	podExecErr     error
-	pid            int64
-	onGuestExec    func()
-	statusOverride func(calls int) ([]byte, []byte, error)
+	calls              []execCall
+	files              map[string][]byte
+	handles            map[int64]string
+	nextHandle         int64
+	statusCalls        int
+	result             []byte
+	failExecute        string
+	rawExecute         string
+	podExecErr         error
+	pid                int64
+	onGuestExec        func()
+	statusOverride     func(calls int) ([]byte, []byte, error)
+	shortEnvelopeWrite bool
 }
 
 func newFakeExec(result []byte) *fakeExec {
@@ -83,36 +84,28 @@ func (f *fakeExec) run(ctx context.Context, namespace, pod, container string, co
 		return reply(handle)
 	case "guest-file-write":
 		var args struct {
-			Handle  int64  `json:"handle"`
-			Offset  int64  `json:"offset"`
-			DataB64 string `json:"data-b64"`
+			Handle int64   `json:"handle"`
+			BufB64 *string `json:"buf-b64"`
 		}
-		if err := json.Unmarshal(request.Arguments, &args); err != nil {
+		decoder := json.NewDecoder(strings.NewReader(string(request.Arguments)))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&args); err != nil || args.BufB64 == nil {
 			return nil, nil, fmt.Errorf("unexpected write arguments")
 		}
 		path, open := f.handles[args.Handle]
 		if !open {
 			return nil, nil, fmt.Errorf("write to a closed handle")
 		}
-		data, err := base64.StdEncoding.DecodeString(args.DataB64)
+		data, err := base64.StdEncoding.DecodeString(*args.BufB64)
 		if err != nil {
 			return nil, nil, fmt.Errorf("write chunk is not standard base64")
 		}
-		if int64(len(f.files[path])) != args.Offset {
-			return nil, nil, fmt.Errorf("write offset gap: %d vs %d", len(f.files[path]), args.Offset)
-		}
 		f.files[path] = append(f.files[path], data...)
+		if f.shortEnvelopeWrite && strings.Contains(path, `\qga-request-`) {
+			return reply(map[string]any{"count": len(data) - 1})
+		}
 		return reply(map[string]any{"count": len(data)})
 	case "guest-file-flush", "guest-file-close":
-		return reply(map[string]any{})
-	case "guest-file-delete":
-		var args struct {
-			Path string `json:"path"`
-		}
-		if err := json.Unmarshal(request.Arguments, &args); err != nil {
-			return nil, nil, fmt.Errorf("unexpected delete arguments")
-		}
-		delete(f.files, args.Path)
 		return reply(map[string]any{})
 	case "guest-exec":
 		var args struct {
@@ -195,13 +188,13 @@ func TestBridgeRunStagesExecutesAndCleansUp(t *testing.T) {
 	if got := fake.files[keysFilePath]; string(got) != string(keys) {
 		t.Fatalf("keys file was staged incorrectly: %q", got)
 	}
-	if got, staged := fake.files[envelopePath]; staged || len(got) != 0 {
-		t.Fatal("staged envelope was not deleted")
+	if got := fake.files[envelopePath]; len(got) != 0 {
+		t.Fatal("staged envelope was not cleared")
 	}
 	names := executes(fake.calls)
 	expected := []string{"guest-file-open", "guest-file-write", "guest-file-flush", "guest-file-close",
 		"guest-file-open", "guest-file-write", "guest-file-write", "guest-file-write", "guest-file-flush", "guest-file-close",
-		"guest-exec", "guest-exec-status", "guest-exec-status", "guest-file-delete"}
+		"guest-exec", "guest-exec-status", "guest-exec-status", "guest-file-open", "guest-file-flush", "guest-file-close"}
 	if strings.Join(names, ",") != strings.Join(expected, ",") {
 		t.Fatalf("unexpected QGA sequence:\n%v", names)
 	}
@@ -258,6 +251,24 @@ func TestBridgeRunRejectsUnstageableInputs(t *testing.T) {
 	}
 	if len(fake.calls) != 0 {
 		t.Fatal("invalid inputs must not reach the guest")
+	}
+}
+
+func TestBridgeRejectsShortWriteAndClearsPartialEnvelope(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	fake.shortEnvelopeWrite = true
+	bridge, _ := NewBridge(fake.run)
+	_, err := bridge.Run(context.Background(), testTarget(), "exec_short", []byte(`{"grant":"sensitive","request":{}}`), []byte(`{"version":1,"keys":["k"]}`), 20)
+	if !errors.Is(err, ErrTransport) {
+		t.Fatalf("short write must fail closed: %v", err)
+	}
+	if len(fake.files[dataDirPath+`\qga-request-exec_short.json`]) != 0 {
+		t.Fatal("partial staged envelope was not cleared")
+	}
+	for _, call := range executes(fake.calls) {
+		if call == "guest-exec" {
+			t.Fatal("incomplete file staging must never launch the runner")
+		}
 	}
 }
 
