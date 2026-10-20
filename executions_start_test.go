@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,6 +34,9 @@ type stubQGA struct {
 	resolveErr error
 	commands   []qga.Command
 	resolved   [][2]string
+	// execute overrides the scripted reply so a test can observe or disturb
+	// the context the start path hands to the transport.
+	execute func(ctx context.Context, target qga.Target, command qga.Command) (*qga.GuestResult, error)
 }
 
 func (s *stubQGA) Resolve(_ context.Context, namespace, name string) (qga.Target, error) {
@@ -43,8 +47,11 @@ func (s *stubQGA) Resolve(_ context.Context, namespace, name string) (qga.Target
 	return s.target, nil
 }
 
-func (s *stubQGA) Execute(_ context.Context, _ qga.Target, command qga.Command) (*qga.GuestResult, error) {
+func (s *stubQGA) Execute(ctx context.Context, target qga.Target, command qga.Command) (*qga.GuestResult, error) {
 	s.commands = append(s.commands, command)
+	if s.execute != nil {
+		return s.execute(ctx, target, command)
+	}
 	return s.result, s.execErr
 }
 
@@ -52,9 +59,12 @@ type startStack struct {
 	stub  *stubQGA
 	store storage.Store
 	post  func(body string, credential string) *httptest.ResponseRecorder
+	// postCtx runs one start request on a caller-owned context so a test can
+	// disconnect mid-flight.
+	postCtx func(ctx context.Context, body string) *httptest.ResponseRecorder
 }
 
-func newStartStack(t *testing.T, permissions []string, policy map[string]interface{}, stub *stubQGA) *startStack {
+func newStartStack(t *testing.T, permissions []string, policy map[string]interface{}, stub *stubQGA, options ...ExecutionsOption) *startStack {
 	t.Helper()
 	ctx := context.Background()
 	key := "start-test-signing-key-32-bytes"
@@ -100,11 +110,12 @@ func newStartStack(t *testing.T, permissions []string, policy map[string]interfa
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	var options []ExecutionsOption
+	var svcOptions []ExecutionsOption
 	if stub != nil {
-		options = append(options, WithQGA(stub))
+		svcOptions = append(svcOptions, WithQGA(stub))
 	}
-	svc := NewExecutions(execution.NewService(store), platform.NewConfigProvider(client), options...)
+	svcOptions = append(svcOptions, options...)
+	svc := NewExecutions(execution.NewService(store), platform.NewConfigProvider(client), svcOptions...)
 	mux := goahttp.NewMuxer()
 	server := svr.New(gen.NewEndpoints(svc), mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, nil, nil)
 	svr.Mount(mux, server)
@@ -113,17 +124,19 @@ func newStartStack(t *testing.T, permissions []string, policy map[string]interfa
 	if err != nil {
 		t.Fatal(err)
 	}
+	startOn := func(ctx context.Context, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, "/v1/executions/start", strings.NewReader(body)).WithContext(ctx)
+		r.Header.Set("Authorization", "Bearer "+token)
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
 	return &startStack{
-		stub:  stub,
-		store: store,
-		post: func(body, _ string) *httptest.ResponseRecorder {
-			r := httptest.NewRequest(http.MethodPost, "/v1/executions/start", strings.NewReader(body))
-			r.Header.Set("Authorization", "Bearer "+token)
-			r.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, r)
-			return w
-		},
+		stub:    stub,
+		store:   store,
+		post:    func(body, _ string) *httptest.ResponseRecorder { return startOn(context.Background(), body) },
+		postCtx: startOn,
 	}
 }
 
@@ -211,12 +224,13 @@ func TestStartExecutesRecordsAndReturnsOutcome(t *testing.T) {
 
 func TestStartMapsGuestOutcomes(t *testing.T) {
 	for name, script := range map[string]struct {
-		result       *qga.GuestResult
-		execErr      error
-		wantOutcome  string
-		wantState    string
-		wantDenial   string
-		wantExitCode *int
+		result          *qga.GuestResult
+		execErr         error
+		wantOutcome     string
+		wantState       string
+		wantDenial      string
+		wantTermination string
+		wantExitCode    *int
 	}{
 		"guest-failure": {
 			result:      &qga.GuestResult{Outcome: "completed", ExitCode: intPtr(7)},
@@ -243,12 +257,26 @@ func TestStartMapsGuestOutcomes(t *testing.T) {
 			wantOutcome: "unknown", wantState: "unknown", wantDenial: "unrecognized runner outcome",
 		},
 		"transport-loss": {
-			execErr:     errors.New("pod exec failed"),
-			wantOutcome: "unknown", wantState: "unknown", wantDenial: "transport lost; do not rerun",
+			execErr: errors.New("pod exec failed"), wantOutcome: "unknown", wantState: "unknown",
+			wantDenial: "transport lost; do not rerun", wantTermination: "transport lost; do not rerun",
 		},
 		"revoked-before-dispatch": {
-			execErr:     qga.ErrDenied,
-			wantOutcome: "failed", wantState: "revoked", wantDenial: "execution authority changed before dispatch",
+			execErr: qga.ErrDenied, wantOutcome: "failed", wantState: "revoked",
+			wantDenial: "execution authority changed before dispatch", wantTermination: "execution authority changed before dispatch",
+		},
+		"unavailable-before-dispatch": {
+			execErr: qga.ErrUnavailable, wantOutcome: "failed", wantState: "failed",
+			wantDenial: "workspace unavailable before dispatch; the command did not run", wantTermination: "not-dispatched",
+		},
+		"runner-absence": {
+			execErr:     fmt.Errorf("%w: guest-exec: GenericError: The system cannot find the file specified", qga.ErrNotStarted),
+			wantOutcome: "failed", wantState: "failed",
+			wantDenial:      "runner could not be started: guest-exec: GenericError: The system cannot find the file specified",
+			wantTermination: "runner-error",
+		},
+		"request-too-large": {
+			execErr: qga.ErrRequestTooLarge, wantOutcome: "failed", wantState: "failed",
+			wantDenial: "QGA pilot request is too large", wantTermination: "request-too-large",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -280,6 +308,9 @@ func TestStartMapsGuestOutcomes(t *testing.T) {
 			_, outcome, err := stack.store.Metadata().Get(context.Background(), response.ExecutionID)
 			if err != nil || string(outcome.State) != script.wantState {
 				t.Fatalf("stored state drifted: %+v %v", outcome, err)
+			}
+			if script.wantTermination != "" && outcome.Termination != script.wantTermination {
+				t.Fatalf("stored termination drifted: %+v", outcome)
 			}
 		})
 	}
@@ -375,4 +406,95 @@ func TestStartFailsClosed(t *testing.T) {
 			t.Fatal("invalid payloads must not reach the guest")
 		}
 	})
+}
+
+// A caller that disconnects after dispatch must not fabricate a transport-loss
+// unknown or a recording gap: the bounded command keeps running and the stored
+// record still reflects the guest.
+func TestStartSurvivesCallerDisconnection(t *testing.T) {
+	code := 0
+	caller, cancelCaller := context.WithCancel(context.Background())
+	var runCtxErr error
+	stub := &stubQGA{target: eligibleTarget()}
+	stub.execute = func(runCtx context.Context, _ qga.Target, _ qga.Command) (*qga.GuestResult, error) {
+		// The client's socket goes away while the guest command is running.
+		cancelCaller()
+		runCtxErr = runCtx.Err()
+		return &qga.GuestResult{Outcome: "completed", ExitCode: &code, Stdout: []byte("hello\n"), DurationMS: 7}, nil
+	}
+	stack := newStartStack(t, []string{string(auth.PermissionExec), string(auth.PermissionElevated)}, enabledElevatedPolicy(), stub)
+	w := stack.postCtx(caller, `{"namespace":"team","workspace_name":"vm","executable":"whoami","args":[]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", w.Code, w.Body.String())
+	}
+	if runCtxErr != nil {
+		t.Fatalf("the guest run followed the caller's socket: %v", runCtxErr)
+	}
+	var response struct {
+		ExecutionID string  `json:"execution_id"`
+		RecordingID string  `json:"recording_id"`
+		Outcome     string  `json:"outcome"`
+		State       string  `json:"state"`
+		Stdout      string  `json:"stdout"`
+		DurationMs  *uint64 `json:"duration_ms"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Outcome != "succeeded" || response.State != "succeeded" {
+		t.Fatalf("unexpected outcome: %s", w.Body.String())
+	}
+	_, outcome, err := stack.store.Metadata().Get(context.Background(), response.ExecutionID)
+	if err != nil || outcome.State != storage.StateSucceeded {
+		t.Fatalf("stored record lost the outcome: %+v %v", outcome, err)
+	}
+	reader, err := stack.store.Recording().Open(context.Background(), response.RecordingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if err := reader.Verify(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if reader.Manifest().Chunks != 2 {
+		t.Fatalf("caller disconnection left a recording gap: %d chunks", reader.Manifest().Chunks)
+	}
+}
+
+// The server lifecycle still fences a dispatched run: shutdown must not leave
+// a guest command unbounded just because the caller is gone.
+func TestStartLifecycleCancellationFencesGuestRun(t *testing.T) {
+	lifecycle, stopLifecycle := context.WithCancel(context.Background())
+	stub := &stubQGA{target: eligibleTarget()}
+	stub.execute = func(runCtx context.Context, _ qga.Target, _ qga.Command) (*qga.GuestResult, error) {
+		stopLifecycle()
+		select {
+		case <-runCtx.Done():
+		case <-time.After(2 * time.Second):
+			t.Fatal("lifecycle cancellation did not fence the guest run")
+		}
+		return nil, fmt.Errorf("%w: %v", qga.ErrTransport, runCtx.Err())
+	}
+	stack := newStartStack(t, []string{string(auth.PermissionExec), string(auth.PermissionElevated)}, enabledElevatedPolicy(), stub, WithLifecycleContext(lifecycle))
+	w := stack.post(`{"namespace":"team","workspace_name":"vm","executable":"whoami","args":[]}`, "operator-uid")
+	if w.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		ExecutionID string  `json:"execution_id"`
+		Outcome     string  `json:"outcome"`
+		State       string  `json:"state"`
+		Denial      *string `json:"denial"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Outcome != "unknown" || response.State != "unknown" ||
+		response.Denial == nil || *response.Denial != "transport lost; do not rerun" {
+		t.Fatalf("unexpected outcome: %s", w.Body.String())
+	}
+	_, outcome, err := stack.store.Metadata().Get(context.Background(), response.ExecutionID)
+	if err != nil || outcome.State != storage.StateUnknown {
+		t.Fatalf("stored record lost the unknown outcome: %+v %v", outcome, err)
+	}
 }

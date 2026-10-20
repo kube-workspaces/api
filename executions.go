@@ -42,6 +42,7 @@ type executionssrvc struct {
 	plat        *platform.ConfigProvider
 	issuerReady func(context.Context) error
 	qga         qgaExecutor
+	lifecycle   context.Context
 }
 
 // qgaExecutor is the opt-in pilot transport surface the start method needs.
@@ -63,6 +64,14 @@ func WithIssuerReadiness(probe func(context.Context) error) ExecutionsOption {
 // nil executor leaves start unavailable; the transport is never a fallback.
 func WithQGA(executor qgaExecutor) ExecutionsOption {
 	return func(s *executionssrvc) { s.qga = executor }
+}
+
+// WithLifecycleContext fences a dispatched guest run against process
+// shutdown. The caller's request context deliberately does not do that: a
+// disconnected client would otherwise fabricate a transport-loss unknown and
+// a recording gap for a command that is still running.
+func WithLifecycleContext(lifecycle context.Context) ExecutionsOption {
+	return func(s *executionssrvc) { s.lifecycle = lifecycle }
 }
 
 // NewExecutions returns the executions service implementation.
@@ -221,11 +230,23 @@ type recordingResult struct {
 // mapGuestResult turns the authoritative runner result into the terminal
 // storage outcome plus the API outcome/denial. Loss of the runner result — or
 // an unrecognized outcome string — is a permanently uncertain outcome, never
-// success.
+// success. Failures that provably happened before any guest process existed
+// are recorded as failures instead: recording them as a transport loss would
+// invent uncertainty about a command that never ran.
 func mapGuestResult(result *qga.GuestResult, execErr error) (storage.ExecutionOutcome, string, string) {
 	if errors.Is(execErr, qga.ErrDenied) {
 		const revoked = "execution authority changed before dispatch"
 		return storage.ExecutionOutcome{State: storage.StateRevoked, Termination: revoked}, "failed", revoked
+	}
+	if errors.Is(execErr, qga.ErrUnavailable) {
+		const notDispatched = "workspace unavailable before dispatch; the command did not run"
+		return storage.ExecutionOutcome{State: storage.StateFailed, Termination: "not-dispatched"}, "failed", notDispatched
+	}
+	if errors.Is(execErr, qga.ErrNotStarted) {
+		return storage.ExecutionOutcome{State: storage.StateFailed, Termination: "runner-error"}, "failed", execErr.Error()
+	}
+	if errors.Is(execErr, qga.ErrRequestTooLarge) {
+		return storage.ExecutionOutcome{State: storage.StateFailed, Termination: "request-too-large"}, "failed", execErr.Error()
 	}
 	if execErr != nil || result == nil {
 		const lost = "transport lost; do not rerun"
@@ -264,7 +285,9 @@ func mapGuestResult(result *qga.GuestResult, execErr error) (storage.ExecutionOu
 // Start executes one bounded SYSTEM command through the opt-in pilot transport
 // and returns its recorded outcome synchronously. Any guest transport loss is
 // a terminal unknown outcome; success is only ever reported from a parsed
-// runner result.
+// runner result. After dispatch the run is bounded by the pilot budget rather
+// than the caller's socket, so a disconnect cannot fabricate a transport loss
+// or a recording gap.
 func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) (*executions.ExecutionCommand, error) {
 	user := auth.ExecutionPrincipal(ctx)
 	if user == nil {
@@ -343,15 +366,22 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 		err = session.AppendChunk(ctx, chunk)
 	}
 	if err != nil {
-		_ = session.Abort(ctx, "recording unavailable")
+		abortSession(ctx, session, "recording unavailable")
 		return nil, managementError("unavailable", "execution recording unavailable")
 	}
 	if err := session.Start(ctx); err != nil {
-		_ = session.Abort(ctx, "lifecycle transition unavailable")
+		abortSession(ctx, session, "lifecycle transition unavailable")
 		return nil, managementError("unavailable", "execution state unavailable")
 	}
-	log.Printf(ctx, "executions.start execution=%s namespace=%s workspace=%s", executionID, p.Namespace, p.WorkspaceName)
-	result, execErr := s.qga.Execute(ctx, target, qga.Command{
+	// Admission, validation and the committed start chunk stay on the caller's
+	// context: a client that disappears before dispatch simply never runs a
+	// command. Once the execution has started the caller can no longer abandon
+	// it — the run is bounded by the pilot budget instead of the socket, and
+	// process shutdown still fences it through the lifecycle context.
+	runCtx, cancelRun := s.runContext(ctx, p.DeadlineSeconds)
+	defer cancelRun()
+	log.Printf(runCtx, "executions.start execution=%s namespace=%s workspace=%s", executionID, p.Namespace, p.WorkspaceName)
+	result, execErr := s.qga.Execute(runCtx, target, qga.Command{
 		ActorUID:        user.UID,
 		ExecutionID:     executionID,
 		RecordingID:     recordingID,
@@ -360,6 +390,10 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 		Cwd:             p.Cwd,
 		DeadlineSeconds: p.DeadlineSeconds,
 	})
+	// Finalization gets its own caller-independent budget: even an expired run
+	// budget must not turn a known outcome into a recording gap.
+	finishCtx, cancelFinish := finalizeContext(ctx)
+	defer cancelFinish()
 	outcome, apiOutcome, denial := mapGuestResult(result, execErr)
 	recorded := recordingResult{
 		Type:    "result",
@@ -379,18 +413,51 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	}
 	chunk, err = json.Marshal(recorded)
 	if err == nil {
-		err = session.AppendChunk(ctx, chunk)
+		err = session.AppendChunk(finishCtx, chunk)
 	}
 	if err != nil {
 		// Finish marks the execution recording_lost; the guest may have run
 		// without durable evidence, so the request fails closed.
-		_ = session.Finish(ctx, storage.ExecutionOutcome{State: storage.StateRecordingLost, RecordingLost: true})
+		_ = session.Finish(finishCtx, storage.ExecutionOutcome{State: storage.StateRecordingLost, RecordingLost: true})
 		return nil, managementError("unavailable", "execution recording lost")
 	}
-	if err := session.Finish(ctx, outcome); err != nil {
+	if err := session.Finish(finishCtx, outcome); err != nil {
 		return nil, managementError("unavailable", "execution state unavailable")
 	}
 	return commandResult(rec, outcome, apiOutcome, denial, result), nil
+}
+
+// finalizeBudget bounds the terminal recording/metadata writes of one
+// execution independently of the caller and of the guest run budget.
+const finalizeBudget = 30 * time.Second
+
+// runContext bounds one guest run independently of the caller's socket while
+// preserving the request values (logging, tracing).
+func (s *executionssrvc) runContext(req context.Context, deadlineSeconds int) (context.Context, context.CancelFunc) {
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(req), qga.RunBudget(deadlineSeconds))
+	if s.lifecycle == nil {
+		return runCtx, cancel
+	}
+	stop := context.AfterFunc(s.lifecycle, cancel)
+	return runCtx, func() {
+		stop()
+		cancel()
+	}
+}
+
+// finalizeContext gives the terminal recording writes their own bounded,
+// caller-independent context.
+func finalizeContext(req context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(req), finalizeBudget)
+}
+
+// abortSession closes an admitted record whose request context has already
+// failed: an execution stuck open forever is worse than a bounded cleanup
+// write, and nothing was dispatched on these paths.
+func abortSession(ctx context.Context, session *execution.Session, reason string) {
+	abortCtx, cancel := finalizeContext(ctx)
+	defer cancel()
+	_ = session.Abort(abortCtx, reason)
 }
 
 func commandResult(rec storage.ExecutionRecord, outcome storage.ExecutionOutcome, apiOutcome, denial string, result *qga.GuestResult) *executions.ExecutionCommand {

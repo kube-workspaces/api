@@ -18,7 +18,8 @@ import (
 )
 
 // ErrRequestTooLarge reports a framed request plus grant beyond the staged
-// envelope bound; the caller records an invalid error, never an outcome.
+// envelope bound; nothing was staged, so the caller records a failed
+// pre-dispatch outcome, never an uncertain transport loss or a success.
 var ErrRequestTooLarge = errors.New("QGA pilot request is too large")
 
 // policyVersion is the signed pilot policy marker shared with the guest.
@@ -132,9 +133,11 @@ func (r *Runtime) Resolve(ctx context.Context, namespace, name string) (Target, 
 
 // Execute issues one single-use QGA grant bound to the resolved target and the
 // exact request bytes, stages both through the bridge and returns the runner's
-// authoritative result. Resolver errors pass through; framing failures are
-// ErrTransport (unknown outcome); oversized framing is ErrRequestTooLarge.
-// A GuestResult is returned only from a parsed runner reply, never invented.
+// authoritative result. Resolver errors pass through (ErrDenied and
+// ErrUnavailable are pre-dispatch states, not losses); framing failures are
+// ErrTransport (unknown outcome); oversized framing is ErrRequestTooLarge,
+// which is deterministic and staged nothing. A GuestResult is returned only
+// from a parsed runner reply, never invented.
 func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (*GuestResult, error) {
 	if err := validateCommand(command); err != nil {
 		return nil, err

@@ -272,9 +272,24 @@ func TestResolveDelegatesAndPropagatesFailures(t *testing.T) {
 	}
 }
 
-func TestExecuteReturnsNothingWithoutRunnerResult(t *testing.T) {
+// A guest refusal to spawn the installed runner is deterministic: nothing ran,
+// so it is reported as ErrNotStarted rather than an unknown transport loss.
+func TestExecuteReportsRunnerAbsenceWithoutResult(t *testing.T) {
 	fake := newFakeExec(successRunnerResult())
 	fake.failExecute = "guest-exec"
+	runtime, _, _ := testRuntime(t, fake)
+	result, err := runtime.Execute(context.Background(), testTarget(), Command{
+		ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "whoami", DeadlineSeconds: 20,
+	})
+	if !errors.Is(err, ErrNotStarted) || errors.Is(err, ErrTransport) || result != nil {
+		t.Fatalf("expected a nil not-started outcome, got %+v, %v", result, err)
+	}
+}
+
+// A lost pod-exec transport with no runner result stays an unknown outcome.
+func TestExecuteReturnsNothingWithoutRunnerResult(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	fake.podExecErr = errors.New("connection refused")
 	runtime, _, _ := testRuntime(t, fake)
 	result, err := runtime.Execute(context.Background(), testTarget(), Command{
 		ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", Executable: "whoami", DeadlineSeconds: 20,

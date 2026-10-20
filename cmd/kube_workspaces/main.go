@@ -98,6 +98,10 @@ func main() {
 		log.KV{K: "go", V: runtime.Version()},
 		log.KV{K: "platform", V: fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)})
 	log.Print(ctx, log.KV{K: "http-port", V: *httpPortF})
+	// Server-scoped context: SIGINT/SIGTERM cancels in-flight work such as a
+	// dispatched guest execution, while individual request contexts are only
+	// bounded by their own clients.
+	ctx, cancel := context.WithCancel(ctx)
 	// Configuration is fail-closed and does not establish storage readiness or
 	// enable guest execution. The management service must additionally open and
 	// verify its stores before issuing any process-creation grant.
@@ -223,6 +227,9 @@ func main() {
 		}
 		platProvider := platform.NewConfigProvider(dynClient)
 		var options []kubeworkspaces.ExecutionsOption
+		// A dispatched guest run follows the server lifecycle, never the
+		// caller's socket: shutdown must still fence it.
+		options = append(options, kubeworkspaces.WithLifecycleContext(ctx))
 		if issuerReady != nil {
 			options = append(options, kubeworkspaces.WithIssuerReadiness(issuerReady))
 		}
@@ -335,7 +342,6 @@ func main() {
 	}()
 
 	var wg sync.WaitGroup
-	ctx, cancel := context.WithCancel(ctx)
 	if managementIssuer != nil {
 		wg.Add(1)
 		go func() {

@@ -29,6 +29,7 @@ type fakeExec struct {
 	result         []byte
 	failExecute    string
 	rawExecute     string
+	podExecErr     error
 	pid            int64
 	onGuestExec    func()
 	statusOverride func(calls int) ([]byte, []byte, error)
@@ -46,6 +47,9 @@ func newFakeExec(result []byte) *fakeExec {
 
 func (f *fakeExec) run(ctx context.Context, namespace, pod, container string, command []string, stdin []byte) ([]byte, []byte, error) {
 	f.calls = append(f.calls, execCall{namespace: namespace, pod: pod, container: container, command: command, stdin: append([]byte{}, stdin...)})
+	if f.podExecErr != nil {
+		return nil, nil, f.podExecErr
+	}
 	var request struct {
 		Execute   string          `json:"execute"`
 		Arguments json.RawMessage `json:"arguments"`
@@ -260,7 +264,10 @@ func TestBridgeRunRejectsUnstageableInputs(t *testing.T) {
 func TestBridgeRunTransportFailuresAreUnknownOutcomes(t *testing.T) {
 	oversized := []byte(strings.Repeat("x", maxRunnerResultBytes+1))
 	for name, setup := range map[string]func(*fakeExec){
+		// A staging refusal is still an unknown state: no runner was invoked,
+		// but the guest side is not reporting a deterministic spawn failure.
 		"qga-error":       func(f *fakeExec) { f.failExecute = "guest-file-open" },
+		"status-refusal":  func(f *fakeExec) { f.failExecute = "guest-exec-status" },
 		"malformed-reply": func(f *fakeExec) { f.rawExecute = "guest-file-open" },
 		"no-pid":          func(f *fakeExec) { f.pid = 0 },
 		"signal-death": func(f *fakeExec) {
@@ -300,6 +307,33 @@ func TestBridgeRunTransportFailuresAreUnknownOutcomes(t *testing.T) {
 				t.Fatalf("expected ErrTransport, got %v", err)
 			}
 		})
+	}
+}
+
+// A guest refusal to spawn the installed runner is a deterministic failure —
+// no pid was ever returned, so the command provably did not run. It must not
+// be reported as a transport loss (which would forbid a legitimate retry).
+func TestBridgeRunRunnerAbsenceIsNotAnUnknownOutcome(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	fake.failExecute = "guest-exec"
+	bridge, _ := NewBridge(fake.run)
+	result, err := bridge.Run(context.Background(), testTarget(), "exec_1", []byte(`{"grant":"token","request":{}}`), []byte(`{"version":1,"keys":["k"]}`), 20)
+	if result != nil {
+		t.Fatalf("runner absence must not invent a result: %+v", result)
+	}
+	if !errors.Is(err, ErrNotStarted) {
+		t.Fatalf("expected ErrNotStarted, got %v", err)
+	}
+	if errors.Is(err, ErrTransport) {
+		t.Fatalf("runner absence must not be a transport loss: %v", err)
+	}
+	if !strings.Contains(err.Error(), "GenericError: scripted failure") {
+		t.Fatalf("refusal detail was dropped: %v", err)
+	}
+	for _, name := range executes(fake.calls) {
+		if name == "guest-exec-status" {
+			t.Fatal("no runner pid exists, so no status may be polled")
+		}
 	}
 }
 

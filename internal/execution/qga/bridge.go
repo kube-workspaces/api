@@ -40,11 +40,27 @@ const (
 	pollInterval        = 250 * time.Millisecond
 	pollGrace           = 10 * time.Second
 	cleanupTimeout      = 5 * time.Second
+
+	// stagingBudget bounds the file-staging RPCs that run before guest-exec.
+	stagingBudget = 30 * time.Second
 )
 
 // ErrTransport reports a pod-exec/QGA protocol failure with no trustworthy
 // runner result. The caller must record an unknown outcome, never success.
 var ErrTransport = errors.New("QGA transport failed")
+
+// ErrNotStarted reports a guest refusal before any runner process exists: the
+// installed runner is missing or could not be spawned. Nothing ran, so the
+// caller records a failed outcome rather than an uncertain transport loss.
+var ErrNotStarted = errors.New("runner could not be started")
+
+// RunBudget is the wall-clock bound for one bounded guest command: staging,
+// the guest deadline, the poll grace and margin for the reply. The API derives
+// its execution context from this budget so a disconnected caller cannot
+// abandon a command mid-flight.
+func RunBudget(deadlineSeconds int) time.Duration {
+	return time.Duration(deadlineSeconds)*time.Second + pollGrace + stagingBudget
+}
 
 // ExecFunc runs one Kubernetes pod exec carrying the QGA JSON on stdin and
 // returns bounded stdout/stderr. The injectable seam keeps the bridge
@@ -127,6 +143,30 @@ type qgaResponse struct {
 	Error  *qgaError       `json:"error"`
 }
 
+// qgaRefusal is a well-formed QGA error reply: the guest agent answered and
+// refused the RPC, so the transport itself worked. Callers can therefore
+// distinguish a deterministic guest refusal from a lost transport.
+type qgaRefusal struct {
+	execute string
+	class   string
+	desc    string
+}
+
+func (e *qgaRefusal) Error() string {
+	return fmt.Sprintf("%s: %s: %s", e.execute, e.class, e.desc)
+}
+
+// transportErr classifies one QGA reply for the callers where a guest refusal
+// is still an unknown state (file staging, status polling). Only a guest-exec
+// spawn refusal is a deterministic "not started" outcome.
+func transportErr(err error) error {
+	var refusal *qgaRefusal
+	if errors.As(err, &refusal) {
+		return fmt.Errorf("%w: %s", ErrTransport, refusal.Error())
+	}
+	return err
+}
+
 // qga performs one bounded QGA RPC over pod exec and decodes its return value.
 func (b *Bridge) qga(ctx context.Context, target Target, execute string, arguments map[string]any, result any) error {
 	command, err := json.Marshal(map[string]any{"execute": execute, "arguments": arguments})
@@ -142,7 +182,7 @@ func (b *Bridge) qga(ctx context.Context, target Target, execute string, argumen
 		return fmt.Errorf("%w: %s returned an invalid QGA response", ErrTransport, execute)
 	}
 	if response.Error != nil {
-		return fmt.Errorf("%w: %s: %s: %s", ErrTransport, execute, response.Error.Class, response.Error.Desc)
+		return &qgaRefusal{execute: execute, class: response.Error.Class, desc: response.Error.Desc}
 	}
 	if len(response.Return) == 0 {
 		return fmt.Errorf("%w: %s returned no QGA result", ErrTransport, execute)
@@ -160,7 +200,7 @@ func (b *Bridge) qga(ctx context.Context, target Target, execute string, argumen
 func (b *Bridge) stageFile(ctx context.Context, target Target, path string, content []byte) error {
 	var handle int64
 	if err := b.qga(ctx, target, "guest-file-open", map[string]any{"path": path, "mode": "w+"}, &handle); err != nil {
-		return err
+		return transportErr(err)
 	}
 	closeHandle := func() {
 		_ = b.qga(ctx, target, "guest-file-close", map[string]any{"handle": handle}, nil)
@@ -170,15 +210,15 @@ func (b *Bridge) stageFile(ctx context.Context, target Target, path string, cont
 		write := map[string]any{"handle": handle, "offset": offset, "data-b64": base64.StdEncoding.EncodeToString(content[offset:end])}
 		if err := b.qga(ctx, target, "guest-file-write", write, nil); err != nil {
 			closeHandle()
-			return err
+			return transportErr(err)
 		}
 	}
 	if err := b.qga(ctx, target, "guest-file-flush", map[string]any{"handle": handle}, nil); err != nil {
 		closeHandle()
-		return err
+		return transportErr(err)
 	}
 	if err := b.qga(ctx, target, "guest-file-close", map[string]any{"handle": handle}, nil); err != nil {
-		return err
+		return transportErr(err)
 	}
 	return nil
 }
@@ -226,8 +266,10 @@ type guestExecStatus struct {
 
 // Run stages the pinned keys and the signed envelope, invokes the fixed
 // installed runner through the QEMU guest agent, polls for its bounded JSON
-// result and best-effort deletes the staged envelope. Any protocol failure
-// without a parsed result returns ErrTransport: an unknown outcome.
+// result and best-effort deletes the staged envelope. A guest refusal to spawn
+// the runner returns ErrNotStarted: a deterministic "nothing ran" failure. Any
+// other protocol failure without a parsed result returns ErrTransport: an
+// unknown outcome.
 func (b *Bridge) Run(ctx context.Context, target Target, executionID string, envelope, keysJSON []byte, deadlineSeconds int) (*GuestResult, error) {
 	if !validExecutionID(executionID) {
 		return nil, fmt.Errorf("%w: execution id is not safe to stage", ErrTransport)
@@ -255,7 +297,14 @@ func (b *Bridge) Run(ctx context.Context, target Target, executionID string, env
 		"capture-output": true,
 	}
 	if err := b.qga(ctx, target, "guest-exec", start, &started); err != nil {
-		return nil, err
+		// A well-formed refusal means the guest agent never produced a pid:
+		// the installed runner is missing or unspawnable, so the command
+		// provably did not run and must not be recorded as a transport loss.
+		var refusal *qgaRefusal
+		if errors.As(err, &refusal) {
+			return nil, fmt.Errorf("%w: %s", ErrNotStarted, refusal.Error())
+		}
+		return nil, transportErr(err)
 	}
 	if started.PID <= 0 {
 		return nil, fmt.Errorf("%w: runner did not report a process", ErrTransport)
@@ -272,7 +321,8 @@ func (b *Bridge) Run(ctx context.Context, target Target, executionID string, env
 		}
 		var status guestExecStatus
 		if err := b.qga(ctx, target, "guest-exec-status", map[string]any{"pid": started.PID}, &status); err != nil {
-			return nil, err
+			// The runner existed; losing its status is an uncertain outcome.
+			return nil, transportErr(err)
 		}
 		if !status.Exited {
 			continue
