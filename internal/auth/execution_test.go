@@ -2,7 +2,10 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -27,6 +30,45 @@ func executionUserFixture(email, role string) *unstructured.Unstructured {
 		},
 		"status": map[string]interface{}{"personalNamespace": "personal"},
 	}}
+}
+
+func TestHandleMeExecutionHintsUseCurrentAccount(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeDynamicClient(t)
+	user := executionUserFixture("user@example.com", "viewer")
+	if _, err := client.Resource(userGVR).Create(ctx, user, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &ConfigProvider{dynamicClient: client, config: testDeviceConfig(), lastFetch: time.Now(), cacheDuration: time.Hour}
+	h := &OIDCHandler{provider: provider}
+	for _, bound := range []bool{false, true} {
+		uid := ""
+		if bound {
+			uid = "user-uid"
+		}
+		token, err := CreateSessionToken("user@example.com", "User", "admin", nil, []byte(testSigningKey), time.Hour, uid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+		rec := httptest.NewRecorder()
+		h.HandleMe(rec, req)
+		var body struct {
+			Role   string           `json:"role"`
+			Bound  bool             `json:"executionCredentialBound"`
+			Grants []ExecutionGrant `json:"executionGrants"`
+		}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Role != "viewer" || body.Bound != bound || len(body.Grants) != 1 || body.Grants[0].Namespace != "team" || body.Grants[0].Workspaces[0] != "vm" {
+			t.Fatalf("incorrect current-account hints: %+v", body)
+		}
+	}
 }
 
 func TestExecutionPermissionScopeAndElevation(t *testing.T) {

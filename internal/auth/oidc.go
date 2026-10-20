@@ -527,6 +527,9 @@ func (h *OIDCHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		"personalNamespace":  user.PersonalNamespace,
 		"avatarURL":          user.AvatarURL,
 		"mustChangePassword": user.MustChangePassword,
+		// UI hints from the current account only; admission reauthorizes every run.
+		"executionCredentialBound": user.UID != "" && user.credentialUserUID == user.UID && !user.MustChangePassword,
+		"executionGrants":          user.ExecutionGrants,
 	})
 }
 
