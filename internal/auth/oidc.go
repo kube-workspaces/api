@@ -289,6 +289,11 @@ func (h *OIDCHandler) startLoginWithAdoption(w http.ResponseWriter, r *http.Requ
 		"code_challenge":        {deriveCodeChallengeS256(verifier)},
 		"code_challenge_method": {"S256"},
 	}
+	if adoptionCode != "" {
+		// The administrator may already be signed into a different provider
+		// account. Ask the recipient to choose instead of silently using it.
+		params.Set("prompt", "select_account")
+	}
 
 	authURL := discovery.AuthorizationEndpoint + "?" + params.Encode()
 	if link != nil {

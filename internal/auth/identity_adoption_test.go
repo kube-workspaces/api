@@ -11,9 +11,13 @@ import (
 	"testing"
 	"time"
 
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	clienttesting "k8s.io/client-go/testing"
 )
 
 func adoptionFixture(t *testing.T, cfg *Config) (*OIDCHandler, string, *unstructured.Unstructured) {
@@ -79,6 +83,10 @@ func startAdoption(t *testing.T, h *OIDCHandler, code, adminToken string) *http.
 	if rec.Code != 302 {
 		t.Fatalf("start adoption: %d %s", rec.Code, rec.Body.String())
 	}
+	authorizationURL, err := url.Parse(rec.Header().Get("Location"))
+	if err != nil || authorizationURL.Query().Get("prompt") != "select_account" {
+		t.Fatal("adoption did not request provider account selection")
+	}
 	resp, err := http.Get(rec.Header().Get("Location"))
 	if err != nil {
 		t.Fatal(err)
@@ -99,6 +107,38 @@ func startAdoption(t *testing.T, h *OIDCHandler, code, adminToken string) *http.
 	}
 	t.Fatal("no state cookie")
 	return nil
+}
+
+func TestLegacyAdoptionRechecksTargetAfterConcurrentUpdate(t *testing.T) {
+	h, token, target := adoptionFixture(t, testConfig("https://idp.example.com"))
+	a := identityAdoption{UserName: target.GetName(), UserUID: string(target.GetUID()), Email: "cookie@example.com", Issuer: h.provider.config.IssuerURL, ClientID: h.provider.config.ClientID, AdminToken: token, ExpiresAt: time.Now().Add(time.Minute).Unix()}
+	code, err := h.issueAdoption(a, "adoption-callback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := h.provider.dynamicClient.(*dynamicfake.FakeDynamicClient)
+	// Another admin enables a local password between approval validation and
+	// persistence. The API server rejects our stale write; retry must recheck
+	// the adoption scope, not append a binding to the now-ineligible account.
+	client.PrependReactor("update", "users", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		update := action.(clienttesting.UpdateAction).GetObject().(*unstructured.Unstructured)
+		if update.GetName() != target.GetName() {
+			return false, nil, nil
+		}
+		current := target.DeepCopy()
+		_ = unstructured.SetNestedField(current.Object, true, "spec", "localAuth", "enabled")
+		if err := client.Tracker().Update(userGVR, current, ""); err != nil {
+			t.Fatal(err)
+		}
+		return true, nil, k8serrors.NewConflict(userGVR.GroupResource(), target.GetName(), ErrIdentityConflict)
+	})
+	id := ExternalIdentity{Issuer: a.Issuer, Subject: "legacy-subject"}
+	if err := h.completeIdentityAdoption(context.Background(), h.provider.config, code, id, &IDTokenClaims{Email: a.Email, EmailVerified: true}); err == nil {
+		t.Fatal("concurrent account change escaped approval scope")
+	}
+	if _, err := h.provider.GetUserByIdentity(context.Background(), id); err == nil {
+		t.Fatal("ineligible account bound")
+	}
 }
 
 func TestLegacyAdoptionRequiresVerifiedIdentityAndPreservesAccount(t *testing.T) {

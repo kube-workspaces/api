@@ -28,16 +28,23 @@ type identityAdoption struct {
 	ExpiresAt  int64  `json:"expiresAt"`
 }
 
+func adoptionAccountMatches(a identityAdoption, u *unstructured.Unstructured) error {
+	email, _, emailErr := unstructured.NestedString(u.Object, "spec", "email")
+	local, _, localErr := unstructured.NestedBool(u.Object, "spec", "localAuth", "enabled")
+	bindings, bindingErr := identityBindings(u)
+	if !identityAccountValid(u) || string(u.GetUID()) != a.UserUID || emailErr != nil || email == "" || email != a.Email || localErr != nil || local || bindingErr != nil || len(bindings) != 0 {
+		return ErrIdentityConflict
+	}
+	return nil
+}
+
 func (h *OIDCHandler) adoptionTarget(ctx context.Context, a identityAdoption) (*unstructured.Unstructured, error) {
 	u, err := h.provider.GetUser(ctx, a.UserName)
 	if err != nil {
 		return nil, err
 	}
-	email, _, emailErr := unstructured.NestedString(u.Object, "spec", "email")
-	local, _, localErr := unstructured.NestedBool(u.Object, "spec", "localAuth", "enabled")
-	bindings, bindingErr := identityBindings(u)
-	if !identityAccountValid(u) || string(u.GetUID()) != a.UserUID || emailErr != nil || email == "" || email != a.Email || localErr != nil || local || bindingErr != nil || len(bindings) != 0 {
-		return nil, ErrIdentityConflict
+	if err := adoptionAccountMatches(a, u); err != nil {
+		return nil, err
 	}
 	// Duplicate/case-variant account emails must be resolved by an operator first.
 	users, err := h.provider.ListUsers(ctx)
@@ -46,7 +53,7 @@ func (h *OIDCHandler) adoptionTarget(ctx context.Context, a identityAdoption) (*
 	}
 	for _, other := range users.Items {
 		otherEmail, _, _ := unstructured.NestedString(other.Object, "spec", "email")
-		if strings.EqualFold(otherEmail, email) && (other.GetUID() != u.GetUID() || other.GetName() != u.GetName()) {
+		if strings.EqualFold(otherEmail, a.Email) && (other.GetUID() != u.GetUID() || other.GetName() != u.GetName()) {
 			return nil, ErrIdentityConflict
 		}
 	}
@@ -189,5 +196,7 @@ func (h *OIDCHandler) completeIdentityAdoption(ctx context.Context, cfg *Config,
 	if !claims.EmailVerified || !strings.EqualFold(claims.Email, a.Email) || id.Issuer != a.Issuer {
 		return ErrIdentityConflict
 	}
-	return h.provider.BindIdentity(ctx, a.UserName, a.UserUID, id)
+	return h.provider.bindIdentity(ctx, a.UserName, a.UserUID, id, func(u *unstructured.Unstructured) error {
+		return adoptionAccountMatches(a, u)
+	})
 }

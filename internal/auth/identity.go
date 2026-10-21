@@ -113,6 +113,12 @@ func claimMatches(claim *unstructured.Unstructured, id ExternalIdentity, user *u
 // survive account deletion, preventing implicit adoption by replacement accounts.
 // This is a storage primitive, not an unauthenticated linking endpoint.
 func (p *ConfigProvider) BindIdentity(ctx context.Context, name, uid string, id ExternalIdentity) error {
+	return p.bindIdentity(ctx, name, uid, id, nil)
+}
+
+// check scopes a delegated approval to the current account on every conflict
+// retry, rather than trusting the snapshot read before reserving the identity.
+func (p *ConfigProvider) bindIdentity(ctx context.Context, name, uid string, id ExternalIdentity, check func(*unstructured.Unstructured) error) error {
 	if err := id.validate(); err != nil {
 		return err
 	}
@@ -122,6 +128,11 @@ func (p *ConfigProvider) BindIdentity(ctx context.Context, name, uid string, id 
 	}
 	if uid == "" || string(user.GetUID()) != uid || !identityAccountValid(user) {
 		return ErrIdentityConflict
+	}
+	if check != nil {
+		if err := check(user); err != nil {
+			return err
+		}
 	}
 	owners, err := p.identityOwners(ctx, id)
 	if err != nil {
@@ -174,6 +185,11 @@ func (p *ConfigProvider) BindIdentity(ctx context.Context, name, uid string, id 
 		}
 		if string(current.GetUID()) != uid || !identityAccountValid(current) {
 			return ErrIdentityConflict
+		}
+		if check != nil {
+			if err := check(current); err != nil {
+				return err
+			}
 		}
 		bindings, err := identityBindings(current)
 		if err != nil {
