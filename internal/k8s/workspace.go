@@ -120,3 +120,21 @@ func (c *WorkspaceClient) UpdateWorkspace(ctx context.Context, workspace *unstru
 	namespace := workspace.GetNamespace()
 	return c.dynamic.Resource(workspaceGVR).Namespace(namespace).Update(ctx, workspace, metav1.UpdateOptions{})
 }
+
+// WorkspacePVCNames distinguishes user-editable PVC mounts from auxiliary
+// mounts such as memory-backed /dev/shm and projected service-account tokens.
+func WorkspacePVCNames(workspace *unstructured.Unstructured) map[string]bool {
+	names := map[string]bool{}
+	volumes, _, _ := unstructured.NestedSlice(workspace.Object, "spec", "template", "spec", "volumes")
+	for _, entry := range volumes {
+		volume, ok := entry.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, ok := volume["persistentVolumeClaim"]; ok {
+			name, _ := volume["name"].(string)
+			names[name] = true
+		}
+	}
+	return names
+}

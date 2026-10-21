@@ -98,7 +98,8 @@ type VolumeMountView struct {
 	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
 	// 'disk' type.
 	Bus *string
-	// Whether the disk is read-only (for CD-ROMs, typically true).
+	// Whether the mount is read-only. Omitted defaults to writable for container
+	// PVCs and VM data disks, and read-only for VM CD-ROMs.
 	Readonly *bool
 }
 

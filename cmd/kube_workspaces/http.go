@@ -1298,16 +1298,13 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		}
 
 		var payload struct {
-			Image         *string `json:"image"`
-			Port          *int    `json:"port"`
-			CPURequest    *string `json:"cpu_request"`
-			MemoryRequest *string `json:"memory_request"`
-			CPULimit      *string `json:"cpu_limit"`
-			MemoryLimit   *string `json:"memory_limit"`
-			VolumeMounts  *[]struct {
-				Name      string `json:"name"`
-				MountPath string `json:"mount_path"`
-			} `json:"volume_mounts"`
+			Image         *string                 `json:"image"`
+			Port          *int                    `json:"port"`
+			CPURequest    *string                 `json:"cpu_request"`
+			MemoryRequest *string                 `json:"memory_request"`
+			CPULimit      *string                 `json:"cpu_limit"`
+			MemoryLimit   *string                 `json:"memory_limit"`
+			VolumeMounts  *[]workspaceVolumeMount `json:"volume_mounts"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -1406,26 +1403,9 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 		container["resources"] = resources
 
 		if payload.VolumeMounts != nil {
-			vms := make([]interface{}, 0, len(*payload.VolumeMounts))
-			for _, vm := range *payload.VolumeMounts {
-				vms = append(vms, map[string]interface{}{
-					"name":      vm.Name,
-					"mountPath": vm.MountPath,
-				})
-			}
-			container["volumeMounts"] = vms
-
-			// Update volumes too
-			vols := make([]interface{}, 0, len(*payload.VolumeMounts))
-			for _, vm := range *payload.VolumeMounts {
-				vols = append(vols, map[string]interface{}{
-					"name": vm.Name,
-					"persistentVolumeClaim": map[string]interface{}{
-						"claimName": vm.Name,
-					},
-				})
-			}
-			if err := unstructured.SetNestedSlice(obj.Object, vols, "spec", "template", "spec", "volumes"); err != nil {
+			podSpec, _, _ := unstructured.NestedMap(obj.Object, "spec", "template", "spec")
+			updateWorkspaceVolumes(podSpec, container, *payload.VolumeMounts)
+			if err := unstructured.SetNestedMap(obj.Object, podSpec, "spec", "template", "spec"); err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(map[string]string{"error": "failed to set volumes"})
@@ -2489,13 +2469,18 @@ func unstructuredToWorkspaceResult(obj *unstructured.Unstructured) map[string]in
 				}
 			}
 			if volumeMounts, ok := container["volumeMounts"].([]interface{}); ok {
-				var vms []map[string]string
+				pvcNames := k8s.WorkspacePVCNames(obj)
+				var vms []workspaceVolumeMount
 				for _, vm := range volumeMounts {
 					if vmMap, ok := vm.(map[string]interface{}); ok {
 						name, _ := vmMap["name"].(string)
+						if !pvcNames[name] {
+							continue
+						}
 						mountPath, _ := vmMap["mountPath"].(string)
 						if name != "" && mountPath != "" {
-							vms = append(vms, map[string]string{"name": name, "mount_path": mountPath})
+							readOnly, _ := vmMap["readOnly"].(bool)
+							vms = append(vms, workspaceVolumeMount{Name: name, MountPath: mountPath, Readonly: readOnly})
 						}
 					}
 				}

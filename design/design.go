@@ -102,8 +102,7 @@ var VolumeMount = Type("VolumeMount", func() {
 		Enum("sata", "ide", "virtio", "scsi", "usb")
 		Example("sata")
 	})
-	Attribute("readonly", Boolean, "Whether the disk is read-only (for CD-ROMs, typically true).", func() {
-		Default(true)
+	Attribute("readonly", Boolean, "Whether the mount is read-only. Omitted defaults to writable for container PVCs and VM data disks, and read-only for VM CD-ROMs.", func() {
 		Example(true)
 	})
 	Required("name", "mount_path")

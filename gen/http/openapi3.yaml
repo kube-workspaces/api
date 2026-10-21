@@ -6450,8 +6450,7 @@ components:
                     example: my-workspace-data
                 readonly:
                     type: boolean
-                    description: Whether the disk is read-only (for CD-ROMs, typically true).
-                    default: true
+                    description: Whether the mount is read-only. Omitted defaults to writable for container PVCs and VM data disks, and read-only for VM CD-ROMs.
                     example: true
                 type:
                     type: string

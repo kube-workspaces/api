@@ -699,12 +699,6 @@ func marshalWorkspacesVolumeMountToVolumeMountResponse(v *workspaces.VolumeMount
 		Bus:       v.Bus,
 		Readonly:  v.Readonly,
 	}
-	{
-		var zero bool
-		if res.Readonly == zero {
-			res.Readonly = true
-		}
-	}
 
 	return res
 }
@@ -778,12 +772,7 @@ func marshalWorkspacesviewsVolumeMountViewToVolumeMountResponseBody(v *workspace
 		MountPath: *v.MountPath,
 		Type:      v.Type,
 		Bus:       v.Bus,
-	}
-	if v.Readonly != nil {
-		res.Readonly = *v.Readonly
-	}
-	if v.Readonly == nil {
-		res.Readonly = true
+		Readonly:  v.Readonly,
 	}
 
 	return res
@@ -886,12 +875,7 @@ func unmarshalVolumeMountRequestBodyToWorkspacesVolumeMount(v *VolumeMountReques
 		MountPath: *v.MountPath,
 		Type:      v.Type,
 		Bus:       v.Bus,
-	}
-	if v.Readonly != nil {
-		res.Readonly = *v.Readonly
-	}
-	if v.Readonly == nil {
-		res.Readonly = true
+		Readonly:  v.Readonly,
 	}
 
 	return res

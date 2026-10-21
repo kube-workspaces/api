@@ -23,6 +23,22 @@ The API provides:
 - **Health** - Health check endpoint
 - **OpenAPI** - Auto-generated OpenAPI 3.0 spec (JSON and YAML)
 
+## Workspace volume mount modes
+
+Each `volume_mounts` entry accepts `readonly: true` or `readonly: false`.
+When omitted, container PVCs and VM data disks are writable; VM CD-ROMs default
+to read-only. This mount setting is separate from the PVC access mode
+(`ReadWriteOnce`, `ReadWriteMany`, or `ReadOnlyMany`).
+
+Home/profile volumes used by an application's permission-fix init container must
+be writable: running `chown` as root cannot modify a read-only mount. Inherited
+init-container mounts follow the main container's mount modes, including edits.
+Auxiliary mounts such as `/dev/shm` are retained when editing PVC attachments.
+
+The corrected default applies to new requests. Existing Workspaces that already
+store `readOnly: true` retain that setting until explicitly changed; it is not
+safe to assume every existing read-only mount was accidental.
+
 ## VM access
 
 For `spec.type: vm` workspaces the API bridges WebSockets to KubeVirt

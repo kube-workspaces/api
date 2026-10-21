@@ -406,8 +406,9 @@ type VolumeMountResponse struct {
 	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
 	// 'disk' type.
 	Bus *string `form:"bus,omitempty" json:"bus,omitempty" xml:"bus,omitempty"`
-	// Whether the disk is read-only (for CD-ROMs, typically true).
-	Readonly bool `form:"readonly" json:"readonly" xml:"readonly"`
+	// Whether the mount is read-only. Omitted defaults to writable for container
+	// PVCs and VM data disks, and read-only for VM CD-ROMs.
+	Readonly *bool `form:"readonly,omitempty" json:"readonly,omitempty" xml:"readonly,omitempty"`
 }
 
 // ImageRemoteDesktopResponse is used to define fields on response body types.
@@ -460,8 +461,9 @@ type VolumeMountResponseBody struct {
 	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
 	// 'disk' type.
 	Bus *string `form:"bus,omitempty" json:"bus,omitempty" xml:"bus,omitempty"`
-	// Whether the disk is read-only (for CD-ROMs, typically true).
-	Readonly bool `form:"readonly" json:"readonly" xml:"readonly"`
+	// Whether the mount is read-only. Omitted defaults to writable for container
+	// PVCs and VM data disks, and read-only for VM CD-ROMs.
+	Readonly *bool `form:"readonly,omitempty" json:"readonly,omitempty" xml:"readonly,omitempty"`
 }
 
 // ImageRemoteDesktopResponseBody is used to define fields on response body
@@ -522,7 +524,8 @@ type VolumeMountRequestBody struct {
 	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
 	// 'disk' type.
 	Bus *string `form:"bus,omitempty" json:"bus,omitempty" xml:"bus,omitempty"`
-	// Whether the disk is read-only (for CD-ROMs, typically true).
+	// Whether the mount is read-only. Omitted defaults to writable for container
+	// PVCs and VM data disks, and read-only for VM CD-ROMs.
 	Readonly *bool `form:"readonly,omitempty" json:"readonly,omitempty" xml:"readonly,omitempty"`
 }
 

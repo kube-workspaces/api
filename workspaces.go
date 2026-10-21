@@ -676,7 +676,11 @@ func buildWorkspaceCR(p *workspaces.CreateWorkspacePayload, imageClient *k8s.Ima
 			if vm.Bus != nil && *vm.Bus != "" {
 				vmount["bus"] = *vm.Bus
 			}
-			vmount["readOnly"] = vm.Readonly
+			readOnly := p.Type == "vm" && vm.Type != nil && *vm.Type == "cdrom"
+			if vm.Readonly != nil {
+				readOnly = *vm.Readonly
+			}
+			vmount["readOnly"] = readOnly
 			mounts = append(mounts, vmount)
 		}
 		container["volumeMounts"] = mounts
@@ -1113,9 +1117,13 @@ func unstructuredToWorkspace(obj *unstructured.Unstructured, rd *k8s.ImageRemote
 
 			// Extract volume mounts
 			if volumeMounts, ok := container["volumeMounts"].([]interface{}); ok {
+				pvcNames := k8s.WorkspacePVCNames(obj)
 				for _, vm := range volumeMounts {
 					if vmMap, ok := vm.(map[string]interface{}); ok {
 						name, _ := vmMap["name"].(string)
+						if ws.Type != "vm" && !pvcNames[name] {
+							continue
+						}
 						mountPath, _ := vmMap["mountPath"].(string)
 						if name != "" && mountPath != "" {
 							vmnt := &workspaces.VolumeMount{
@@ -1129,10 +1137,10 @@ func unstructuredToWorkspace(obj *unstructured.Unstructured, rd *k8s.ImageRemote
 								vmnt.Bus = &b
 							}
 							if ro, ok := vmMap["readOnly"].(bool); ok {
-								vmnt.Readonly = ro
+								vmnt.Readonly = &ro
 							}
 							if ro, ok := vmMap["readonly"].(bool); ok {
-								vmnt.Readonly = ro
+								vmnt.Readonly = &ro
 							}
 							ws.VolumeMounts = append(ws.VolumeMounts, vmnt)
 						}

@@ -227,8 +227,9 @@ type VolumeMount struct {
 	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
 	// 'disk' type.
 	Bus *string
-	// Whether the disk is read-only (for CD-ROMs, typically true).
-	Readonly bool
+	// Whether the mount is read-only. Omitted defaults to writable for container
+	// PVCs and VM data disks, and read-only for VM CD-ROMs.
+	Readonly *bool
 }
 
 // Workspace is the result type of the workspaces service get method.
@@ -582,12 +583,7 @@ func transformWorkspacesviewsVolumeMountViewToVolumeMount(v *workspacesviews.Vol
 		MountPath: *v.MountPath,
 		Type:      v.Type,
 		Bus:       v.Bus,
-	}
-	if v.Readonly != nil {
-		res.Readonly = *v.Readonly
-	}
-	if v.Readonly == nil {
-		res.Readonly = true
+		Readonly:  v.Readonly,
 	}
 
 	return res
@@ -660,7 +656,7 @@ func transformVolumeMountToWorkspacesviewsVolumeMountView(v *VolumeMount) *works
 		MountPath: &v.MountPath,
 		Type:      v.Type,
 		Bus:       v.Bus,
-		Readonly:  &v.Readonly,
+		Readonly:  v.Readonly,
 	}
 
 	return res
