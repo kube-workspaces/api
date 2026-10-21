@@ -100,6 +100,7 @@ type authState struct {
 	LinkUserName     string `json:"linkUserName,omitempty"`
 	LinkUserUID      string `json:"linkUserUID,omitempty"`
 	LinkSessionHash  string `json:"linkSessionHash,omitempty"`
+	AdoptionCode     string `json:"adoptionCode,omitempty"`
 	NativeRedirect   string `json:"nativeRedirect,omitempty"`
 	CodeChallenge    string `json:"codeChallenge,omitempty"`
 	// NativeState is the client's own opaque state, echoed verbatim on the
@@ -491,6 +492,18 @@ func (h *OIDCHandler) HandleNativeToken(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, http.StatusBadRequest, "invalid_verifier", "code_verifier does not match code_challenge")
 		return
 	}
+	// A code is only a delivery mechanism. Account disablement, replacement,
+	// credential revocation and key rotation since issuance must still apply.
+	cfg, err := h.provider.GetConfig(ctx)
+	if err != nil || cfg == nil || !cfg.Enabled {
+		writeJSONError(w, http.StatusUnauthorized, "invalid_session", "session is no longer available")
+		return
+	}
+	user, err := validateAndGetUser(ctx, entry.token, cfg, h.provider)
+	if err != nil {
+		writeJSONError(w, http.StatusUnauthorized, "invalid_session", "session is no longer available")
+		return
+	}
 
 	log.Printf(ctx, "auth: native token exchange succeeded for %s", entry.email)
 
@@ -500,7 +513,7 @@ func (h *OIDCHandler) HandleNativeToken(w http.ResponseWriter, r *http.Request) 
 		"token":      entry.token,
 		"expires_at": entry.tokenExpiresAt,
 		"email":      entry.email,
-		"role":       entry.role,
+		"role":       user.Role,
 	})
 }
 

@@ -169,6 +169,15 @@ func (h *OIDCHandler) HandleBrowserSessionRedeem(w http.ResponseWriter, r *http.
 		writeBrowserSessionError(w, http.StatusBadRequest, "This grant is not bound to a workspace. Open the workspace from the desktop app again.")
 		return
 	}
+	cfg, err := h.provider.GetConfig(ctx)
+	if err != nil || cfg == nil || !cfg.Enabled {
+		writeBrowserSessionError(w, http.StatusUnauthorized, "This session is no longer available. Sign in again from the desktop app.")
+		return
+	}
+	if _, err := validateAndGetUser(ctx, entry.token, cfg, h.provider); err != nil {
+		writeBrowserSessionError(w, http.StatusUnauthorized, "This session is no longer available. Sign in again from the desktop app.")
+		return
+	}
 
 	// Set the session cookie exactly as a login would; the browser now holds
 	// the same session the desktop client holds. SameSite/Lax and HttpOnly

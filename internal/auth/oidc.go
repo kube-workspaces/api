@@ -55,8 +55,9 @@ type OIDCHandler struct {
 	// Empty for ordinary browser logins. Backed by K8s Secrets when a dynamic
 	// client is available so any replica can redeem (see codestore.go);
 	// in-memory otherwise.
-	codes CodeStore
-	flows CodeStore
+	codes     CodeStore
+	flows     CodeStore
+	adoptions CodeStore
 	// nativeLimiter rate-limits POST /auth/native/token by client IP.
 	nativeLimiter *ipRateLimiter
 	// browserSessionLimiter rate-limits GET /auth/browser-session by client IP.
@@ -77,7 +78,12 @@ func NewOIDCHandlerWithCodes(provider *ConfigProvider, codes CodeStore) *OIDCHan
 	if store, ok := flows.(*k8sCodeStore); ok {
 		store.strict = true
 	}
+	adoptions := newK8sCodeStore(provider.dynamicClient, authStateTTL, nativeCodeMaxEntries)
+	if store, ok := adoptions.(*k8sCodeStore); ok {
+		store.strict = true
+	}
 	return &OIDCHandler{
+		adoptions:             adoptions,
 		flows:                 flows,
 		provider:              provider,
 		codes:                 codes,
@@ -91,6 +97,7 @@ func NewOIDCHandlerWithCodes(provider *ConfigProvider, codes CodeStore) *OIDCHan
 func (h *OIDCHandler) Close() {
 	h.codes.Close()
 	h.flows.Close()
+	h.adoptions.Close()
 }
 
 // callbackURLFromRequest derives the OIDC callback URL from the incoming request,
@@ -156,6 +163,10 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OIDCHandler) startLogin(w http.ResponseWriter, r *http.Request, link *unstructured.Unstructured) {
+	h.startLoginWithAdoption(w, r, link, "")
+}
+
+func (h *OIDCHandler) startLoginWithAdoption(w http.ResponseWriter, r *http.Request, link *unstructured.Unstructured, adoptionCode string) {
 	ctx := r.Context()
 	cfg, err := h.provider.GetConfig(ctx)
 	if err != nil || !cfg.Enabled {
@@ -233,8 +244,9 @@ func (h *OIDCHandler) startLogin(w http.ResponseWriter, r *http.Request, link *u
 		return
 	}
 	st := &authState{
-		State: state,
-		Nonce: nonce, UpstreamVerifier: verifier, Issuer: cfg.IssuerURL, ClientID: cfg.ClientID,
+		AdoptionCode: adoptionCode,
+		State:        state,
+		Nonce:        nonce, UpstreamVerifier: verifier, Issuer: cfg.IssuerURL, ClientID: cfg.ClientID,
 		NativeRedirect: nativeRedirect,
 		CodeChallenge:  codeChallenge,
 		NativeState:    nativeStateValue,
@@ -366,6 +378,15 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := ExternalIdentity{Issuer: cfg.IssuerURL, Subject: claims.Sub}
+	if authSt.AdoptionCode != "" {
+		if err := h.completeIdentityAdoption(ctx, cfg, authSt.AdoptionCode, id, claims); err != nil {
+			http.Error(w, "identity adoption denied; ask an administrator for a new invitation and use the approved provider account", http.StatusForbidden)
+			return
+		}
+		// Bind only: do not replace a different account's existing browser session.
+		http.Redirect(w, r, "/login?identityLinked=1", http.StatusFound)
+		return
+	}
 	if authSt.LinkUserUID != "" {
 		if err := h.completeIdentityLink(ctx, r, cfg, authSt, id); err != nil {
 			http.Error(w, "identity linking denied", http.StatusForbidden)
