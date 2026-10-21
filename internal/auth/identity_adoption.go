@@ -146,7 +146,10 @@ func (h *OIDCHandler) redeemAdoption(code, purpose string) (identityAdoption, er
 // The recipient explicitly continues using a POST before the OIDC round trip.
 func (h *OIDCHandler) HandleIdentityAdoption(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Referrer-Policy", "no-referrer")
+	// no-referrer makes Chromium send Origin: null for the confirmation form.
+	// strict-origin hides the invitation path/query without suppressing the
+	// same-origin POST's Origin header required by BrowserRequestGuard.
+	w.Header().Set("Referrer-Policy", "strict-origin")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 	if r.Method == http.MethodGet {
 		code := r.URL.Query().Get("code")

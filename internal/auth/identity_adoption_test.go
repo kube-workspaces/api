@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -74,6 +76,9 @@ func startAdoption(t *testing.T, h *OIDCHandler, code, adminToken string) *http.
 		if rec.Code != 200 || strings.Contains(rec.Body.String(), adminToken) {
 			t.Fatal("unsafe invitation landing page")
 		}
+		if rec.Header().Get("Referrer-Policy") != "strict-origin" {
+			t.Fatal("invitation form must preserve same-origin POST Origin without exposing the code in Referer")
+		}
 	}
 	req := httptest.NewRequest("POST", "/auth/oidc/adopt?native_redirect=http://127.0.0.1:9999", strings.NewReader(url.Values{"code": {code}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -107,6 +112,45 @@ func startAdoption(t *testing.T, h *OIDCHandler, code, adminToken string) *http.
 	}
 	t.Fatal("no state cookie")
 	return nil
+}
+
+// Opt-in real-browser proof for the HTML form and actual origin middleware.
+// Point KW_AUTH_BROWSER_MODULE at an installed Playwright index.mjs. Ordinary Go
+// tests do not require Node or a browser. No live account/provider is contacted.
+func TestIdentityAdoptionBrowserOrigin(t *testing.T) {
+	module := os.Getenv("KW_AUTH_BROWSER_MODULE")
+	if module == "" {
+		t.Skip("set KW_AUTH_BROWSER_MODULE for Chromium adoption-form acceptance")
+	}
+	h := newTestHandler(t, testConfig("https://idp.example.com"))
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		BrowserRequestGuard([]string{server.URL})(http.HandlerFunc(h.HandleIdentityAdoption)).ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	script := `
+const { chromium } = await import(process.argv[1]);
+const browser = await chromium.launch({headless: true});
+try {
+  const page = await browser.newPage();
+  await page.goto(process.argv[2] + "/auth/oidc/adopt?code=" + "x".repeat(43));
+  const [request] = await Promise.all([
+    page.waitForRequest(r => r.method() === "POST"),
+    page.getByRole("button", {name: "Continue to identity provider"}).click(),
+  ]);
+  const headers = await request.allHeaders();
+  if (headers.origin !== process.argv[2]) throw new Error("form Origin suppressed: " + headers.origin);
+  if (headers.referer !== process.argv[2] + "/") throw new Error("invitation path/query leaked in Referer");
+  await page.waitForURL(url => !url.search);
+  const body = await page.locator("body").innerText();
+  if (!body.includes("adoption invitation expired or no longer authorized")) throw new Error("form blocked before adoption handler: " + body);
+} finally { await browser.close(); }
+`
+	if output, err := exec.CommandContext(ctx, "node", "--input-type=module", "-e", script, module, server.URL).CombinedOutput(); err != nil {
+		t.Fatalf("Chromium confirmation failed: %v\n%s", err, output)
+	}
 }
 
 func TestLegacyAdoptionRechecksTargetAfterConcurrentUpdate(t *testing.T) {
