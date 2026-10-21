@@ -363,7 +363,9 @@ func (h *DeviceHandler) HandleDeviceList(w http.ResponseWriter, r *http.Request)
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
-	devices, err := h.devices.List(ctx, caller.Email, IsAdmin(r.Context()) && r.URL.Query().Get("scope") != "own")
+	// /auth/* bypasses identity middleware. Use the current account resolved
+	// above, not IsAdmin on an unauthenticated (auth-disabled) context.
+	devices, err := h.devices.List(ctx, caller.Email, caller.Role == "admin" && r.URL.Query().Get("scope") != "own")
 	if err != nil {
 		http.Error(w, "device tokens are unavailable", http.StatusServiceUnavailable)
 		return
@@ -401,7 +403,7 @@ func (h *DeviceHandler) HandleDeviceRevoke(w http.ResponseWriter, r *http.Reques
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", "device_id is required")
 		return
 	}
-	if !IsAdmin(r.Context()) {
+	if caller.Role != "admin" {
 		// Confirm ownership by listing only our own devices.
 		own, err := h.devices.List(ctx, caller.Email, false)
 		if err != nil {

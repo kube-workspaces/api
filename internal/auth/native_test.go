@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-jose/go-jose/v4"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -290,15 +293,9 @@ func TestAuthStateRejectsTampering(t *testing.T) {
 	}
 }
 
-func TestParseAuthStateCookieUnsignedFallback(t *testing.T) {
-	// A cookie from an older build (or one planted by an attacker) is treated
-	// as a bare CSRF state and must never yield native parameters.
-	st := parseAuthStateCookie("raw-legacy-state", [][]byte{[]byte(testSigningKey)})
-	if st.State != "raw-legacy-state" {
-		t.Fatalf("parseAuthStateCookie() state = %q, want %q", st.State, "raw-legacy-state")
-	}
-	if st.Native() {
-		t.Fatal("parseAuthStateCookie() derived native parameters from an unsigned cookie")
+func TestAuthStateRejectsUnsignedLegacyCookie(t *testing.T) {
+	if _, err := decodeAuthState("raw-legacy-state", [][]byte{[]byte(testSigningKey)}); err == nil {
+		t.Fatal("unsigned state cookie accepted")
 	}
 }
 
@@ -331,6 +328,15 @@ func newTestHandler(t *testing.T, cfg *Config) *OIDCHandler {
 			t.Fatal(err)
 		}
 	}
+	if cfg.IssuerURL != "" {
+		user, err := provider.GetUserByEmail(context.Background(), "user@example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := provider.BindIdentity(context.Background(), user.GetName(), string(user.GetUID()), ExternalIdentity{Issuer: cfg.IssuerURL, Subject: "test-subject"}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	h := NewOIDCHandler(provider)
 	// Handler tests fire several requests from the same RemoteAddr; the
 	// production limit would otherwise trip part-way through.
@@ -339,38 +345,85 @@ func newTestHandler(t *testing.T, cfg *Config) *OIDCHandler {
 	return h
 }
 
-// newFakeIDP stands up a minimal OIDC provider: discovery plus a token endpoint
-// that returns an unsigned ID token carrying the given claims.
+// newFakeIDP is a signed test issuer with discovery, JWKS and upstream PKCE.
 func newFakeIDP(t *testing.T, claims IDTokenClaims) *httptest.Server {
+	return newSignedTestIDP(t, claims, nil)
+}
+
+func newSignedTestIDP(t *testing.T, claims IDTokenClaims, mutate func(map[string]interface{})) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key}, (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "test-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	nonces := map[string]string{}
+	mux.HandleFunc("/authorize", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		nonces[r.URL.Query().Get("code_challenge")] = r.URL.Query().Get("nonce")
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "test-key", Algorithm: "RS256", Use: "sig"}}})
+	})
 
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(OIDCDiscovery{
+			Issuer:                srv.URL,
 			AuthorizationEndpoint: srv.URL + "/authorize",
 			TokenEndpoint:         srv.URL + "/token",
+			JwksURI:               srv.URL + "/keys",
 		})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid request", 400)
+			return
+		}
+		mu.Lock()
+		nonce, ok := nonces[deriveCodeChallengeS256(r.Form.Get("code_verifier"))]
+		delete(nonces, deriveCodeChallengeS256(r.Form.Get("code_verifier")))
+		mu.Unlock()
+		if !ok {
+			http.Error(w, "invalid verifier", 400)
+			return
+		}
+		payload, _ := json.Marshal(claims)
+		var fields map[string]interface{}
+		json.Unmarshal(payload, &fields)
+		fields["iss"], fields["aud"], fields["exp"], fields["nonce"] = srv.URL, "kube-workspaces", time.Now().Add(time.Hour).Unix(), nonce
+		if claims.Sub == "" {
+			fields["sub"] = "test-subject"
+		}
+		if mutate != nil {
+			mutate(fields)
+		}
+		payload, _ = json.Marshal(fields)
+		signed, err := signer.Sign(payload)
+		if err != nil {
+			http.Error(w, "signing failed", 500)
+			return
+		}
+		raw, err := signed.CompactSerialize()
+		if err != nil {
+			http.Error(w, "serialization failed", 500)
+			return
+		}
 		json.NewEncoder(w).Encode(TokenResponse{
 			AccessToken: "fake-access-token",
 			TokenType:   "Bearer",
-			IDToken:     fakeIDToken(t, claims),
+			IDToken:     raw,
 		})
 	})
 	return srv
-}
-
-func fakeIDToken(t *testing.T, claims IDTokenClaims) string {
-	t.Helper()
-	payload, err := json.Marshal(claims)
-	if err != nil {
-		t.Fatalf("failed to marshal claims: %v", err)
-	}
-	return base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`)) + "." +
-		base64.RawURLEncoding.EncodeToString(payload) + ".sig"
 }
 
 func testConfig(issuerURL string) *Config {
@@ -397,6 +450,12 @@ func login(t *testing.T, h *OIDCHandler, query string) (*httptest.ResponseRecord
 
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == "kw-auth-state" {
+			// Simulate the browser visiting the provider's authorization endpoint.
+			resp, err := http.Get(rec.Header().Get("Location"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
 			return rec, c
 		}
 	}

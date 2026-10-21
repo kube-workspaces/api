@@ -3,6 +3,8 @@ module github.com/kube-workspaces/api
 go 1.26.0
 
 require (
+	github.com/coreos/go-oidc/v3 v3.17.0
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/jackc/pgx/v5 v5.11.0

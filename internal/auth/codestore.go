@@ -60,18 +60,17 @@ func codeSecretName(code string) string {
 }
 
 // k8sCodeStore persists authorization codes as Secrets so any replica can
-// redeem them. Writes go to K8s only; reads Get then Delete (single-use,
-// best-effort under concurrent redeem — both redeemers would receive the same
-// already-minted session token, and PKCE still binds the native code to its
-// verifier, so a double delivery grants nothing new).
+// redeem them. Redemption uses Get then a conditional Delete so only the winner
+// may redeem. Strict stores fail closed instead of falling back to memory.
 //
 // When dyn is nil the store degrades to a pure in-memory store so unit tests
 // and local runs without cluster access keep working.
 type k8sCodeStore struct {
-	dyn dynamic.Interface
-	mem *nativeCodeStore
-	ttl time.Duration
-	max int
+	dyn    dynamic.Interface
+	mem    *nativeCodeStore
+	ttl    time.Duration
+	max    int
+	strict bool // security-sensitive flows must not fall back on storage failures
 }
 
 // NewK8sCodeStore returns a CodeStore backed by K8s Secrets when dyn is
@@ -128,6 +127,9 @@ func (s *k8sCodeStore) Issue(code string, entry nativeAuthCode) error {
 		if k8serrors.IsAlreadyExists(err) {
 			return fmt.Errorf("authorization code already issued")
 		}
+		if s.strict {
+			return err
+		}
 		// K8s outage: fall back to the issuing replica's memory so logins
 		// keep working single-replica (the pre-K8s behavior) instead of
 		// failing every login. Cross-replica redeem degrades until K8s
@@ -154,13 +156,21 @@ func (s *k8sCodeStore) Redeem(code string) (nativeAuthCode, bool) {
 			s.deleteSecret(code)
 			return nativeAuthCode{}, false
 		}
-		// Single-use: delete first so a concurrent redeemer finds nothing. A
-		// lost race delivers the same token twice at worst (see type doc).
-		s.deleteSecret(code)
+		// Only the successful conditional deleter may use this value. A competing
+		// replica or a replacement object must not produce a second redemption.
+		uid, rv := obj.GetUID(), obj.GetResourceVersion()
+		if err := s.dyn.Resource(authCodeGVR).Namespace(authCodeNamespace).Delete(ctx, obj.GetName(), metav1.DeleteOptions{
+			Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &rv},
+		}); err != nil {
+			return nativeAuthCode{}, false
+		}
 		return entry, true
 	}
 	if !k8serrors.IsNotFound(err) {
 		log.Printf(context.Background(), "auth: code fetch failed: %v", err)
+	}
+	if s.strict {
+		return nativeAuthCode{}, false
 	}
 	// Miss (or K8s outage): fall back to memory for codes issued during an
 	// outage on this replica.

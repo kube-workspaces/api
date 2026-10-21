@@ -92,9 +92,16 @@ const (
 // signed, since both are ultimately supplied back to us by the client; the
 // cookie simply leaks less.
 type authState struct {
-	State          string `json:"state"`
-	NativeRedirect string `json:"nativeRedirect,omitempty"`
-	CodeChallenge  string `json:"codeChallenge,omitempty"`
+	State            string `json:"state"`
+	Nonce            string `json:"nonce,omitempty"`
+	UpstreamVerifier string `json:"upstreamVerifier,omitempty"`
+	Issuer           string `json:"issuer,omitempty"`
+	ClientID         string `json:"clientID,omitempty"`
+	LinkUserName     string `json:"linkUserName,omitempty"`
+	LinkUserUID      string `json:"linkUserUID,omitempty"`
+	LinkSessionHash  string `json:"linkSessionHash,omitempty"`
+	NativeRedirect   string `json:"nativeRedirect,omitempty"`
+	CodeChallenge    string `json:"codeChallenge,omitempty"`
 	// NativeState is the client's own opaque state, echoed verbatim on the
 	// loopback redirect. It is distinct from State: State is the CSRF nonce we
 	// mint for the IdP round trip and the native client has never seen it, so
@@ -162,21 +169,6 @@ func decodeAuthState(value string, signingKeys [][]byte) (*authState, error) {
 		return nil, fmt.Errorf("auth state expired")
 	}
 	return &st, nil
-}
-
-// parseAuthStateCookie decodes a kw-auth-state cookie value, tolerating the
-// unsigned cookies issued by older builds so logins started immediately before
-// a rollout still complete.
-//
-// SECURITY: the unsigned fallback deliberately yields no native parameters. An
-// attacker who can plant a raw cookie value therefore gains exactly the
-// pre-existing (browser-only) behaviour and can never steer a completed login
-// at a redirect target of their choosing.
-func parseAuthStateCookie(value string, signingKeys [][]byte) *authState {
-	if st, err := decodeAuthState(value, signingKeys); err == nil {
-		return st
-	}
-	return &authState{State: value}
 }
 
 // validateLoopbackRedirect checks a client-supplied native redirect URI against

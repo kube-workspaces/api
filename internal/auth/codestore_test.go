@@ -1,9 +1,37 @@
 package auth
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestK8sCodeStoreConcurrentRedeemHasOneWinner(t *testing.T) {
+	dyn := newFakeDynamicClient(t)
+	stores := []CodeStore{NewK8sCodeStore(dyn), NewK8sCodeStore(dyn)}
+	for _, store := range stores {
+		t.Cleanup(store.Close)
+	}
+	if err := stores[0].Issue("concurrent-code", nativeAuthCode{token: "token.signature"}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	results := make(chan bool, 20)
+	for i := range 20 {
+		wg.Go(func() { _, ok := stores[i%2].Redeem("concurrent-code"); results <- ok })
+	}
+	wg.Wait()
+	close(results)
+	winners := 0
+	for ok := range results {
+		if ok {
+			winners++
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("got %d redemption winners", winners)
+	}
+}
 
 func TestK8sCodeStoreCrossReplica(t *testing.T) {
 	dyn := newFakeDynamicClient(t)

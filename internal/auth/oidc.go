@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,16 +13,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"goa.design/clue/log"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // OIDCDiscovery holds the endpoints from .well-known/openid-configuration.
 type OIDCDiscovery struct {
+	Issuer                string `json:"issuer"`
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
 	UserinfoEndpoint      string `json:"userinfo_endpoint"`
 	JwksURI               string `json:"jwks_uri"`
+	provider              *oidc.Provider
 }
 
 // TokenResponse represents the OIDC token response.
@@ -52,6 +56,7 @@ type OIDCHandler struct {
 	// client is available so any replica can redeem (see codestore.go);
 	// in-memory otherwise.
 	codes CodeStore
+	flows CodeStore
 	// nativeLimiter rate-limits POST /auth/native/token by client IP.
 	nativeLimiter *ipRateLimiter
 	// browserSessionLimiter rate-limits GET /auth/browser-session by client IP.
@@ -68,7 +73,12 @@ func NewOIDCHandler(provider *ConfigProvider) *OIDCHandler {
 // and browser-session codes redeem on any replica; tests pass the in-memory
 // store (or a fake-backed K8s store) directly.
 func NewOIDCHandlerWithCodes(provider *ConfigProvider, codes CodeStore) *OIDCHandler {
+	flows := newK8sCodeStore(provider.dynamicClient, authStateTTL, nativeCodeMaxEntries)
+	if store, ok := flows.(*k8sCodeStore); ok {
+		store.strict = true
+	}
 	return &OIDCHandler{
+		flows:                 flows,
 		provider:              provider,
 		codes:                 codes,
 		nativeLimiter:         newIPRateLimiter(10, time.Minute),
@@ -80,6 +90,7 @@ func NewOIDCHandlerWithCodes(provider *ConfigProvider, codes CodeStore) *OIDCHan
 // authorization code sweeper).
 func (h *OIDCHandler) Close() {
 	h.codes.Close()
+	h.flows.Close()
 }
 
 // callbackURLFromRequest derives the OIDC callback URL from the incoming request,
@@ -141,6 +152,10 @@ func (h *OIDCHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 
 // HandleLogin initiates the OIDC login flow.
 func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	h.startLogin(w, r, nil)
+}
+
+func (h *OIDCHandler) startLogin(w http.ResponseWriter, r *http.Request, link *unstructured.Unstructured) {
 	ctx := r.Context()
 	cfg, err := h.provider.GetConfig(ctx)
 	if err != nil || !cfg.Enabled {
@@ -183,7 +198,7 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Discover OIDC endpoints
-	discovery, err := discoverOIDC(cfg.IssuerURL)
+	discovery, err := discoverOIDC(ctx, cfg.IssuerURL)
 	if err != nil {
 		log.Printf(ctx, "auth: OIDC discovery failed: %v", err)
 		http.Error(w, "OIDC provider unavailable", http.StatusServiceUnavailable)
@@ -207,16 +222,36 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if nativeRedirect == "" {
 		nativeStateValue = ""
 	}
-	stateValue, err := encodeAuthState(&authState{
-		State:          state,
+	nonce, err := generateRandomState()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	verifier, err := generateRandomState()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	st := &authState{
+		State: state,
+		Nonce: nonce, UpstreamVerifier: verifier, Issuer: cfg.IssuerURL, ClientID: cfg.ClientID,
 		NativeRedirect: nativeRedirect,
 		CodeChallenge:  codeChallenge,
 		NativeState:    nativeStateValue,
 		ExpiresAt:      time.Now().Add(authStateTTL).Unix(),
-	}, cfg.SigningKey)
+	}
+	if link != nil {
+		st.LinkUserName, st.LinkUserUID = link.GetName(), string(link.GetUID())
+		st.LinkSessionHash = sessionHash(sessionTokenFromRequest(r))
+	}
+	stateValue, err := encodeAuthState(st, cfg.SigningKey)
 	if err != nil {
 		log.Printf(ctx, "auth: failed to encode auth state: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := h.flows.Issue(state, nativeAuthCode{token: stateValue}); err != nil {
+		http.Error(w, "authentication state storage unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -233,14 +268,23 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Build authorization URL
 	params := url.Values{
-		"client_id":     {cfg.ClientID},
-		"redirect_uri":  {callbackURLFromRequest(r)},
-		"response_type": {"code"},
-		"scope":         {strings.Join(cfg.Scopes, " ")},
-		"state":         {state},
+		"client_id":             {cfg.ClientID},
+		"redirect_uri":          {callbackURLFromRequest(r)},
+		"response_type":         {"code"},
+		"scope":                 {strings.Join(cfg.Scopes, " ")},
+		"state":                 {state},
+		"nonce":                 {nonce},
+		"code_challenge":        {deriveCodeChallengeS256(verifier)},
+		"code_challenge_method": {"S256"},
 	}
 
 	authURL := discovery.AuthorizationEndpoint + "?" + params.Encode()
+	if link != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(map[string]string{"authorizationURL": authURL})
+		return
+	}
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -263,10 +307,15 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// The cookie carries the CSRF state plus any native-flow parameters. The
 	// state comparison below is unchanged in substance: the value the provider
 	// echoed back must equal the one we minted and stored.
-	authSt := parseAuthStateCookie(stateCookie.Value, cfg.SessionSigningKeys())
+	authSt, stateErr := decodeAuthState(stateCookie.Value, cfg.SessionSigningKeys())
 	queryState := r.URL.Query().Get("state")
-	if queryState == "" || queryState != authSt.State {
+	if stateErr != nil || queryState == "" || queryState != authSt.State || authSt.Issuer != cfg.IssuerURL || authSt.ClientID != cfg.ClientID {
 		http.Error(w, "state mismatch", http.StatusBadRequest)
+		return
+	}
+	flow, ok := h.flows.Redeem(authSt.State)
+	if !ok || flow.token != stateCookie.Value {
+		http.Error(w, "authentication state expired or already used", http.StatusBadRequest)
 		return
 	}
 
@@ -297,30 +346,46 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	discovery, err := discoverOIDC(cfg.IssuerURL)
+	discovery, err := discoverOIDC(ctx, cfg.IssuerURL)
 	if err != nil {
 		http.Error(w, "OIDC provider unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
-	tokenResp, err := exchangeCode(ctx, discovery.TokenEndpoint, code, cfg.ClientID, cfg.ClientSecret, callbackURLFromRequest(r))
+	tokenResp, err := exchangeCode(ctx, discovery.TokenEndpoint, code, cfg.ClientID, cfg.ClientSecret, callbackURLFromRequest(r), authSt.UpstreamVerifier)
 	if err != nil {
 		log.Printf(ctx, "auth: token exchange failed: %v", err)
 		http.Error(w, "token exchange failed", http.StatusInternalServerError)
 		return
 	}
 
-	// Parse ID token claims (without full JWT validation - trusting the token endpoint response)
-	claims, err := parseIDTokenClaims(tokenResp.IDToken)
+	claims, err := verifyOIDCIdentity(ctx, discovery, cfg, authSt, tokenResp.IDToken)
 	if err != nil {
 		log.Printf(ctx, "auth: failed to parse ID token: %v", err)
-		http.Error(w, "failed to parse identity", http.StatusInternalServerError)
+		http.Error(w, "invalid provider identity", http.StatusUnauthorized)
+		return
+	}
+	id := ExternalIdentity{Issuer: cfg.IssuerURL, Subject: claims.Sub}
+	if authSt.LinkUserUID != "" {
+		if err := h.completeIdentityLink(ctx, r, cfg, authSt, id); err != nil {
+			http.Error(w, "identity linking denied", http.StatusForbidden)
+			return
+		}
+		http.Redirect(w, r, "/admin/users?identityLinked=1", http.StatusFound)
+		return
+	}
+	currentUser, identityErr := h.provider.GetUserByIdentity(ctx, id)
+	if identityErr != nil && !errors.Is(identityErr, ErrIdentityNotBound) {
+		http.Error(w, "identity binding unavailable or ambiguous", http.StatusForbidden)
 		return
 	}
 
 	email := claims.Email
-	if email == "" {
-		email = claims.Sub
+	if currentUser != nil {
+		email, _, _ = unstructured.NestedString(currentUser.Object, "spec", "email")
+	} else if email == "" || !claims.EmailVerified {
+		http.Error(w, "a verified email is required for account provisioning", http.StatusForbidden)
+		return
 	}
 
 	// Check login restrictions (allowedDomains OR allowedEmails)
@@ -373,35 +438,44 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Auto-provision user if enabled
-	if cfg.Registration.AutoProvision {
-		_, err := h.provider.GetUserByEmail(ctx, email)
+	if currentUser == nil {
+		if !cfg.Registration.AutoProvision {
+			http.Error(w, "external identity must be explicitly linked to an account", http.StatusForbidden)
+			return
+		}
+		users, err := h.provider.ListUsers(ctx)
 		if err != nil {
-			// User doesn't exist, create them
-			provisionRole := role
-			if cfg.Registration.RequireApproval {
-				provisionRole = "viewer" // Restricted until approved
+			http.Error(w, "account inventory unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		for _, user := range users.Items {
+			userEmail, _, _ := unstructured.NestedString(user.Object, "spec", "email")
+			if strings.EqualFold(userEmail, email) || user.GetName() == slugifyEmail(email) {
+				http.Error(w, "existing account requires explicit identity linking", http.StatusConflict)
+				return
 			}
-			if provErr := ProvisionUser(ctx, h.provider, email, claims.Name, provisionRole, claims.Groups); provErr != nil {
-				log.Printf(ctx, "auth: failed to provision user: %v", provErr)
-				// Don't fail login if provisioning fails - user can still authenticate
-			} else {
-				log.Printf(ctx, "auth: provisioned new user %s with role %s", email, provisionRole)
-				// Record first login
-				h.updateLastLogin(ctx, email)
-			}
-		} else {
-			// Update last login on existing user
-			h.updateLastLogin(ctx, email)
+		}
+		if cfg.Registration.RequireApproval {
+			role = "viewer"
+		}
+		if err := ProvisionUser(ctx, h.provider, email, claims.Name, role, claims.Groups); err != nil {
+			http.Error(w, "account provisioning failed", http.StatusConflict)
+			return
+		}
+		currentUser, err = h.provider.GetUser(ctx, slugifyEmail(email))
+		if err != nil || h.provider.BindIdentity(ctx, currentUser.GetName(), string(currentUser.GetUID()), id) != nil {
+			http.Error(w, "account binding failed", http.StatusConflict)
+			return
 		}
 	}
+	h.updateLastLogin(ctx, email)
 
 	// Resolve and persist avatar URL (async-safe: runs after user exists)
 	avatarURL := resolveAvatarURL(ctx, claims, tokenResp.AccessToken, discovery)
 	h.updateAvatarURL(ctx, email, avatarURL)
 
 	// Create session token
-	currentUser, err := h.provider.GetUserByEmail(ctx, email)
+	currentUser, err = h.provider.GetUserByIdentity(ctx, id)
 	if err != nil {
 		http.Error(w, "current user account unavailable", http.StatusForbidden)
 		return
@@ -413,7 +487,9 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	sessionToken, err := CreateSessionToken(email, claims.Name, role, claims.Groups, cfg.SigningKey, cfg.TokenExpiry, string(currentUser.GetUID()))
+	displayName, _, _ := unstructured.NestedString(currentUser.Object, "spec", "displayName")
+	groups, _, _ := unstructured.NestedStringSlice(currentUser.Object, "spec", "groups")
+	sessionToken, err := CreateSessionToken(email, displayName, role, groups, cfg.SigningKey, cfg.TokenExpiry, string(currentUser.GetUID()))
 	if err != nil {
 		log.Printf(ctx, "auth: failed to create session token: %v", err)
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
@@ -446,11 +522,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Redirect to frontend
-	redirectURL := r.URL.Query().Get("redirect")
-	if redirectURL == "" {
-		redirectURL = "/"
-	}
-	http.Redirect(w, r, redirectURL, http.StatusFound)
+	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 // HandleLogout clears the session.
@@ -547,30 +619,78 @@ func (h *OIDCHandler) updateLastLogin(ctx context.Context, email string) {
 	h.provider.UpdateUserStatus(ctx, userCR)
 }
 
-func discoverOIDC(issuerURL string) (*OIDCDiscovery, error) {
-	resp, err := http.Get(issuerURL + "/.well-known/openid-configuration")
+var oidcHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
+func verifyOIDCIdentity(ctx context.Context, discovery *OIDCDiscovery, cfg *Config, state *authState, raw string) (*IDTokenClaims, error) {
+	ctx, cancel := context.WithTimeout(oidc.ClientContext(ctx, oidcHTTPClient), 20*time.Second)
+	defer cancel()
+	if cfg.ClientID == "" || state.Nonce == "" || state.UpstreamVerifier == "" {
+		return nil, fmt.Errorf("incomplete OIDC transaction")
+	}
+	token, err := discovery.provider.Verifier(&oidc.Config{ClientID: cfg.ClientID}).Verify(ctx, raw)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch OIDC discovery: %w", err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OIDC discovery returned status %d", resp.StatusCode)
+	if token.Nonce != state.Nonce || token.Subject == "" {
+		return nil, fmt.Errorf("invalid nonce or subject")
 	}
+	var rawClaims map[string]json.RawMessage
+	if err := token.Claims(&rawClaims); err != nil {
+		return nil, err
+	}
+	var azp string
+	if value, exists := rawClaims["azp"]; exists {
+		if json.Unmarshal(value, &azp) != nil || azp != cfg.ClientID {
+			return nil, fmt.Errorf("invalid authorized party")
+		}
+	} else if len(token.Audience) > 1 {
+		return nil, fmt.Errorf("missing authorized party")
+	}
+	var claims IDTokenClaims
+	if err := token.Claims(&claims); err != nil {
+		return nil, err
+	}
+	claims.Sub = token.Subject
+	if cfg.UsernameClaim != "" && cfg.UsernameClaim != "email" {
+		verifiedEmail := claims.Email
+		if err := json.Unmarshal(rawClaims[cfg.UsernameClaim], &claims.Email); err != nil {
+			return nil, fmt.Errorf("invalid configured username claim")
+		}
+		// email_verified attests the standard email claim, not arbitrary aliases.
+		claims.EmailVerified = claims.EmailVerified && claims.Email == verifiedEmail
+	}
+	if cfg.GroupsClaim != "" && cfg.GroupsClaim != "groups" {
+		if value, exists := rawClaims[cfg.GroupsClaim]; exists {
+			if err := json.Unmarshal(value, &claims.Groups); err != nil {
+				return nil, fmt.Errorf("invalid configured groups claim")
+			}
+		} else {
+			claims.Groups = nil
+		}
+	}
+	return &claims, nil
+}
 
+func discoverOIDC(ctx context.Context, issuerURL string) (*OIDCDiscovery, error) {
+	provider, err := oidc.NewProvider(oidc.ClientContext(ctx, oidcHTTPClient), issuerURL)
+	if err != nil {
+		return nil, fmt.Errorf("OIDC discovery failed: %w", err)
+	}
 	var discovery OIDCDiscovery
-	if err := json.NewDecoder(resp.Body).Decode(&discovery); err != nil {
+	if err := provider.Claims(&discovery); err != nil {
 		return nil, fmt.Errorf("failed to decode OIDC discovery: %w", err)
 	}
+	discovery.provider = provider
 	return &discovery, nil
 }
 
-func exchangeCode(ctx context.Context, tokenEndpoint, code, clientID, clientSecret, redirectURI string) (*TokenResponse, error) {
+func exchangeCode(ctx context.Context, tokenEndpoint, code, clientID, clientSecret, redirectURI, verifier string) (*TokenResponse, error) {
 	data := url.Values{
-		"grant_type":   {"authorization_code"},
-		"code":         {code},
-		"client_id":    {clientID},
-		"redirect_uri": {redirectURI},
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"client_id":     {clientID},
+		"redirect_uri":  {redirectURI},
+		"code_verifier": {verifier},
 	}
 	if clientSecret != "" {
 		data.Set("client_secret", clientSecret)
@@ -586,55 +706,21 @@ func exchangeCode(ctx context.Context, tokenEndpoint, code, clientID, clientSecr
 		req.SetBasicAuth(clientID, clientSecret)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := oidcHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("token exchange failed with status %d", resp.StatusCode)
 	}
 
 	var tokenResp TokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&tokenResp); err != nil {
 		return nil, fmt.Errorf("failed to decode token response: %w", err)
 	}
 	return &tokenResp, nil
-}
-
-func parseIDTokenClaims(idToken string) (*IDTokenClaims, error) {
-	// JWT format: header.payload.signature
-	parts := strings.Split(idToken, ".")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid ID token format")
-	}
-
-	// Decode payload (second part)
-	payload := parts[1]
-	// Add padding if needed
-	switch len(payload) % 4 {
-	case 2:
-		payload += "=="
-	case 3:
-		payload += "="
-	}
-
-	decoded, err := base64.URLEncoding.DecodeString(payload)
-	if err != nil {
-		// Try without padding
-		decoded, err = base64.RawURLEncoding.DecodeString(parts[1])
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode ID token payload: %w", err)
-		}
-	}
-
-	var claims IDTokenClaims
-	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return nil, fmt.Errorf("failed to parse ID token claims: %w", err)
-	}
-	return &claims, nil
 }
 
 func generateRandomState() (string, error) {

@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,9 +119,8 @@ func TestDeviceListOwnScopeFiltersAdministratorProfile(t *testing.T) {
 		}
 		req := httptest.NewRequest("GET", path, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
-		req = req.WithContext(ContextWithUser(req.Context(), &UserInfo{Email: "admin@example.com", Role: "admin"}))
 		rec := httptest.NewRecorder()
-		NewDeviceHandler(provider, store).HandleDeviceList(rec, req)
+		Middleware(provider)(http.HandlerFunc(NewDeviceHandler(provider, store).HandleDeviceList)).ServeHTTP(rec, req)
 		if rec.Code != 200 {
 			t.Fatalf("list status=%d", rec.Code)
 		}
@@ -135,6 +136,119 @@ func TestDeviceListOwnScopeFiltersAdministratorProfile(t *testing.T) {
 		}
 		if len(out.Devices) != want {
 			t.Fatalf("own=%t got %d devices, want %d", own, len(out.Devices), want)
+		}
+	}
+}
+
+// Auth routes bypass identity middleware, so handlers must use the caller they
+// validate themselves. Exercise that wiring without a synthetic user context.
+func TestDeviceManagementUsesValidatedCaller(t *testing.T) {
+	for _, transport := range []string{"bearer", "cookie"} {
+		for _, tt := range []struct {
+			name, role, tokenRole string
+			adminOverride         bool
+			disabled              bool
+			unauthenticated       bool
+			wantAdmin             bool
+		}{
+			{name: "viewer", role: "viewer", tokenRole: "viewer"},
+			{name: "editor", role: "editor", tokenRole: "editor"},
+			{name: "demoted admin", role: "viewer", tokenRole: "admin"},
+			{name: "current admin", role: "admin", tokenRole: "viewer", wantAdmin: true},
+			{name: "configured admin", role: "viewer", tokenRole: "viewer", adminOverride: true, wantAdmin: true},
+			{name: "disabled admin", role: "admin", tokenRole: "admin", disabled: true},
+			{name: "anonymous", role: "viewer", tokenRole: "viewer", unauthenticated: true},
+		} {
+			t.Run(transport+"/"+tt.name, func(t *testing.T) {
+				ctx := context.Background()
+				dyn := newFakeDynamicClient(t)
+				cfg := testDeviceConfig()
+				if tt.adminOverride {
+					cfg.AdminEmails = []string{"caller@example.com"}
+				}
+				user := executionUserFixture("caller@example.com", tt.role)
+				user.Object["spec"].(map[string]interface{})["disabled"] = tt.disabled
+				if _, err := dyn.Resource(userGVR).Create(ctx, user, metav1.CreateOptions{}); err != nil {
+					t.Fatal(err)
+				}
+				provider := &ConfigProvider{dynamicClient: dyn, config: cfg, lastFetch: time.Now(), cacheDuration: time.Hour}
+				store := NewDeviceStore(dyn)
+				for id, email := range map[string]string{"own-device": "caller@example.com", "other-device": "other@example.com"} {
+					if err := store.Register(ctx, email, "laptop", id, time.Now(), time.Now().Add(time.Hour)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				token, err := CreateSessionToken("caller@example.com", "", tt.tokenRole, nil, cfg.SigningKey, time.Hour, "user-uid")
+				if err != nil {
+					t.Fatal(err)
+				}
+				h := NewDeviceHandler(provider, store)
+				mux := http.NewServeMux()
+				mux.HandleFunc("GET /auth/device/list", h.HandleDeviceList)
+				mux.HandleFunc("POST /auth/device/revoke", h.HandleDeviceRevoke)
+				router := Middleware(provider)(mux)
+				request := func(method, path, body string) *httptest.ResponseRecorder {
+					t.Helper()
+					req := httptest.NewRequest(method, path, strings.NewReader(body))
+					if !tt.unauthenticated {
+						if transport == "cookie" {
+							req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+						} else {
+							req.Header.Set("Authorization", "Bearer "+token)
+						}
+					}
+					rec := httptest.NewRecorder()
+					router.ServeHTTP(rec, req)
+					return rec
+				}
+				for _, scope := range []string{"", "?scope=own"} {
+					rec := request("GET", "/auth/device/list"+scope, "")
+					if tt.disabled || tt.unauthenticated {
+						if rec.Code != http.StatusUnauthorized {
+							t.Fatalf("list status=%d, want 401", rec.Code)
+						}
+						continue
+					}
+					if rec.Code != http.StatusOK {
+						t.Fatalf("list status=%d: %s", rec.Code, rec.Body.String())
+					}
+					var out struct {
+						Devices []DeviceInfo `json:"devices"`
+					}
+					if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+						t.Fatal(err)
+					}
+					want := 1
+					if tt.wantAdmin && scope == "" {
+						want = 2
+					}
+					if len(out.Devices) != want {
+						t.Fatalf("scope=%q got %d devices, want %d", scope, len(out.Devices), want)
+					}
+					if want == 1 && out.Devices[0].DeviceID != "own-device" {
+						t.Fatalf("listed another user's device: %+v", out.Devices)
+					}
+				}
+				for _, id := range []string{"other-device", "own-device"} {
+					rec := request("POST", "/auth/device/revoke", `{"device_id":"`+id+`"}`)
+					want := http.StatusOK
+					if tt.disabled || tt.unauthenticated {
+						want = http.StatusUnauthorized
+					} else if id == "other-device" && !tt.wantAdmin {
+						want = http.StatusNotFound
+					}
+					if rec.Code != want {
+						t.Fatalf("revoke %s status=%d, want %d: %s", id, rec.Code, want, rec.Body.String())
+					}
+					owner := "caller@example.com"
+					if id == "other-device" {
+						owner = "other@example.com"
+					}
+					if revoked := store.Revoked(ctx, id, owner); revoked != (want == http.StatusOK) {
+						t.Fatalf("device %s revoked=%t after status %d", id, revoked, rec.Code)
+					}
+				}
+			})
 		}
 	}
 }

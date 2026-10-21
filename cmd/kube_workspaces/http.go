@@ -204,6 +204,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	// Auth endpoints (always available, handler logic checks if auth is enabled)
 	mux.Handle("GET", "/auth/config", oidcHandler.HandleAuthConfig)
 	mux.Handle("GET", "/auth/login", oidcHandler.HandleLogin)
+	mux.Handle("POST", "/auth/oidc/link", oidcHandler.HandleLinkIdentity)
 	mux.Handle("GET", "/auth/callback", oidcHandler.HandleCallback)
 	mux.Handle("POST", "/auth/logout", oidcHandler.HandleLogout)
 	mux.Handle("GET", "/auth/me", oidcHandler.HandleMe)
@@ -220,8 +221,8 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	mux.Handle("GET", "/auth/browser-session", oidcHandler.HandleBrowserSessionRedeem)
 	mux.Handle("POST", "/auth/change-password", localAuthHandler.HandleChangePassword)
 	// Long-lived revocable device tokens for native clients (see device.go).
-	// Creation/listing/revocation require an existing session; validation
-	// happens in the auth middleware via the backing Secret.
+	// Creation/listing/revocation require an existing session. These /auth/*
+	// routes bypass identity middleware, so each handler validates its caller.
 	mux.Handle("POST", "/auth/device/create", deviceHandler.HandleDeviceCreate)
 	mux.Handle("GET", "/auth/device/list", deviceHandler.HandleDeviceList)
 	mux.Handle("POST", "/auth/device/revoke", deviceHandler.HandleDeviceRevoke)
@@ -296,6 +297,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	})
 
 	// Admin: user management endpoints
+	mux.Handle("GET", "/admin/auth-identities/inventory", authProvider.HandleIdentityInventory)
 	mux.Handle("GET", "/admin/users", func(w http.ResponseWriter, r *http.Request) {
 		if !auth.IsAdmin(r.Context()) {
 			w.Header().Set("Content-Type", "application/json")
