@@ -66,7 +66,7 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 				authHeader := r.Header.Get("Authorization")
 				if strings.HasPrefix(authHeader, "Bearer ") {
 					tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-					user, authErr := validateAndGetUser(ctx, tokenStr, cfg, provider)
+					user, session, authErr := validateSession(ctx, tokenStr, cfg, provider)
 					if authErr != nil {
 						writeUnauthorized(w, r, authErr.Error())
 						return
@@ -76,6 +76,7 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 						return
 					}
 					ctx = ContextWithUser(ctx, user)
+					ctx = ContextWithSession(ctx, session)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
@@ -85,7 +86,7 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 			}
 
 			// Validate the session token
-			user, authErr := validateAndGetUser(ctx, cookie.Value, cfg, provider)
+			user, session, authErr := validateSession(ctx, cookie.Value, cfg, provider)
 			if authErr != nil {
 				writeUnauthorized(w, r, authErr.Error())
 				return
@@ -97,45 +98,54 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 
 			// Add user to context
 			ctx = ContextWithUser(ctx, user)
+			ctx = ContextWithSession(ctx, session)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
 func validateAndGetUser(ctx context.Context, tokenStr string, cfg *Config, provider *ConfigProvider) (*UserInfo, error) {
+	user, _, err := validateSession(ctx, tokenStr, cfg, provider)
+	return user, err
+}
+
+// validateSession validates a session credential and returns both the
+// authenticated account and the validated token. The token is kept so
+// long-lived streams can revalidate their credential while they are open.
+func validateSession(ctx context.Context, tokenStr string, cfg *Config, provider *ConfigProvider) (*UserInfo, *SessionToken, error) {
 	token, err := ValidateSessionTokenWithKeys(tokenStr, cfg.SessionSigningKeys())
 	if err != nil {
-		return nil, fmt.Errorf("invalid session: %w", err)
+		return nil, nil, fmt.Errorf("invalid session: %w", err)
 	}
 	if (token.Type != "" && token.Type != DeviceTokenType) || (token.Type == DeviceTokenType && token.JTI == "") || (token.Type == "" && token.JTI != "") {
-		return nil, fmt.Errorf("invalid credential type")
+		return nil, nil, fmt.Errorf("invalid credential type")
 	}
 
 	// Long-lived device tokens are revocable: the backing Secret must exist
 	// and be unrevoked. Session tokens skip this check.
 	if isDeviceRevoked(ctx, provider, token) {
-		return nil, fmt.Errorf("device token has been revoked")
+		return nil, nil, fmt.Errorf("device token has been revoked")
 	}
 
 	// Current User state is authoritative. A stale token must not preserve an
 	// administrator role or keep a deleted/disabled user authorized.
 	userCR, err := provider.GetUserByEmail(ctx, token.Email)
 	if err != nil || userCR == nil {
-		return nil, fmt.Errorf("current user account unavailable")
+		return nil, nil, fmt.Errorf("current user account unavailable")
 	}
 	if userCR.GetDeletionTimestamp() != nil {
-		return nil, fmt.Errorf("user account is being deleted")
+		return nil, nil, fmt.Errorf("user account is being deleted")
 	}
 	if token.UserUID != "" && token.UserUID != string(userCR.GetUID()) {
-		return nil, fmt.Errorf("session user identity no longer matches")
+		return nil, nil, fmt.Errorf("session user identity no longer matches")
 	}
 	disabled, _, err := unstructured.NestedBool(userCR.Object, "spec", "disabled")
 	if err != nil || disabled {
-		return nil, fmt.Errorf("user account is disabled or invalid")
+		return nil, nil, fmt.Errorf("user account is disabled or invalid")
 	}
 	role, _, err := unstructured.NestedString(userCR.Object, "spec", "role")
 	if err != nil || (role != "admin" && role != "editor" && role != "viewer") {
-		return nil, fmt.Errorf("current user role is invalid")
+		return nil, nil, fmt.Errorf("current user role is invalid")
 	}
 	// Configured admin emails remain an explicit administrator override, but
 	// never bypass the current-account existence/disabled checks above.
@@ -162,24 +172,24 @@ func validateAndGetUser(ctx context.Context, tokenStr string, cfg *Config, provi
 	user.Namespaces = getUserNamespaces(userCR, personalNS)
 	mustChangePassword, err := provider.validateProvenance(ctx, token, userCR)
 	if err != nil {
-		return nil, fmt.Errorf("session credential unavailable or revoked; sign in again")
+		return nil, nil, fmt.Errorf("session credential unavailable or revoked; sign in again")
 	}
 	user.MustChangePassword = mustChangePassword
 	user.AuthMethod = token.AuthMethod
 	user.LocalPasswordEnabled, _, _ = unstructured.NestedBool(userCR.Object, "spec", "localAuth", "enabled")
 	bindings, bindingErr := identityBindings(userCR)
 	if bindingErr != nil {
-		return nil, bindingErr
+		return nil, nil, bindingErr
 	}
 	user.OIDCLinked = len(bindings) > 0
 	_, _, refErr := passwordReference(userCR)
 	user.CanChangePassword = cfg.LocalAuthEnabled && user.LocalPasswordEnabled && refErr == nil
 	user.ExecutionGrants, err = userExecutionGrants(userCR)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return user, nil
+	return user, token, nil
 }
 
 func getUserNamespaces(userCR *unstructured.Unstructured, personalNS string) []string {

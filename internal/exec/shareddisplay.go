@@ -257,6 +257,10 @@ func (s *SharedDisplay) Handle(w http.ResponseWriter, r *http.Request) {
 		return // Upgrade already wrote the error response
 	}
 
+	// End the participant stream when the credential that authorised it is
+	// revoked.
+	defer watchCredential(ctx, clientConn, cancel, s.opts.Revalidate, s.opts.RevalidateInterval)()
+
 	// 4. A controller holds the control lease: its input delivery is fenced
 	// against that lease + the local registry (see internal/display.Fence).
 	// force=1 revokes any existing holder; a takeover reconnect pairs with the

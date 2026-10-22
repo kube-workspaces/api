@@ -39,6 +39,12 @@ type SSHOptions struct {
 	// Clientset is used to resolve the workspace Service endpoints (the
 	// launcher pod IP:port that masquerade forwards to the guest sshd).
 	Clientset kubernetes.Interface
+	// Revalidate re-checks the credential that authorised an open stream. When
+	// it reports a revoked credential the stream is ended with a
+	// closeCodeCredentialRevoked close frame.
+	Revalidate RevalidateFunc
+	// RevalidateInterval is how often Revalidate runs for an open stream.
+	RevalidateInterval time.Duration
 }
 
 // SSHHandler creates an HTTP handler that upgrades to WebSocket and bridges to
@@ -88,6 +94,9 @@ func SSHHandler(opts *SSHOptions) http.HandlerFunc {
 			return // Upgrade already wrote the error response
 		}
 		defer clientConn.Close()
+
+		// End the session when the credential that authorised it is revoked.
+		defer watchCredential(ctx, clientConn, cancel, opts.Revalidate, opts.RevalidateInterval)()
 
 		// The client's first message must carry the SSH credentials.
 		clientConn.SetReadDeadline(time.Now().Add(sshHandshakeTimeout))

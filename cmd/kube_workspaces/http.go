@@ -198,6 +198,13 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	deviceStore := auth.NewDeviceStore(authProvider.DynamicClient())
 	deviceHandler := auth.NewDeviceHandler(authProvider, deviceStore)
 
+	// revalidateCredential re-checks the credential that authorised a
+	// long-lived stream. The check reads live account state, so a revocation
+	// performed against any replica ends the stream on every replica.
+	revalidateCredential := func(ctx context.Context) error {
+		return auth.RevalidateCredential(ctx, authProvider)
+	}
+
 	// --- Platform Configuration ---
 	platformProvider := platform.NewConfigProvider(dynClient)
 
@@ -1584,7 +1591,14 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			}()
 			return ch, nil
 		}
-		WorkspaceWatchHandler(list, changes, defaultWatchTimings)(w, r)
+		// End the watch stream when the credential that authorised it is revoked.
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		defer auth.WatchCredentialRevocation(ctx, revalidateCredential, credentialRevalidateInterval(), func(string) {
+			cancel()
+		})()
+
+		WorkspaceWatchHandler(list, changes, defaultWatchTimings)(w, r.WithContext(ctx))
 	})
 
 	// displayOwnerForward, set when the display store exists, routes Goa
@@ -1623,12 +1637,14 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			Display:               displayStore,
 			Sessions:              displaySessions,
 			SharedDisplayDisabled: !kubeworkspaces.SharedDisplayEnabledFromEnv(),
+			Revalidate:            revalidateCredential,
+			RevalidateInterval:    credentialRevalidateInterval(),
 		}
 		execHandler := exec.Handler(execOpts)
 		vmConsoleHandler := exec.VMConsoleHandler(execOpts)
 		vmVNCHandler := exec.VMVNCHandler(execOpts)
-		sshHandler := exec.SSHHandler(&exec.SSHOptions{Clientset: execClientset})
-		tcpHandler := exec.TCPHandler(&exec.TCPOptions{Clientset: execClientset})
+		sshHandler := exec.SSHHandler(&exec.SSHOptions{Clientset: execClientset, Revalidate: revalidateCredential, RevalidateInterval: credentialRevalidateInterval()})
+		tcpHandler := exec.TCPHandler(&exec.TCPOptions{Clientset: execClientset, Revalidate: revalidateCredential, RevalidateInterval: credentialRevalidateInterval()})
 		screenshotHandler := exec.ScreenshotHandler(execOpts)
 		sharedDisplay := exec.NewSharedDisplay(execOpts)
 
@@ -2646,6 +2662,23 @@ func resolveShell(ctx context.Context, wsClient *k8s.WorkspaceClient, imageClien
 
 	// Only return a shell if explicitly configured in the Image CR
 	return img.DefaultShell
+}
+
+// credentialRevalidateInterval is how often an open stream revalidates the
+// credential that authorised it. It bounds how long a revoked credential can
+// keep an interactive session alive. Operators can tune the window with
+// KW_CREDENTIAL_REVALIDATION_INTERVAL (for example "2s" or "30s").
+func credentialRevalidateInterval() time.Duration {
+	const fallback = 5 * time.Second
+	raw := strings.TrimSpace(os.Getenv("KW_CREDENTIAL_REVALIDATION_INTERVAL"))
+	if raw == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
 }
 
 // maintenanceMiddleware returns 503 Service Unavailable for non-admin users

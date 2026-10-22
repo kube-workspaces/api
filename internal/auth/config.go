@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -38,6 +39,9 @@ var secretGVR = schema.GroupVersionResource{
 // regardless of a user's personal namespace. Matches the controller's
 // bootstrap-admin convention.
 const LocalAuthSystemNamespace = "kube-workspaces-system"
+
+// ErrUserNotFound reports that no User CR matches the requested identity.
+var ErrUserNotFound = errors.New("user account not found")
 
 // Config holds the resolved authentication configuration.
 type Config struct {
@@ -380,7 +384,7 @@ func (p *ConfigProvider) GetUserByEmail(ctx context.Context, email string) (*uns
 	if matched != nil {
 		return matched, nil
 	}
-	return nil, fmt.Errorf("user with email %s not found", email)
+	return nil, fmt.Errorf("user with email %s not found: %w", email, ErrUserNotFound)
 }
 
 // ListUsers returns all User CRs.

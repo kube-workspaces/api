@@ -93,6 +93,9 @@ func VMConsoleHandler(opts *Options) http.HandlerFunc {
 		}
 		defer clientConn.Close()
 
+		// End the console when the credential that authorised it is revoked.
+		defer watchCredential(ctx, clientConn, cancel, opts.Revalidate, opts.RevalidateInterval)()
+
 		// When a take-over evicts this session, send a clean close with an
 		// explicit reason so the browser treats it as intentional rather than
 		// starting an auto-reconnect war against the new owner.

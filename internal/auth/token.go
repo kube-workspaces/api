@@ -19,6 +19,10 @@ type contextKey string
 const (
 	// UserContextKey is the context key for the authenticated user.
 	UserContextKey contextKey = "auth-user"
+	// SessionContextKey is the context key for the validated session token.
+	// Long-lived streams keep it so their credential can be revalidated
+	// against live account state while the stream is open.
+	SessionContextKey contextKey = "auth-session"
 	// SessionCookieName is the name of the session cookie.
 	SessionCookieName = "kw-session"
 )
@@ -213,4 +217,23 @@ func UserFromContext(ctx context.Context) *UserInfo {
 // ContextWithUser adds user info to the context.
 func ContextWithUser(ctx context.Context, user *UserInfo) context.Context {
 	return context.WithValue(ctx, UserContextKey, user)
+}
+
+// ContextWithSession adds the validated session token to the context.
+func ContextWithSession(ctx context.Context, token *SessionToken) context.Context {
+	return context.WithValue(ctx, SessionContextKey, token)
+}
+
+// SessionFromContext returns the validated session token bound to the request.
+// Returns nil when the request carried no credential (auth disabled).
+func SessionFromContext(ctx context.Context) *SessionToken {
+	val := ctx.Value(SessionContextKey)
+	if val == nil {
+		return nil
+	}
+	token, ok := val.(*SessionToken)
+	if !ok {
+		return nil
+	}
+	return token
 }

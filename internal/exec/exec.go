@@ -44,6 +44,12 @@ type Options struct {
 	// route (plan E: opt-in until acceptance passes). When set, the route
 	// answers 404 like an unknown capability.
 	SharedDisplayDisabled bool
+	// Revalidate re-checks the credential that authorised an open stream. When
+	// it reports a revoked credential the stream is ended with a
+	// closeCodeCredentialRevoked close frame.
+	Revalidate RevalidateFunc
+	// RevalidateInterval is how often Revalidate runs for an open stream.
+	RevalidateInterval time.Duration
 }
 
 // resizeMessage is sent by the client to resize the terminal.
@@ -239,6 +245,9 @@ func Handler(opts *Options) http.HandlerFunc {
 		// Context for coordinating goroutines
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
+
+		// End the terminal when the credential that authorised it is revoked.
+		defer watchCredential(ctx, conn, cancel, opts.Revalidate, opts.RevalidateInterval)()
 
 		var wg sync.WaitGroup
 

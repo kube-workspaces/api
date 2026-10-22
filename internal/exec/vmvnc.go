@@ -157,6 +157,9 @@ func VMVNCHandler(opts *Options) http.HandlerFunc {
 		}
 		defer clientConn.Close()
 
+		// End the display when the credential that authorised it is revoked.
+		defer watchCredential(ctx, clientConn, cancel, opts.Revalidate, opts.RevalidateInterval)()
+
 		handle.setClose(func() {
 			clientConn.Close()
 			vmConn.Close()

@@ -150,17 +150,26 @@ func (s *DeviceStore) Register(ctx context.Context, email, name, jti string, cre
 // bound to a different email. Missing means revoked: deleting the Secret is
 // the revoke path.
 func (s *DeviceStore) Revoked(ctx context.Context, jti, email string) bool {
+	revoked, err := s.revocationState(ctx, jti, email)
+	return revoked || err != nil
+}
+
+// revocationState preserves lookup failures for established-stream retries.
+func (s *DeviceStore) revocationState(ctx context.Context, jti, email string) (bool, error) {
 	if !s.available() {
-		return false
+		return false, nil
 	}
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	obj, err := s.dyn.Resource(secretGVR).Namespace(LocalAuthSystemNamespace).Get(cctx, deviceSecretName(jti), metav1.GetOptions{})
 	if err != nil {
-		return true
+		if k8serrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
 	}
 	if anno, _, _ := unstructured.NestedString(obj.Object, "metadata", "annotations", deviceEmailAnno); anno != "" && !strings.EqualFold(anno, email) {
-		return true
+		return true, nil
 	}
 	data, found, _ := unstructured.NestedMap(obj.Object, "data")
 	if !found {
@@ -174,15 +183,15 @@ func (s *DeviceStore) Revoked(ctx context.Context, jti, email string) bool {
 		return v
 	}
 	if get("revoked") == "true" {
-		return true
+		return true, nil
 	}
 	if get("email") != "" && !strings.EqualFold(get("email"), email) {
-		return true
+		return true, nil
 	}
 	if exp, err := strconv.ParseInt(get("expiresAt"), 10, 64); err == nil && time.Now().After(time.Unix(exp, 0)) {
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 // Revoke marks a device revoked (and deletes the Secret so list stops showing

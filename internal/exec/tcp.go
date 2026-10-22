@@ -34,6 +34,12 @@ type TCPOptions struct {
 	// Clientset resolves the workspace Service endpoints to the launcher pod
 	// IP where masquerade forwards guest ports.
 	Clientset kubernetes.Interface
+	// Revalidate re-checks the credential that authorised an open stream. When
+	// it reports a revoked credential the stream is ended with a
+	// closeCodeCredentialRevoked close frame.
+	Revalidate RevalidateFunc
+	// RevalidateInterval is how often Revalidate runs for an open stream.
+	RevalidateInterval time.Duration
 }
 
 // TCPHandler upgrades to WebSocket and bridges raw binary frames to
@@ -91,6 +97,9 @@ func TCPHandler(opts *TCPOptions) http.HandlerFunc {
 			return
 		}
 		defer clientConn.Close()
+
+		// End the bridge when the credential that authorised it is revoked.
+		defer watchCredential(ctx, clientConn, cancel, opts.Revalidate, opts.RevalidateInterval)()
 
 		handle.setClose(func() {
 			_ = clientConn.WriteControl(websocket.CloseMessage,
