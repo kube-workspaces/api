@@ -103,7 +103,8 @@ func newStartStack(t *testing.T, permissions []string, policy map[string]interfa
 		"spec":     map[string]interface{}{"vmExecution": policy},
 	}}
 	users := schema.GroupVersionResource{Group: "kubeworkspaces.io", Version: "v1alpha1", Resource: "users"}
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{users: "UserList"}, user, cfg, secret, platformConfig)
+	passwordSecret, provenance := methodCredentialFixture(user)
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{users: "UserList"}, user, cfg, secret, platformConfig, passwordSecret)
 	provider := auth.NewConfigProvider(client)
 	store, err := storage.Open(ctx, storage.Options{Mode: "ephemeral", EphemeralDir: t.TempDir(), EphemeralMaxBytes: 1 << 20})
 	if err != nil {
@@ -120,7 +121,7 @@ func newStartStack(t *testing.T, permissions []string, policy map[string]interfa
 	server := svr.New(gen.NewEndpoints(svc), mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, nil, nil)
 	svr.Mount(mux, server)
 	handler := auth.Middleware(provider)(mux)
-	token, err := auth.CreateSessionToken("operator@example.com", "Operator", "viewer", nil, []byte(key), time.Hour, "operator-uid")
+	token, err := auth.CreateSessionTokenWithProvenance("operator@example.com", "Operator", "viewer", nil, []byte(key), time.Hour, "operator-uid", provenance)
 	if err != nil {
 		t.Fatal(err)
 	}

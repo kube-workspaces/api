@@ -147,10 +147,18 @@ func (h *OIDCHandler) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 		// Advertise the RFC 8252 native-app flow so a desktop client can detect
 		// support from this document rather than by probing /auth/login with
 		// parameters an older build would silently ignore.
-		response["nativeAuth"] = map[string]interface{}{
-			"enabled": true,
-			"methods": []string{"loopback-pkce"},
+		oidcEnabled := cfg.IssuerURL != "" && cfg.ClientID != ""
+		nativeMethods := []string{}
+		methods := []string{}
+		if cfg.LocalAuthEnabled {
+			methods = append(methods, "local")
 		}
+		if oidcEnabled {
+			methods = append(methods, "oidc")
+			nativeMethods = append(nativeMethods, "loopback-pkce")
+		}
+		response["methods"] = methods
+		response["nativeAuth"] = map[string]interface{}{"enabled": oidcEnabled, "methods": nativeMethods}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -515,7 +523,12 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	displayName, _, _ := unstructured.NestedString(currentUser.Object, "spec", "displayName")
 	groups, _, _ := unstructured.NestedStringSlice(currentUser.Object, "spec", "groups")
-	sessionToken, err := CreateSessionToken(email, displayName, role, groups, cfg.SigningKey, cfg.TokenExpiry, string(currentUser.GetUID()))
+	provenance, err := h.provider.identityProvenance(ctx, currentUser, id)
+	if err != nil {
+		http.Error(w, "identity credential unavailable", http.StatusForbidden)
+		return
+	}
+	sessionToken, err := CreateSessionTokenWithProvenance(email, displayName, role, groups, cfg.SigningKey, cfg.TokenExpiry, string(currentUser.GetUID()), provenance)
 	if err != nil {
 		log.Printf(ctx, "auth: failed to create session token: %v", err)
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
@@ -615,16 +628,20 @@ func (h *OIDCHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"authenticated":      true,
-		"authEnabled":        true,
-		"email":              user.Email,
-		"displayName":        user.DisplayName,
-		"role":               user.Role,
-		"groups":             user.Groups,
-		"namespaces":         user.Namespaces,
-		"personalNamespace":  user.PersonalNamespace,
-		"avatarURL":          user.AvatarURL,
-		"mustChangePassword": user.MustChangePassword,
+		"authenticated":        true,
+		"authEnabled":          true,
+		"email":                user.Email,
+		"displayName":          user.DisplayName,
+		"role":                 user.Role,
+		"groups":               user.Groups,
+		"namespaces":           user.Namespaces,
+		"personalNamespace":    user.PersonalNamespace,
+		"avatarURL":            user.AvatarURL,
+		"mustChangePassword":   user.MustChangePassword,
+		"authMethod":           user.AuthMethod,
+		"localPasswordEnabled": user.LocalPasswordEnabled,
+		"oidcLinked":           user.OIDCLinked,
+		"canChangePassword":    user.CanChangePassword,
 		// UI hints from the current account only; admission reauthorizes every run.
 		"executionCredentialBound": user.UID != "" && user.credentialUserUID == user.UID && !user.MustChangePassword,
 		"executionGrants":          user.ExecutionGrants,

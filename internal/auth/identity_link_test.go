@@ -256,6 +256,7 @@ func TestIdentityLinkReauthorizesAtCallback(t *testing.T) {
 				t.Fatal(err)
 			}
 			token, _ := CreateSessionToken("user@example.com", "", "admin", nil, []byte(testSigningKey), h.provider.config.TokenExpiry, string(u.GetUID()))
+			token = methodBoundTestToken(t, h.provider, token)
 			start := httptest.NewRequest("POST", "/auth/oidc/link", nil)
 			start.Header.Set("X-KW-Link-Intent", "link-own-identity")
 			start.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})

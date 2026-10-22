@@ -112,6 +112,7 @@ func TestDeviceListOwnScopeFiltersAdministratorProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	token = methodBoundTestToken(t, provider, token)
 	for _, own := range []bool{false, true} {
 		path := "/auth/device/list"
 		if own {
@@ -182,6 +183,7 @@ func TestDeviceManagementUsesValidatedCaller(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				token = methodBoundTestToken(t, provider, token)
 				h := NewDeviceHandler(provider, store)
 				mux := http.NewServeMux()
 				mux.HandleFunc("GET /auth/device/list", h.HandleDeviceList)

@@ -80,8 +80,13 @@ func (h *OIDCHandler) HandleBrowserSessionGrant(w http.ResponseWriter, r *http.R
 	}
 	// validateAndGetUser is the same check /auth/me applies: signature,
 	// expiry, and a live User CR that is not disabled.
-	if _, err := validateAndGetUser(ctx, tokenStr, cfg, h.provider); err != nil {
+	caller, authErr := validateAndGetUser(ctx, tokenStr, cfg, h.provider)
+	if authErr != nil {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if caller.MustChangePassword {
+		writeJSONError(w, http.StatusForbidden, "password_change_required", "change your temporary password before creating browser grants")
 		return
 	}
 	// Read the claims back out of the token the caller presented so the cookie
@@ -174,7 +179,8 @@ func (h *OIDCHandler) HandleBrowserSessionRedeem(w http.ResponseWriter, r *http.
 		writeBrowserSessionError(w, http.StatusUnauthorized, "This session is no longer available. Sign in again from the desktop app.")
 		return
 	}
-	if _, err := validateAndGetUser(ctx, entry.token, cfg, h.provider); err != nil {
+	caller, authErr := validateAndGetUser(ctx, entry.token, cfg, h.provider)
+	if authErr != nil || caller.MustChangePassword {
 		writeBrowserSessionError(w, http.StatusUnauthorized, "This session is no longer available. Sign in again from the desktop app.")
 		return
 	}

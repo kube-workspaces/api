@@ -71,6 +71,10 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 						writeUnauthorized(w, r, authErr.Error())
 						return
 					}
+					if user.MustChangePassword {
+						writeJSONError(w, http.StatusForbidden, "password_change_required", "change your temporary password before accessing platform resources")
+						return
+					}
 					ctx = ContextWithUser(ctx, user)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
@@ -86,6 +90,10 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 				writeUnauthorized(w, r, authErr.Error())
 				return
 			}
+			if user.MustChangePassword {
+				writeJSONError(w, http.StatusForbidden, "password_change_required", "change your temporary password before accessing platform resources")
+				return
+			}
 
 			// Add user to context
 			ctx = ContextWithUser(ctx, user)
@@ -98,6 +106,9 @@ func validateAndGetUser(ctx context.Context, tokenStr string, cfg *Config, provi
 	token, err := ValidateSessionTokenWithKeys(tokenStr, cfg.SessionSigningKeys())
 	if err != nil {
 		return nil, fmt.Errorf("invalid session: %w", err)
+	}
+	if (token.Type != "" && token.Type != DeviceTokenType) || (token.Type == DeviceTokenType && token.JTI == "") || (token.Type == "" && token.JTI != "") {
+		return nil, fmt.Errorf("invalid credential type")
 	}
 
 	// Long-lived device tokens are revocable: the backing Secret must exist
@@ -149,11 +160,20 @@ func validateAndGetUser(ctx context.Context, tokenStr string, cfg *Config, provi
 	avatarURL, _, _ := unstructuredNestedString(userCR.Object, "status", "avatarURL")
 	user.AvatarURL = avatarURL
 	user.Namespaces = getUserNamespaces(userCR, personalNS)
-	mustChangePassword, _, err := unstructuredNestedBool(userCR.Object, "spec", "localAuth", "mustChangePassword")
+	mustChangePassword, err := provider.validateProvenance(ctx, token, userCR)
 	if err != nil {
-		return nil, fmt.Errorf("invalid current user password policy")
+		return nil, fmt.Errorf("session credential unavailable or revoked; sign in again")
 	}
 	user.MustChangePassword = mustChangePassword
+	user.AuthMethod = token.AuthMethod
+	user.LocalPasswordEnabled, _, _ = unstructured.NestedBool(userCR.Object, "spec", "localAuth", "enabled")
+	bindings, bindingErr := identityBindings(userCR)
+	if bindingErr != nil {
+		return nil, bindingErr
+	}
+	user.OIDCLinked = len(bindings) > 0
+	_, _, refErr := passwordReference(userCR)
+	user.CanChangePassword = cfg.LocalAuthEnabled && user.LocalPasswordEnabled && refErr == nil
 	user.ExecutionGrants, err = userExecutionGrants(userCR)
 	if err != nil {
 		return nil, err

@@ -73,7 +73,8 @@ func newUpgradeStack(t *testing.T, role string, policy map[string]interface{}, e
 		"spec":     map[string]interface{}{"agentUpgrades": policy},
 	}}
 	users := schema.GroupVersionResource{Group: "kubeworkspaces.io", Version: "v1alpha1", Resource: "users"}
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{users: "UserList"}, user, cfg, secret, platformConfig)
+	passwordSecret, provenance := methodCredentialFixture(user)
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{users: "UserList"}, user, cfg, secret, platformConfig, passwordSecret)
 	provider := auth.NewConfigProvider(client)
 	store, err := storage.Open(ctx, storage.Options{Mode: "ephemeral", EphemeralDir: t.TempDir(), EphemeralMaxBytes: 1 << 20})
 	if err != nil {
@@ -89,7 +90,7 @@ func newUpgradeStack(t *testing.T, role string, policy map[string]interface{}, e
 	server := svrau.New(genagentupgrades.NewEndpoints(svc), mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, nil, nil)
 	svrau.Mount(mux, server)
 	handler := auth.Middleware(provider)(mux)
-	token, err := auth.CreateSessionToken("operator@example.com", "Operator", role, nil, []byte(key), time.Hour, "operator-uid")
+	token, err := auth.CreateSessionTokenWithProvenance("operator@example.com", "Operator", role, nil, []byte(key), time.Hour, "operator-uid", provenance)
 	if err != nil {
 		t.Fatal(err)
 	}

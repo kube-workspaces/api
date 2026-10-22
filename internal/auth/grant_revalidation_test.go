@@ -39,6 +39,8 @@ func TestGrantRedemptionRevalidatesCurrentAccount(t *testing.T) {
 					}
 					// No backing registration: it has already been revoked.
 				}
+				token = methodBoundTestToken(t, h.provider, token)
+				user, _ = h.provider.GetUserByEmail(ctx, "user@example.com")
 				verifier := strings.Repeat("v", 43)
 				entry := nativeAuthCode{token: token, email: "user@example.com", role: "admin", tokenExpiresAt: time.Now().Add(expiry).Unix()}
 				if transport == "native" {

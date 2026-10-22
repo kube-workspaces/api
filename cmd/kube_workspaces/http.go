@@ -205,6 +205,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 	mux.Handle("GET", "/auth/config", oidcHandler.HandleAuthConfig)
 	mux.Handle("GET", "/auth/login", oidcHandler.HandleLogin)
 	mux.Handle("POST", "/auth/oidc/link", oidcHandler.HandleLinkIdentity)
+	mux.Handle("POST", "/auth/oidc/unlink", oidcHandler.HandleUnlinkIdentity)
 	mux.Handle("POST", "/auth/oidc/adoptions", oidcHandler.HandleCreateIdentityAdoption)
 	mux.Handle("GET", "/auth/oidc/adopt", oidcHandler.HandleIdentityAdoption)
 	mux.Handle("POST", "/auth/oidc/adopt", oidcHandler.HandleIdentityAdoption)

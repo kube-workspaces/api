@@ -55,7 +55,8 @@ func TestExecutionHTTPAuthorizationAndReplay(t *testing.T) {
 	}}
 	users := schema.GroupVersionResource{Group: "kubeworkspaces.io", Version: "v1alpha1", Resource: "users"}
 	policy := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "kubeworkspaces.io/v1alpha1", "kind": "PlatformConfig", "metadata": map[string]interface{}{"name": "default"}, "spec": map[string]interface{}{"vmExecution": map[string]interface{}{"enabled": true, "allowElevated": false}}}}
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{users: "UserList"}, user, cfg, secret, policy)
+	passwordSecret, provenance := methodCredentialFixture(user)
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{users: "UserList"}, user, cfg, secret, policy, passwordSecret)
 	provider := auth.NewConfigProvider(client)
 	store, err := storage.Open(ctx, storage.Options{Mode: "ephemeral", EphemeralDir: t.TempDir(), EphemeralMaxBytes: 1 << 20})
 	if err != nil {
@@ -84,7 +85,7 @@ func TestExecutionHTTPAuthorizationAndReplay(t *testing.T) {
 	server := svr.New(gen.NewEndpoints(svc), mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, nil, nil)
 	svr.Mount(mux, server)
 	handler := auth.Middleware(provider)(mux)
-	token, err := auth.CreateSessionToken("reader@example.com", "Reader", "admin", nil, []byte(key), time.Hour, "reader-uid")
+	token, err := auth.CreateSessionTokenWithProvenance("reader@example.com", "Reader", "admin", nil, []byte(key), time.Hour, "reader-uid", provenance)
 	if err != nil {
 		t.Fatal(err)
 	}

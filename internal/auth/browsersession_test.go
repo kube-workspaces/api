@@ -61,6 +61,7 @@ func redeemBrowserSession(t *testing.T, h *OIDCHandler, code string) *httptest.R
 func TestBrowserSessionGrant(t *testing.T) {
 	h := newTestHandler(t, testConfig("http://127.0.0.1:1/unused"))
 	token, _ := CreateSessionToken("user@example.com", "User", "editor", nil, []byte(testSigningKey), time.Hour)
+	token = methodBoundTestToken(t, h.provider, token)
 
 	code, rec := grantCode(t, h, token, "/proxy/team/code/?folder=/workspace")
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
@@ -118,6 +119,7 @@ func TestBrowserSessionGrantAuthDisabled(t *testing.T) {
 	cfg.Enabled = false
 	h := newTestHandler(t, cfg)
 	token, _ := CreateSessionToken("user@example.com", "User", "editor", nil, []byte(testSigningKey), time.Hour)
+	token = methodBoundTestToken(t, h.provider, token)
 
 	rec := grantBrowserSession(t, h, token, "/proxy/team/code/")
 	if rec.Code != http.StatusForbidden {
@@ -128,6 +130,7 @@ func TestBrowserSessionGrantAuthDisabled(t *testing.T) {
 func TestBrowserSessionGrantRedirectValidation(t *testing.T) {
 	h := newTestHandler(t, testConfig("http://127.0.0.1:1/unused"))
 	token, _ := CreateSessionToken("user@example.com", "User", "editor", nil, []byte(testSigningKey), time.Hour)
+	token = methodBoundTestToken(t, h.provider, token)
 
 	tests := []struct {
 		name     string
@@ -160,6 +163,7 @@ func TestBrowserSessionGrantRedirectValidation(t *testing.T) {
 func TestBrowserSessionGrantMalformedBody(t *testing.T) {
 	h := newTestHandler(t, testConfig("http://127.0.0.1:1/unused"))
 	token, _ := CreateSessionToken("user@example.com", "User", "editor", nil, []byte(testSigningKey), time.Hour)
+	token = methodBoundTestToken(t, h.provider, token)
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/browser-session/grant", strings.NewReader("{"))
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -175,6 +179,7 @@ func TestBrowserSessionGrantMalformedBody(t *testing.T) {
 func TestBrowserSessionRedeemRejectsUnknownAndReplay(t *testing.T) {
 	h := newTestHandler(t, testConfig("http://127.0.0.1:1/unused"))
 	token, _ := CreateSessionToken("user@example.com", "User", "editor", nil, []byte(testSigningKey), time.Hour)
+	token = methodBoundTestToken(t, h.provider, token)
 
 	if rec := redeemBrowserSession(t, h, "unknown-code"); rec.Code != http.StatusBadRequest {
 		t.Fatalf("unknown code status = %d, want %d", rec.Code, http.StatusBadRequest)

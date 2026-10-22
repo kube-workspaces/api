@@ -39,7 +39,7 @@ func adoptionFixture(t *testing.T, cfg *Config) (*OIDCHandler, string, *unstruct
 	if err != nil {
 		t.Fatal(err)
 	}
-	return h, token, target
+	return h, methodBoundTestToken(t, h.provider, token), target
 }
 
 func createAdoption(t *testing.T, h *OIDCHandler, adminToken, name string) string {

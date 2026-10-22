@@ -50,10 +50,19 @@ func TestHandleMeExecutionHintsUseCurrentAccount(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if bound {
+			token = methodBoundTestToken(t, provider, token)
+		}
 		req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
 		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
 		rec := httptest.NewRecorder()
 		h.HandleMe(rec, req)
+		if !bound {
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("legacy credential accepted: %d", rec.Code)
+			}
+			continue
+		}
 		var body struct {
 			Role   string           `json:"role"`
 			Bound  bool             `json:"executionCredentialBound"`
@@ -154,6 +163,8 @@ func TestExecutionAuthorizationRechecksCurrentIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	token = methodBoundTestToken(t, provider, token)
+	user, _ = provider.GetUserByEmail(ctx, "user@example.com")
 	authorize := func(op ExecutionPermission, elevated bool) (*UserInfo, error) {
 		return provider.AuthorizeExecution(ctx, token, "team", "vm", op, elevated, time.Now())
 	}

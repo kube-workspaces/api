@@ -504,6 +504,10 @@ func (h *OIDCHandler) HandleNativeToken(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, http.StatusUnauthorized, "invalid_session", "session is no longer available")
 		return
 	}
+	if user.MustChangePassword {
+		writeJSONError(w, http.StatusForbidden, "password_change_required", "change your temporary password before redeeming native grants")
+		return
+	}
 
 	log.Printf(ctx, "auth: native token exchange succeeded for %s", entry.email)
 

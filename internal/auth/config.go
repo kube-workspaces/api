@@ -466,6 +466,13 @@ func (p *ConfigProvider) UpdatePasswordHash(ctx context.Context, name, newHash s
 	if err != nil {
 		return err
 	}
+	return p.replacePasswordHash(ctx, secret, "passwordHash", newHash, true)
+}
+
+// replacePasswordHash updates the object whose password was proved. Re-reading
+// here would allow a concurrent administrative reset to be overwritten with
+// stale password proof. Hash and restriction state change in one API write.
+func (p *ConfigProvider) replacePasswordHash(ctx context.Context, secret *unstructured.Unstructured, key, newHash string, mustChange bool) error {
 	// stringData is write-only from the API's perspective once persisted (it
 	// gets merged into .data by the API server), so we must operate on .data
 	// directly using base64-encoded values.
@@ -473,12 +480,14 @@ func (p *ConfigProvider) UpdatePasswordHash(ctx context.Context, name, newHash s
 	if data == nil {
 		data = make(map[string]interface{})
 	}
-	data["passwordHash"] = base64.StdEncoding.EncodeToString([]byte(newHash))
+	data[key] = base64.StdEncoding.EncodeToString([]byte(newHash))
+	data["mustChangePassword"] = base64.StdEncoding.EncodeToString([]byte(fmt.Sprint(mustChange)))
 	delete(data, "password")
+	unstructured.RemoveNestedField(secret.Object, "stringData")
 	if err := unstructured.SetNestedMap(secret.Object, data, "data"); err != nil {
 		return err
 	}
-	_, err = p.dynamicClient.Resource(secretGVR).Namespace(LocalAuthSystemNamespace).Update(ctx, secret, metav1.UpdateOptions{})
+	_, err := p.dynamicClient.Resource(secretGVR).Namespace(LocalAuthSystemNamespace).Update(ctx, secret, metav1.UpdateOptions{})
 	return err
 }
 

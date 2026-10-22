@@ -165,6 +165,13 @@ func (p *ConfigProvider) bindIdentity(ctx context.Context, name, uid string, id 
 			},
 		},
 	}}
+	version, err := generateNativeCode()
+	if err != nil {
+		return err
+	}
+	annotations := claim.GetAnnotations()
+	annotations[identityVersionAnnotation] = version
+	claim.SetAnnotations(annotations)
 	secrets := p.dynamicClient.Resource(secretGVR).Namespace(LocalAuthSystemNamespace)
 	if _, err := secrets.Create(ctx, claim, metav1.CreateOptions{}); err != nil {
 		if !k8serrors.IsAlreadyExists(err) {

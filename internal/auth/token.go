@@ -39,7 +39,11 @@ type UserInfo struct {
 	AvatarURL string `json:"avatarURL,omitempty"`
 	// MustChangePassword indicates a local-auth user must set a new password
 	// before continuing (set on creation/reset by an admin).
-	MustChangePassword bool `json:"mustChangePassword,omitempty"`
+	MustChangePassword   bool   `json:"mustChangePassword,omitempty"`
+	AuthMethod           string `json:"authMethod,omitempty"`
+	LocalPasswordEnabled bool   `json:"localPasswordEnabled"`
+	OIDCLinked           bool   `json:"oidcLinked"`
+	CanChangePassword    bool   `json:"canChangePassword"`
 	// ExecutionGrants are loaded from the current User CR, never from a token.
 	ExecutionGrants   []ExecutionGrant `json:"-"`
 	credentialUserUID string
@@ -47,6 +51,7 @@ type UserInfo struct {
 
 // SessionToken represents a JWT-like session token.
 type SessionToken struct {
+	SessionProvenance
 	// UserUID binds new credentials to a User incarnation. Legacy credentials
 	// remain usable for existing routes, but cannot authorize machine execution.
 	UserUID     string   `json:"user_uid,omitempty"`
@@ -65,21 +70,37 @@ type SessionToken struct {
 
 // CreateSessionToken creates a signed session token for the given user.
 func CreateSessionToken(email, displayName, role string, groups []string, signingKey []byte, expiry time.Duration, userUID ...string) (string, error) {
+	uid := ""
+	if len(userUID) > 0 {
+		uid = userUID[0]
+	}
+	return CreateSessionTokenWithProvenance(email, displayName, role, groups, signingKey, expiry, uid, SessionProvenance{})
+}
+
+// CreateSessionTokenWithProvenance binds a credential to the proved login method.
+// The low-level legacy constructor remains available for decoding/migration
+// fixtures, but credentials without provenance cannot authorize requests.
+func CreateSessionTokenWithProvenance(email, displayName, role string, groups []string, signingKey []byte, expiry time.Duration, userUID string, provenance SessionProvenance) (string, error) {
 	if len(signingKey) == 0 {
 		return "", fmt.Errorf("session signing key is not configured")
 	}
 	token := SessionToken{
-		Email:       email,
-		DisplayName: displayName,
-		Role:        role,
-		Groups:      groups,
-		IssuedAt:    time.Now().Unix(),
-		ExpiresAt:   time.Now().Add(expiry).Unix(),
+		SessionProvenance: provenance,
+		UserUID:           userUID,
+		Email:             email,
+		DisplayName:       displayName,
+		Role:              role,
+		Groups:            groups,
+		IssuedAt:          time.Now().Unix(),
+		ExpiresAt:         time.Now().Add(expiry).Unix(),
 	}
-	if len(userUID) > 0 {
-		token.UserUID = userUID[0]
-	}
+	return signSessionToken(token, signingKey)
+}
 
+func signSessionToken(token SessionToken, signingKey []byte) (string, error) {
+	if len(signingKey) == 0 {
+		return "", fmt.Errorf("session signing key is not configured")
+	}
 	payload, err := json.Marshal(token)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal token: %w", err)

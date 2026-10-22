@@ -166,7 +166,12 @@ func (h *LocalAuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	hash, err := GetPasswordHash(secret)
+	_, passwordKey, refErr := passwordReference(userCR)
+	if refErr != nil {
+		writeJSONError(w, http.StatusUnauthorized, "invalid_credentials", "invalid email or password")
+		return
+	}
+	hash, err := getSecretDataValue(secret, passwordKey)
 	if err != nil {
 		log.Printf(ctx, "auth: password secret %s missing hash: %v", secretName, err)
 		writeJSONError(w, http.StatusUnauthorized, "invalid_credentials", "invalid email or password")
@@ -189,10 +194,19 @@ func (h *LocalAuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	sessionToken, err := CreateSessionToken(email, displayName, role, nil, cfg.SigningKey, cfg.TokenExpiry, string(userCR.GetUID()))
+	version, mustChangePassword, err := localCredentialState(userCR, secret)
+	if err != nil {
+		writeJSONError(w, http.StatusUnauthorized, "invalid_credentials", "local credential unavailable")
+		return
+	}
+	sessionToken, err := CreateSessionTokenWithProvenance(email, displayName, role, nil, cfg.SigningKey, cfg.TokenExpiry, string(userCR.GetUID()), SessionProvenance{AuthMethod: "local", CredentialVersion: version})
 	if err != nil {
 		log.Printf(ctx, "auth: failed to create session token: %v", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "failed to create session")
+		return
+	}
+	if _, err := validateAndGetUser(ctx, sessionToken, cfg, h.provider); err != nil {
+		writeJSONError(w, http.StatusUnauthorized, "invalid_credentials", "account or credential changed; sign in again")
 		return
 	}
 
@@ -207,8 +221,6 @@ func (h *LocalAuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Reque
 	})
 
 	h.updateLastLogin(ctx, userCR)
-
-	mustChangePassword, _, _ := unstructured.NestedBool(userCR.Object, "spec", "localAuth", "mustChangePassword")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -239,6 +251,10 @@ func (h *LocalAuthHandler) HandleChangePassword(w http.ResponseWriter, r *http.R
 	user, authErr := validateAndGetUser(ctx, tokenStr, cfg, h.provider)
 	if authErr != nil {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if !user.CanChangePassword {
+		writeJSONError(w, http.StatusBadRequest, "local_auth_disabled", "password change is not available for this account")
 		return
 	}
 
@@ -279,7 +295,12 @@ func (h *LocalAuthHandler) HandleChangePassword(w http.ResponseWriter, r *http.R
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "failed to load password secret")
 		return
 	}
-	hash, err := GetPasswordHash(secret)
+	_, passwordKey, refErr := passwordReference(userCR)
+	if refErr != nil {
+		writeJSONError(w, http.StatusBadRequest, "local_auth_disabled", "password reference unavailable")
+		return
+	}
+	hash, err := getSecretDataValue(secret, passwordKey)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "failed to load password hash")
 		return
@@ -296,30 +317,60 @@ func (h *LocalAuthHandler) HandleChangePassword(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if err := h.provider.UpdatePasswordHash(ctx, secretName, newHash); err != nil {
+	if err := h.provider.replacePasswordHash(ctx, secret, passwordKey, newHash, false); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "failed to update password")
 		return
 	}
 
-	// Clear mustChangePassword.
-	spec, _, _ := unstructured.NestedMap(userCR.Object, "spec")
-	if spec == nil {
-		spec = make(map[string]interface{})
+	// The Secret's policy is authoritative and atomic with the new hash.
+	// Keep the administrative User flag in sync without overwriting concurrent
+	// account edits. A concurrent reset's Secret policy still wins regardless.
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := h.provider.GetUser(ctx, userCR.GetName())
+		if err != nil {
+			return err
+		}
+		if current.GetUID() != userCR.GetUID() {
+			return fmt.Errorf("account replaced")
+		}
+		latest, err := h.provider.GetPasswordSecret(ctx, secretName)
+		if err != nil {
+			return err
+		}
+		latestHash, err := getSecretDataValue(latest, passwordKey)
+		if err != nil || latestHash != newHash {
+			return fmt.Errorf("credential changed again")
+		}
+		_ = unstructured.SetNestedField(current.Object, false, "spec", "localAuth", "mustChangePassword")
+		_, err = h.provider.UpdateUser(ctx, current)
+		return err
+	}); err != nil {
+		log.Printf(ctx, "auth: password updated but account policy synchronization failed for %s: %v", userCR.GetName(), err)
 	}
-	localAuth, _, _ := unstructured.NestedMap(userCR.Object, "spec", "localAuth")
-	if localAuth == nil {
-		localAuth = make(map[string]interface{})
-	}
-	localAuth["mustChangePassword"] = false
-	spec["localAuth"] = localAuth
-	unstructured.SetNestedMap(userCR.Object, spec, "spec")
-
-	if _, err := h.provider.UpdateUser(ctx, userCR); err != nil {
-		log.Printf(ctx, "auth: failed to clear mustChangePassword for %s: %v", user.Email, err)
+	response := map[string]interface{}{"status": "password changed"}
+	if user.AuthMethod == "local" {
+		version := LocalCredentialVersion(user.UID, secretName, passwordKey, newHash)
+		replacement, err := CreateSessionTokenWithProvenance(user.Email, user.DisplayName, user.Role, user.Groups, cfg.SigningKey, cfg.TokenExpiry, user.UID, SessionProvenance{AuthMethod: "local", CredentialVersion: version})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "internal_error", "password changed; sign in again")
+			return
+		}
+		if _, err := validateAndGetUser(ctx, replacement, cfg, h.provider); err != nil {
+			writeJSONError(w, http.StatusConflict, "credential_changed", "password changed again; sign in again")
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: SessionCookieName, Value: replacement, Path: "/", MaxAge: int(cfg.TokenExpiry.Seconds()), HttpOnly: true, Secure: isSecureRequest(r), SameSite: http.SameSiteLaxMode})
+		if cookie, err := r.Cookie(SessionCookieName); err != nil || cookie.Value == "" {
+			// Browser JavaScript must not receive the HttpOnly session value.
+			// Bearer-only clients need the replacement in the response body.
+			response["token"] = replacement
+			response["expires_at"] = time.Now().Add(cfg.TokenExpiry).Unix()
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "password changed"})
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(response)
 }
 
 // ProvisionLocalUser creates a User CR with local auth enabled and a password
@@ -411,7 +462,15 @@ func ResetLocalUserPassword(ctx context.Context, provider *ConfigProvider, userN
 		return "", err
 	}
 
-	if err := provider.UpdatePasswordHash(ctx, secretName, hash); err != nil {
+	_, key, err := passwordReference(userCR)
+	if err != nil {
+		return "", err
+	}
+	secret, err := provider.GetPasswordSecret(ctx, secretName)
+	if err != nil {
+		return "", err
+	}
+	if err := provider.replacePasswordHash(ctx, secret, key, hash, true); err != nil {
 		return "", err
 	}
 

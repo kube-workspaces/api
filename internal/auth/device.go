@@ -296,6 +296,10 @@ func (h *DeviceHandler) HandleDeviceCreate(w http.ResponseWriter, r *http.Reques
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
+	if caller.MustChangePassword {
+		writeJSONError(w, http.StatusForbidden, "password_change_required", "change your temporary password before creating device credentials")
+		return
+	}
 	claims, err := ValidateSessionTokenWithKeys(tokenStr, cfg.SessionSigningKeys())
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
@@ -323,7 +327,10 @@ func (h *DeviceHandler) HandleDeviceCreate(w http.ResponseWriter, r *http.Reques
 		expiry = defaultDeviceTokenExpiry
 	}
 	now := time.Now()
-	deviceToken, err := CreateDeviceToken(claims.Email, claims.DisplayName, caller.Role, claims.Groups, name, jti, cfg.SigningKey, expiry, caller.credentialUserUID)
+	derived := *claims
+	derived.Role, derived.Type, derived.JTI = caller.Role, DeviceTokenType, jti
+	derived.IssuedAt, derived.ExpiresAt = now.Unix(), now.Add(expiry).Unix()
+	deviceToken, err := signSessionToken(derived, cfg.SigningKey)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -361,6 +368,10 @@ func (h *DeviceHandler) HandleDeviceList(w http.ResponseWriter, r *http.Request)
 	caller, err := validateAndGetUser(ctx, tokenStr, cfg, h.provider)
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if caller.MustChangePassword {
+		writeJSONError(w, http.StatusForbidden, "password_change_required", "change your temporary password before managing device credentials")
 		return
 	}
 	// /auth/* bypasses identity middleware. Use the current account resolved
@@ -401,6 +412,10 @@ func (h *DeviceHandler) HandleDeviceRevoke(w http.ResponseWriter, r *http.Reques
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body); err != nil || body.DeviceID == "" {
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", "device_id is required")
+		return
+	}
+	if caller.MustChangePassword {
+		writeJSONError(w, http.StatusForbidden, "password_change_required", "change your temporary password before managing device credentials")
 		return
 	}
 	if caller.Role != "admin" {

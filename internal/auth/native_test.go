@@ -900,6 +900,7 @@ func TestHandleMeAcceptsBearer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSessionToken() error = %v", err)
 	}
+	token = methodBoundTestToken(t, h.provider, token)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -927,6 +928,8 @@ func TestHandleMeCookieTakesPrecedence(t *testing.T) {
 
 	cookieToken, _ := CreateSessionToken("cookie@example.com", "Cookie", "editor", nil, []byte(testSigningKey), time.Hour)
 	bearerToken, _ := CreateSessionToken("bearer@example.com", "Bearer", "editor", nil, []byte(testSigningKey), time.Hour)
+	cookieToken = methodBoundTestToken(t, h.provider, cookieToken)
+	bearerToken = methodBoundTestToken(t, h.provider, bearerToken)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
 	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: cookieToken})
