@@ -119,6 +119,7 @@ func marshalImagesImageToImageResponse(v *images.Image) *ImageResponse {
 		Icon:                   v.Icon,
 		DefaultUID:             v.DefaultUID,
 		DefaultSharedMemory:    v.DefaultSharedMemory,
+		DefaultImagePullPolicy: v.DefaultImagePullPolicy,
 		Privileged:             v.Privileged,
 		HomepageURL:            v.HomepageURL,
 		SourceURL:              v.SourceURL,

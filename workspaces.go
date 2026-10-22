@@ -582,18 +582,15 @@ func buildWorkspaceCR(p *workspaces.CreateWorkspacePayload, imageClient *k8s.Ima
 		},
 	}
 
-	// Set imagePullPolicy (always set it explicitly on the container spec)
-	if p.ImagePullPolicy != "" {
-		container["imagePullPolicy"] = p.ImagePullPolicy
-	}
-
 	// Look up Image CR for default args/env and security settings
 	var defaultUID *int64
 	var defaultInitContainers []k8s.ImageInitContainer
 	var preservePathPrefix bool
 	var additionalPorts []k8s.ImagePort
+	var imagePullPolicy string
 	if imageClient != nil {
 		if img, err := imageClient.GetImageByRef(context.Background(), p.Container.Image); err == nil {
+			imagePullPolicy = img.DefaultImagePullPolicy
 			if len(img.DefaultArgs) > 0 {
 				args := make([]interface{}, len(img.DefaultArgs))
 				for i, a := range img.DefaultArgs {
@@ -631,6 +628,17 @@ func buildWorkspaceCR(p *workspaces.CreateWorkspacePayload, imageClient *k8s.Ima
 				preservePathPrefix = img.ProxyConfig.PreservePathPrefix
 			}
 		}
+	}
+
+	// Resolve the image pull policy. An explicit workspace-level choice wins,
+	// then the image's defaultImagePullPolicy, and finally the field is left
+	// unset so Kubernetes applies its own default (Always for :latest or untagged
+	// references, IfNotPresent otherwise).
+	if p.ImagePullPolicy != nil && *p.ImagePullPolicy != "" {
+		imagePullPolicy = *p.ImagePullPolicy
+	}
+	if imagePullPolicy != "" {
+		container["imagePullPolicy"] = imagePullPolicy
 	}
 
 	// Merge user-specified custom env vars (appended after image defaults)

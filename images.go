@@ -175,6 +175,9 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 	if p.DefaultSharedMemory != nil && *p.DefaultSharedMemory {
 		spec["defaultSharedMemory"] = true
 	}
+	if p.DefaultImagePullPolicy != nil && *p.DefaultImagePullPolicy != "" {
+		spec["defaultImagePullPolicy"] = *p.DefaultImagePullPolicy
+	}
 	if len(p.WorkspaceTypes) > 0 {
 		types := make([]interface{}, len(p.WorkspaceTypes))
 		for i, t := range p.WorkspaceTypes {
@@ -251,6 +254,7 @@ func imageToResult(img *k8s.Image) *images.Image {
 		PersistentRootDiskSize: strPtr(img.PersistentRootDiskSize),
 		MemoryLimit:            strPtr(img.MemoryLimit),
 		MemoryRequest:          strPtr(img.MemoryRequest),
+		DefaultImagePullPolicy: strPtr(img.DefaultImagePullPolicy),
 	}
 	if img.DefaultCloudInit {
 		result.DefaultCloudInit = boolPtr(true)

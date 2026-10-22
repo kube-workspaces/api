@@ -113,8 +113,12 @@ type CreateWorkspacePayload struct {
 	// Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML
 	// frameworks)
 	SharedMemory bool
-	// Image pull policy for the workspace container (Always, IfNotPresent, Never)
-	ImagePullPolicy string
+	// Image pull policy for the workspace container (Always, IfNotPresent, Never).
+	// Overrides the image's default. When unset, the image's
+	// defaultImagePullPolicy applies; if that is also unset the field is omitted
+	// so Kubernetes applies its own default (Always for :latest or untagged
+	// references, IfNotPresent otherwise)
+	ImagePullPolicy *string
 }
 
 // CredentialsPayload is the payload type of the workspaces service credentials

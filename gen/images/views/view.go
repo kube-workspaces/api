@@ -50,6 +50,10 @@ type ImageView struct {
 	// Automatically mount /dev/shm as emptyDir with medium=Memory (required for
 	// Selkies streaming, Chrome, ML frameworks)
 	DefaultSharedMemory *bool
+	// Image pull policy for workspace containers created from this image (Always,
+	// IfNotPresent, Never). Empty means the platform leaves the container field
+	// unset so Kubernetes applies its own default
+	DefaultImagePullPolicy *string
 	// Run container in privileged mode
 	Privileged *bool
 	// Project homepage or documentation URL
@@ -165,6 +169,7 @@ var (
 			"default_env",
 			"default_uid",
 			"default_shared_memory",
+			"default_image_pull_policy",
 			"privileged",
 			"homepage_url",
 			"source_url",

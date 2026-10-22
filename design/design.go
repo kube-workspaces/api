@@ -158,10 +158,9 @@ var CreateWorkspacePayload = Type("CreateWorkspacePayload", func() {
 		Default(false)
 		Example(true)
 	})
-	Attribute("image_pull_policy", String, "Image pull policy for the workspace container (Always, IfNotPresent, Never)", func() {
+	Attribute("image_pull_policy", String, "Image pull policy for the workspace container (Always, IfNotPresent, Never). Overrides the image's default. When unset, the image's defaultImagePullPolicy applies; if that is also unset the field is omitted so Kubernetes applies its own default (Always for :latest or untagged references, IfNotPresent otherwise)", func() {
 		Enum("Always", "IfNotPresent", "Never")
-		Default("IfNotPresent")
-		Example("IfNotPresent")
+		Example("Always")
 	})
 	Required("name", "container")
 })
@@ -407,6 +406,10 @@ var CreateImagePayload = Type("CreateImagePayload", func() {
 	Attribute("default_shared_memory", Boolean, "Automatically mount /dev/shm as emptyDir with medium=Memory (required for Selkies streaming, Chrome, ML frameworks)", func() {
 		Example(false)
 	})
+	Attribute("default_image_pull_policy", String, "Image pull policy for workspace containers created from this image (Always, IfNotPresent, Never). Empty leaves the container field unset so Kubernetes applies its own default", func() {
+		Enum("Always", "IfNotPresent", "Never")
+		Example("Always")
+	})
 	Attribute("workspace_types", ArrayOf(String), "Workspace types this image supports (container, vm, scratch). Empty means container-only", func() {
 		Example([]string{"container"})
 	})
@@ -532,6 +535,9 @@ var ImageResult = ResultType("application/vnd.image+json", func() {
 		})
 		Attribute("default_shared_memory", Boolean, "Automatically mount /dev/shm as emptyDir with medium=Memory (required for Selkies streaming, Chrome, ML frameworks)", func() {
 			Example(false)
+		})
+		Attribute("default_image_pull_policy", String, "Image pull policy for workspace containers created from this image (Always, IfNotPresent, Never). Empty means the platform leaves the container field unset so Kubernetes applies its own default", func() {
+			Example("Always")
 		})
 		Attribute("privileged", Boolean, "Run container in privileged mode", func() {
 			Example(false)

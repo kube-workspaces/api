@@ -47,6 +47,10 @@ type Image struct {
 	DefaultSharedMemory   bool
 	DefaultInitContainers []ImageInitContainer
 	AdditionalPorts       []ImagePort
+	// DefaultImagePullPolicy is the pull policy applied to workspace containers
+	// created from this image. Empty leaves the container field unset so
+	// Kubernetes applies its own default.
+	DefaultImagePullPolicy string
 	// WorkspaceTypes lists the workspace types this image supports
 	// (container, vm, scratch). Empty means container-only.
 	WorkspaceTypes []string
@@ -349,6 +353,9 @@ func parseImage(obj *unstructured.Unstructured) (*Image, error) {
 	if v, ok := spec["defaultSharedMemory"].(bool); ok {
 		img.DefaultSharedMemory = v
 	}
+
+	// Parse defaultImagePullPolicy
+	img.DefaultImagePullPolicy = strField(spec, "defaultImagePullPolicy")
 
 	// Parse defaultInitContainers
 	if initContainers, ok := spec["defaultInitContainers"].([]interface{}); ok {

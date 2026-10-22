@@ -41,7 +41,11 @@ type CreateRequestBody struct {
 	// Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML
 	// frameworks)
 	SharedMemory *bool `form:"shared_memory,omitempty" json:"shared_memory,omitempty" xml:"shared_memory,omitempty"`
-	// Image pull policy for the workspace container (Always, IfNotPresent, Never)
+	// Image pull policy for the workspace container (Always, IfNotPresent, Never).
+	// Overrides the image's default. When unset, the image's
+	// defaultImagePullPolicy applies; if that is also unset the field is omitted
+	// so Kubernetes applies its own default (Always for :latest or untagged
+	// references, IfNotPresent otherwise)
 	ImagePullPolicy *string `form:"image_pull_policy,omitempty" json:"image_pull_policy,omitempty" xml:"image_pull_policy,omitempty"`
 }
 
@@ -892,7 +896,8 @@ func NewGetPayload(name string, namespace string) *workspaces.GetPayload {
 // payload.
 func NewCreateWorkspacePayload(body *CreateRequestBody) *workspaces.CreateWorkspacePayload {
 	v := &workspaces.CreateWorkspacePayload{
-		Name: *body.Name,
+		Name:            *body.Name,
+		ImagePullPolicy: body.ImagePullPolicy,
 	}
 	if body.Namespace != nil {
 		v.Namespace = *body.Namespace
@@ -902,9 +907,6 @@ func NewCreateWorkspacePayload(body *CreateRequestBody) *workspaces.CreateWorksp
 	}
 	if body.SharedMemory != nil {
 		v.SharedMemory = *body.SharedMemory
-	}
-	if body.ImagePullPolicy != nil {
-		v.ImagePullPolicy = *body.ImagePullPolicy
 	}
 	if body.Namespace == nil {
 		v.Namespace = "workspaces"
@@ -956,9 +958,6 @@ func NewCreateWorkspacePayload(body *CreateRequestBody) *workspaces.CreateWorksp
 	}
 	if body.SharedMemory == nil {
 		v.SharedMemory = false
-	}
-	if body.ImagePullPolicy == nil {
-		v.ImagePullPolicy = "IfNotPresent"
 	}
 
 	return v

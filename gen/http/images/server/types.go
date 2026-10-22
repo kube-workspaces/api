@@ -73,6 +73,10 @@ type CreateRequestBody struct {
 	// Automatically mount /dev/shm as emptyDir with medium=Memory (required for
 	// Selkies streaming, Chrome, ML frameworks)
 	DefaultSharedMemory *bool `form:"default_shared_memory,omitempty" json:"default_shared_memory,omitempty" xml:"default_shared_memory,omitempty"`
+	// Image pull policy for workspace containers created from this image (Always,
+	// IfNotPresent, Never). Empty leaves the container field unset so Kubernetes
+	// applies its own default
+	DefaultImagePullPolicy *string `form:"default_image_pull_policy,omitempty" json:"default_image_pull_policy,omitempty" xml:"default_image_pull_policy,omitempty"`
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string `form:"workspace_types,omitempty" json:"workspace_types,omitempty" xml:"workspace_types,omitempty"`
@@ -124,6 +128,10 @@ type CreateResponseBody struct {
 	// Automatically mount /dev/shm as emptyDir with medium=Memory (required for
 	// Selkies streaming, Chrome, ML frameworks)
 	DefaultSharedMemory *bool `form:"default_shared_memory,omitempty" json:"default_shared_memory,omitempty" xml:"default_shared_memory,omitempty"`
+	// Image pull policy for workspace containers created from this image (Always,
+	// IfNotPresent, Never). Empty means the platform leaves the container field
+	// unset so Kubernetes applies its own default
+	DefaultImagePullPolicy *string `form:"default_image_pull_policy,omitempty" json:"default_image_pull_policy,omitempty" xml:"default_image_pull_policy,omitempty"`
 	// Run container in privileged mode
 	Privileged *bool `form:"privileged,omitempty" json:"privileged,omitempty" xml:"privileged,omitempty"`
 	// Project homepage or documentation URL
@@ -196,6 +204,10 @@ type ImageResponse struct {
 	// Automatically mount /dev/shm as emptyDir with medium=Memory (required for
 	// Selkies streaming, Chrome, ML frameworks)
 	DefaultSharedMemory *bool `form:"default_shared_memory,omitempty" json:"default_shared_memory,omitempty" xml:"default_shared_memory,omitempty"`
+	// Image pull policy for workspace containers created from this image (Always,
+	// IfNotPresent, Never). Empty means the platform leaves the container field
+	// unset so Kubernetes applies its own default
+	DefaultImagePullPolicy *string `form:"default_image_pull_policy,omitempty" json:"default_image_pull_policy,omitempty" xml:"default_image_pull_policy,omitempty"`
 	// Run container in privileged mode
 	Privileged *bool `form:"privileged,omitempty" json:"privileged,omitempty" xml:"privileged,omitempty"`
 	// Project homepage or documentation URL
@@ -434,6 +446,7 @@ func NewCreateResponseBody(res *imagesviews.ImageView) *CreateResponseBody {
 		Icon:                   res.Icon,
 		DefaultUID:             res.DefaultUID,
 		DefaultSharedMemory:    res.DefaultSharedMemory,
+		DefaultImagePullPolicy: res.DefaultImagePullPolicy,
 		Privileged:             res.Privileged,
 		HomepageURL:            res.HomepageURL,
 		SourceURL:              res.SourceURL,
@@ -521,6 +534,7 @@ func NewCreateImagePayload(body *CreateRequestBody) *images.CreateImagePayload {
 		DefaultShell:           body.DefaultShell,
 		DefaultUID:             body.DefaultUID,
 		DefaultSharedMemory:    body.DefaultSharedMemory,
+		DefaultImagePullPolicy: body.DefaultImagePullPolicy,
 		VMProfile:              body.VMProfile,
 		PersistentRootDisk:     body.PersistentRootDisk,
 		PersistentRootDiskSize: body.PersistentRootDiskSize,
@@ -612,6 +626,11 @@ func ValidateCreateRequestBody(body *CreateRequestBody) (err error) {
 	if body.RemoteDesktop != nil {
 		if err2 := ValidateImageRemoteDesktopRequestBody(body.RemoteDesktop); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.DefaultImagePullPolicy != nil {
+		if !(*body.DefaultImagePullPolicy == "Always" || *body.DefaultImagePullPolicy == "IfNotPresent" || *body.DefaultImagePullPolicy == "Never") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.default_image_pull_policy", *body.DefaultImagePullPolicy, []any{"Always", "IfNotPresent", "Never"}))
 		}
 	}
 	if body.VMProfile != nil {

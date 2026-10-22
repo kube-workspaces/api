@@ -736,6 +736,7 @@ paths:
                                         - name: PASSWORD
                                           value: changeme
                                       default_homedir: /home/coder
+                                      default_image_pull_policy: Always
                                       default_password: changeme
                                       default_path: /
                                       default_port: 8080
@@ -794,6 +795,7 @@ paths:
                                         - name: PASSWORD
                                           value: changeme
                                       default_homedir: /home/coder
+                                      default_image_pull_policy: Always
                                       default_password: changeme
                                       default_path: /
                                       default_port: 8080
@@ -852,6 +854,7 @@ paths:
                                         - name: PASSWORD
                                           value: changeme
                                       default_homedir: /home/coder
+                                      default_image_pull_policy: Always
                                       default_password: changeme
                                       default_path: /
                                       default_port: 8080
@@ -911,6 +914,7 @@ paths:
                                     - name: PASSWORD
                                       value: changeme
                                   default_homedir: /home/coder
+                                  default_image_pull_policy: Always
                                   default_password: changeme
                                   default_path: /
                                   default_port: 8080
@@ -969,6 +973,7 @@ paths:
                                     - name: PASSWORD
                                       value: changeme
                                   default_homedir: /home/coder
+                                  default_image_pull_policy: Always
                                   default_password: changeme
                                   default_path: /
                                   default_port: 8080
@@ -1039,6 +1044,7 @@ paths:
                                 - name: PASSWORD
                                   value: changeme
                             default_homedir: /home/coder
+                            default_image_pull_policy: Always
                             default_password: changeme
                             default_path: /
                             default_port: 8080
@@ -1105,6 +1111,7 @@ paths:
                                     - name: PASSWORD
                                       value: changeme
                                 default_homedir: /home/coder
+                                default_image_pull_policy: Always
                                 default_password: changeme
                                 default_path: /
                                 default_port: 8080
@@ -1843,7 +1850,7 @@ paths:
                             env:
                                 - name: PASSWORD
                                   value: changeme
-                            image_pull_policy: IfNotPresent
+                            image_pull_policy: Always
                             name: my-workspace
                             namespace: workspaces
                             node_selector:
@@ -4495,6 +4502,14 @@ components:
                     type: string
                     description: Default home directory for the default user
                     example: /home/coder
+                default_image_pull_policy:
+                    type: string
+                    description: Image pull policy for workspace containers created from this image (Always, IfNotPresent, Never). Empty leaves the container field unset so Kubernetes applies its own default
+                    example: Always
+                    enum:
+                        - Always
+                        - IfNotPresent
+                        - Never
                 default_password:
                     type: string
                     description: Known default password for DefaultUser. Only set when the image has a known default password; leave unset when the guest uses no password
@@ -4629,6 +4644,7 @@ components:
                     - name: PASSWORD
                       value: changeme
                 default_homedir: /home/coder
+                default_image_pull_policy: Always
                 default_password: changeme
                 default_path: /
                 default_port: 8080
@@ -4774,9 +4790,8 @@ components:
                           value: changeme
                 image_pull_policy:
                     type: string
-                    description: Image pull policy for the workspace container (Always, IfNotPresent, Never)
-                    default: IfNotPresent
-                    example: IfNotPresent
+                    description: Image pull policy for the workspace container (Always, IfNotPresent, Never). Overrides the image's default. When unset, the image's defaultImagePullPolicy applies; if that is also unset the field is omitted so Kubernetes applies its own default (Always for :latest or untagged references, IfNotPresent otherwise)
+                    example: Always
                     enum:
                         - Always
                         - IfNotPresent
@@ -4849,7 +4864,7 @@ components:
                 env:
                     - name: PASSWORD
                       value: changeme
-                image_pull_policy: IfNotPresent
+                image_pull_policy: Always
                 name: my-workspace
                 namespace: workspaces
                 node_selector:
@@ -5758,6 +5773,10 @@ components:
                     type: string
                     description: Default home directory for the default user
                     example: /home/coder
+                default_image_pull_policy:
+                    type: string
+                    description: Image pull policy for workspace containers created from this image (Always, IfNotPresent, Never). Empty means the platform leaves the container field unset so Kubernetes applies its own default
+                    example: Always
                 default_password:
                     type: string
                     description: Known default password for DefaultUser. Only set when the image has a known default password; leave unset when the guest uses no password
@@ -5886,6 +5905,7 @@ components:
                     - name: PASSWORD
                       value: changeme
                 default_homedir: /home/coder
+                default_image_pull_policy: Always
                 default_password: changeme
                 default_path: /
                 default_port: 8080

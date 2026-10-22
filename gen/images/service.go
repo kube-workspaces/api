@@ -96,6 +96,10 @@ type CreateImagePayload struct {
 	// Automatically mount /dev/shm as emptyDir with medium=Memory (required for
 	// Selkies streaming, Chrome, ML frameworks)
 	DefaultSharedMemory *bool
+	// Image pull policy for workspace containers created from this image (Always,
+	// IfNotPresent, Never). Empty leaves the container field unset so Kubernetes
+	// applies its own default
+	DefaultImagePullPolicy *string
 	// Workspace types this image supports (container, vm, scratch). Empty means
 	// container-only
 	WorkspaceTypes []string
@@ -142,6 +146,10 @@ type Image struct {
 	// Automatically mount /dev/shm as emptyDir with medium=Memory (required for
 	// Selkies streaming, Chrome, ML frameworks)
 	DefaultSharedMemory *bool
+	// Image pull policy for workspace containers created from this image (Always,
+	// IfNotPresent, Never). Empty means the platform leaves the container field
+	// unset so Kubernetes applies its own default
+	DefaultImagePullPolicy *string
 	// Run container in privileged mode
 	Privileged *bool
 	// Project homepage or documentation URL
@@ -300,6 +308,7 @@ func newImage(vres *imagesviews.ImageView) *Image {
 		Icon:                   vres.Icon,
 		DefaultUID:             vres.DefaultUID,
 		DefaultSharedMemory:    vres.DefaultSharedMemory,
+		DefaultImagePullPolicy: vres.DefaultImagePullPolicy,
 		Privileged:             vres.Privileged,
 		HomepageURL:            vres.HomepageURL,
 		SourceURL:              vres.SourceURL,
@@ -392,6 +401,7 @@ func newImageView(res *Image) *imagesviews.ImageView {
 		Icon:                   res.Icon,
 		DefaultUID:             res.DefaultUID,
 		DefaultSharedMemory:    res.DefaultSharedMemory,
+		DefaultImagePullPolicy: res.DefaultImagePullPolicy,
 		Privileged:             res.Privileged,
 		HomepageURL:            res.HomepageURL,
 		SourceURL:              res.SourceURL,

@@ -79,7 +79,7 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 	{
 		err = json.Unmarshal([]byte(workspacesCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 8080\n      },\n      \"env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"image_pull_policy\": \"IfNotPresent\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"nvidia.com/gpu\": \"true\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"vm_options\": {\n         \"import_cert_config_map_name\": \"Voluptatum dolorem deserunt.\",\n         \"import_secret_name\": \"Soluta quo porro eum.\",\n         \"root_disk_size\": \"Dolorem quos tempora rem voluptates.\",\n         \"storage_class_name\": \"Aperiam labore libero.\"\n      },\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 8080\n      },\n      \"env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"nvidia.com/gpu\": \"true\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"vm_options\": {\n         \"import_cert_config_map_name\": \"Voluptatum dolorem deserunt.\",\n         \"import_secret_name\": \"Soluta quo porro eum.\",\n         \"root_disk_size\": \"Dolorem quos tempora rem voluptates.\",\n         \"storage_class_name\": \"Aperiam labore libero.\"\n      },\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
 		}
 		if body.Container == nil {
 			err = goa.MergeErrors(err, goa.MissingFieldError("container", "body"))
@@ -105,8 +105,10 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 				}
 			}
 		}
-		if !(body.ImagePullPolicy == "Always" || body.ImagePullPolicy == "IfNotPresent" || body.ImagePullPolicy == "Never") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.image_pull_policy", body.ImagePullPolicy, []any{"Always", "IfNotPresent", "Never"}))
+		if body.ImagePullPolicy != nil {
+			if !(*body.ImagePullPolicy == "Always" || *body.ImagePullPolicy == "IfNotPresent" || *body.ImagePullPolicy == "Never") {
+				err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.image_pull_policy", *body.ImagePullPolicy, []any{"Always", "IfNotPresent", "Never"}))
+			}
 		}
 		if err != nil {
 			return nil, err
@@ -179,12 +181,6 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 		var zero bool
 		if v.SharedMemory == zero {
 			v.SharedMemory = false
-		}
-	}
-	{
-		var zero string
-		if v.ImagePullPolicy == zero {
-			v.ImagePullPolicy = "IfNotPresent"
 		}
 	}
 

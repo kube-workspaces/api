@@ -39,8 +39,12 @@ type CreateRequestBody struct {
 	// Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML
 	// frameworks)
 	SharedMemory bool `form:"shared_memory" json:"shared_memory" xml:"shared_memory"`
-	// Image pull policy for the workspace container (Always, IfNotPresent, Never)
-	ImagePullPolicy string `form:"image_pull_policy" json:"image_pull_policy" xml:"image_pull_policy"`
+	// Image pull policy for the workspace container (Always, IfNotPresent, Never).
+	// Overrides the image's default. When unset, the image's
+	// defaultImagePullPolicy applies; if that is also unset the field is omitted
+	// so Kubernetes applies its own default (Always for :latest or untagged
+	// references, IfNotPresent otherwise)
+	ImagePullPolicy *string `form:"image_pull_policy,omitempty" json:"image_pull_policy,omitempty" xml:"image_pull_policy,omitempty"`
 }
 
 // CloneRequestBody is the type of the "workspaces" service "clone" endpoint
@@ -613,12 +617,6 @@ func NewCreateRequestBody(p *workspaces.CreateWorkspacePayload) *CreateRequestBo
 		var zero bool
 		if body.SharedMemory == zero {
 			body.SharedMemory = false
-		}
-	}
-	{
-		var zero string
-		if body.ImagePullPolicy == zero {
-			body.ImagePullPolicy = "IfNotPresent"
 		}
 	}
 	return body
