@@ -33,7 +33,7 @@ import (
 func UsageCommands() []string {
 	return []string{
 		"agentupgrades (availability|start|status|cancel|rollback)",
-		"workspaces (credentials|list|get|create|delete|start|stop|reset|clone)",
+		"workspaces (gpu-profiles|set-gpu-profile|credentials|list|get|create|delete|start|stop|reset|clone)",
 		"volumes (list|get|create|delete)",
 		"sshkeys (list|get|create|delete)",
 		"images (list|create)",
@@ -47,8 +47,8 @@ func UsageCommands() []string {
 
 // UsageExamples produces an example of a valid invocation of the CLI tool.
 func UsageExamples() string {
-	return os.Args[0] + " " + "agentupgrades availability --name \"Unde consequatur at.\" --namespace \"Rerum explicabo aut reiciendis sint consectetur tenetur.\"" + "\n" +
-		os.Args[0] + " " + "workspaces credentials --name \"Debitis repellat nam.\" --namespace \"Officiis excepturi rerum amet ut unde.\"" + "\n" +
+	return os.Args[0] + " " + "agentupgrades availability --name \"Eius voluptatem sit sit cumque occaecati.\" --namespace \"Facere illum consequatur iste.\"" + "\n" +
+		os.Args[0] + " " + "workspaces gpu-profiles" + "\n" +
 		os.Args[0] + " " + "volumes list --namespace \"workspaces\"" + "\n" +
 		os.Args[0] + " " + "sshkeys list --namespace \"chris-at-fordham-id-au\"" + "\n" +
 		os.Args[0] + " " + "images list" + "\n" +
@@ -92,6 +92,13 @@ func ParseEndpoint(
 		agentupgradesRollbackNamespaceFlag = agentupgradesRollbackFlags.String("namespace", "workspaces", "")
 
 		workspacesFlags = flag.NewFlagSet("workspaces", flag.ContinueOnError)
+
+		workspacesGpuProfilesFlags = flag.NewFlagSet("gpu-profiles", flag.ExitOnError)
+
+		workspacesSetGpuProfileFlags         = flag.NewFlagSet("set-gpu-profile", flag.ExitOnError)
+		workspacesSetGpuProfileBodyFlag      = workspacesSetGpuProfileFlags.String("body", "REQUIRED", "")
+		workspacesSetGpuProfileNameFlag      = workspacesSetGpuProfileFlags.String("name", "REQUIRED", "")
+		workspacesSetGpuProfileNamespaceFlag = workspacesSetGpuProfileFlags.String("namespace", "workspaces", "")
 
 		workspacesCredentialsFlags         = flag.NewFlagSet("credentials", flag.ExitOnError)
 		workspacesCredentialsNameFlag      = workspacesCredentialsFlags.String("name", "REQUIRED", "")
@@ -263,6 +270,8 @@ func ParseEndpoint(
 	agentupgradesRollbackFlags.Usage = agentupgradesRollbackUsage
 
 	workspacesFlags.Usage = workspacesUsage
+	workspacesGpuProfilesFlags.Usage = workspacesGpuProfilesUsage
+	workspacesSetGpuProfileFlags.Usage = workspacesSetGpuProfileUsage
 	workspacesCredentialsFlags.Usage = workspacesCredentialsUsage
 	workspacesListFlags.Usage = workspacesListUsage
 	workspacesGetFlags.Usage = workspacesGetUsage
@@ -389,6 +398,12 @@ func ParseEndpoint(
 
 		case "workspaces":
 			switch epn {
+			case "gpu-profiles":
+				epf = workspacesGpuProfilesFlags
+
+			case "set-gpu-profile":
+				epf = workspacesSetGpuProfileFlags
+
 			case "credentials":
 				epf = workspacesCredentialsFlags
 
@@ -579,6 +594,11 @@ func ParseEndpoint(
 		case "workspaces":
 			c := workspacesc.NewClient(scheme, host, doer, enc, dec, restore)
 			switch epn {
+			case "gpu-profiles":
+				endpoint = c.GpuProfiles()
+			case "set-gpu-profile":
+				endpoint = c.SetGpuProfile()
+				data, err = workspacesc.BuildSetGpuProfilePayload(*workspacesSetGpuProfileBodyFlag, *workspacesSetGpuProfileNameFlag, *workspacesSetGpuProfileNamespaceFlag)
 			case "credentials":
 				endpoint = c.Credentials()
 				data, err = workspacesc.BuildCredentialsPayload(*workspacesCredentialsNameFlag, *workspacesCredentialsNamespaceFlag)
@@ -763,7 +783,7 @@ func agentupgradesAvailabilityUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades availability --name \"Unde consequatur at.\" --namespace \"Rerum explicabo aut reiciendis sint consectetur tenetur.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades availability --name \"Eius voluptatem sit sit cumque occaecati.\" --namespace \"Facere illum consequatur iste.\"")
 }
 
 func agentupgradesStartUsage() {
@@ -807,7 +827,7 @@ func agentupgradesStatusUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades status --name \"Delectus et fugit expedita.\" --attempt-id \"upg_02c6d906d2128d78f19b3b5f\" --namespace \"Voluptatem similique.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades status --name \"Quibusdam esse ut temporibus laborum.\" --attempt-id \"upg_c8742fa7c02b11309eb543f6\" --namespace \"Sed consectetur.\"")
 }
 
 func agentupgradesCancelUsage() {
@@ -829,7 +849,7 @@ func agentupgradesCancelUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades cancel --name \"Quia qui velit fugit est eius nulla.\" --attempt-id \"upg_439da2bb3792faf38999d778\" --namespace \"Et dolores magnam ratione consequatur assumenda.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades cancel --name \"Eos quidem.\" --attempt-id \"upg_3a0d78b8d9259e3e45f8de8b\" --namespace \"Omnis animi aut.\"")
 }
 
 func agentupgradesRollbackUsage() {
@@ -851,7 +871,7 @@ func agentupgradesRollbackUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades rollback --name \"Culpa qui ducimus et in et.\" --attempt-id \"upg_3f9db25f47a652fdd90d19bf\" --namespace \"Est dolores nostrum magni numquam in praesentium.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades rollback --name \"Sunt est et.\" --attempt-id \"upg_8aebe778812f700eceb3d334\" --namespace \"Voluptatem saepe alias rerum sed omnis natus.\"")
 }
 
 // workspacesUsage displays the usage of the workspaces command and its
@@ -860,6 +880,8 @@ func workspacesUsage() {
 	fmt.Fprintln(os.Stderr, `Workspace management service`)
 	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] workspaces COMMAND [flags]\n\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "COMMAND:")
+	fmt.Fprintln(os.Stderr, `    gpu-profiles: List validated operator-declared Windows VM GPU profiles; device availability is determined by scheduling`)
+	fmt.Fprintln(os.Stderr, `    set-gpu-profile: Add, change or remove a Windows GPU profile only while its VM is fully stopped; preserves root/EFI/TPM/identity. Empty profile_id restores software graphics.`)
 	fmt.Fprintln(os.Stderr, `    credentials: Retrieve this Windows workspace's unique initial credentials; namespace editors/admins only`)
 	fmt.Fprintln(os.Stderr, `    list: List all workspaces`)
 	fmt.Fprintln(os.Stderr, `    get: Get a workspace by name`)
@@ -873,6 +895,44 @@ func workspacesUsage() {
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s workspaces COMMAND --help\n", os.Args[0])
 }
+func workspacesGpuProfilesUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] workspaces gpu-profiles", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `List validated operator-declared Windows VM GPU profiles; device availability is determined by scheduling`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces gpu-profiles")
+}
+
+func workspacesSetGpuProfileUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] workspaces set-gpu-profile", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprint(os.Stderr, " -name STRING")
+	fmt.Fprint(os.Stderr, " -namespace STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Add, change or remove a Windows GPU profile only while its VM is fully stopped; preserves root/EFI/TPM/identity. Empty profile_id restores software graphics.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+	fmt.Fprintln(os.Stderr, `    -name STRING: `)
+	fmt.Fprintln(os.Stderr, `    -namespace STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces set-gpu-profile --body '{\n      \"profile_id\": \"jsn\"\n   }' --name \"Quia et.\" --namespace \"Aut blanditiis.\"")
+}
+
 func workspacesCredentialsUsage() {
 	// Header with flags
 	fmt.Fprintf(os.Stderr, "%s [flags] workspaces credentials", os.Args[0])
@@ -890,7 +950,7 @@ func workspacesCredentialsUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces credentials --name \"Debitis repellat nam.\" --namespace \"Officiis excepturi rerum amet ut unde.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces credentials --name \"Aut quis dolores.\" --namespace \"Voluptatem eligendi eos.\"")
 }
 
 func workspacesListUsage() {
@@ -946,7 +1006,7 @@ func workspacesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces create --body '{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 8080\n      },\n      \"env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"nvidia.com/gpu\": \"true\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"vm_options\": {\n         \"import_cert_config_map_name\": \"Voluptatum dolorem deserunt.\",\n         \"import_secret_name\": \"Soluta quo porro eum.\",\n         \"root_disk_size\": \"Dolorem quos tempora rem voluptates.\",\n         \"storage_class_name\": \"Aperiam labore libero.\"\n      },\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspaces create --body '{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 8080\n      },\n      \"env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"nvidia.com/gpu\": \"true\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"vm_options\": {\n         \"gpu_profile\": \"g7k\",\n         \"import_cert_config_map_name\": \"Culpa exercitationem corrupti saepe laboriosam ducimus possimus.\",\n         \"import_secret_name\": \"Rem ut a odit blanditiis doloremque.\",\n         \"root_disk_size\": \"Nemo at ullam reiciendis nam id.\",\n         \"storage_class_name\": \"Illo et vero natus voluptas.\"\n      },\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
 }
 
 func workspacesDeleteUsage() {
@@ -1117,7 +1177,7 @@ func volumesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes create --body '{\n      \"access_mode\": \"ReadWriteOnce\",\n      \"name\": \"my-data\",\n      \"namespace\": \"workspaces\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\",\n      \"type\": \"pvc\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "volumes create --body '{\n      \"access_mode\": \"ReadWriteOnce\",\n      \"name\": \"my-data\",\n      \"namespace\": \"workspaces\",\n      \"size\": \"10Gi\",\n      \"storage_class\": \"standard\",\n      \"type\": \"vm-disk\"\n   }'")
 }
 
 func volumesDeleteUsage() {
@@ -1271,7 +1331,7 @@ func imagesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "images create --body '{\n      \"category\": \"IDE\",\n      \"default_args\": [\n         \"--bind-addr\",\n         \"0.0.0.0:8080\"\n      ],\n      \"default_cloud_init\": false,\n      \"default_credentials\": {\n         \"password\": \"changeme\",\n         \"username\": \"coder\"\n      },\n      \"default_env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"default_homedir\": \"/home/coder\",\n      \"default_image_pull_policy\": \"Always\",\n      \"default_password\": \"changeme\",\n      \"default_path\": \"/\",\n      \"default_port\": 8080,\n      \"default_shared_memory\": false,\n      \"default_shell\": \"/bin/bash\",\n      \"default_uid\": 1000,\n      \"default_user\": \"coder\",\n      \"default_user_data\": \"\",\n      \"description\": \"Code editor in the browser\",\n      \"homepage_url\": \"https://github.com/coder/code-server\",\n      \"icon\": \"code\",\n      \"image\": \"codercom/code-server:latest\",\n      \"image_homepage_url\": \"https://hub.docker.com/r/codercom/code-server\",\n      \"links\": [\n         {\n            \"title\": \"GitHub\",\n            \"url\": \"https://github.com/coder/code-server\"\n         },\n         {\n            \"title\": \"Docker Hub\",\n            \"url\": \"https://hub.docker.com/r/codercom/code-server\"\n         }\n      ],\n      \"memory_limit\": \"Quis occaecati nobis voluptas quis rerum.\",\n      \"memory_request\": \"Sed qui distinctio vel.\",\n      \"name\": \"Code Server (VS Code)\",\n      \"persistent_root_disk\": true,\n      \"persistent_root_disk_size\": \"Distinctio vero veritatis quo voluptatem.\",\n      \"privileged\": false,\n      \"proxy_config\": {\n         \"custom_request_headers\": {\n            \"x-tenant\": \"workspaces\"\n         },\n         \"inject_base_tag\": true,\n         \"needs_noop_sw\": true,\n         \"preserve_path_prefix\": true,\n         \"rewrite_host_absolute_paths\": true,\n         \"tls_insecure\": false,\n         \"websocket_paths\": [\n            \"/websockify\"\n         ]\n      },\n      \"remote_desktop\": {\n         \"path\": \"/\",\n         \"port\": 8080,\n         \"protocol\": \"agent\"\n      },\n      \"source_url\": \"https://github.com/coder/code-server\",\n      \"tags\": [\n         \"development\",\n         \"vscode\"\n      ],\n      \"vm_profile\": \"windows11-amd64-v1\",\n      \"workspace_types\": [\n         \"container\"\n      ]\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "images create --body '{\n      \"category\": \"IDE\",\n      \"default_args\": [\n         \"--bind-addr\",\n         \"0.0.0.0:8080\"\n      ],\n      \"default_cloud_init\": false,\n      \"default_credentials\": {\n         \"password\": \"changeme\",\n         \"username\": \"coder\"\n      },\n      \"default_env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"default_homedir\": \"/home/coder\",\n      \"default_image_pull_policy\": \"Always\",\n      \"default_password\": \"changeme\",\n      \"default_path\": \"/\",\n      \"default_port\": 8080,\n      \"default_shared_memory\": false,\n      \"default_shell\": \"/bin/bash\",\n      \"default_uid\": 1000,\n      \"default_user\": \"coder\",\n      \"default_user_data\": \"\",\n      \"description\": \"Code editor in the browser\",\n      \"homepage_url\": \"https://github.com/coder/code-server\",\n      \"icon\": \"code\",\n      \"image\": \"codercom/code-server:latest\",\n      \"image_homepage_url\": \"https://hub.docker.com/r/codercom/code-server\",\n      \"links\": [\n         {\n            \"title\": \"GitHub\",\n            \"url\": \"https://github.com/coder/code-server\"\n         },\n         {\n            \"title\": \"Docker Hub\",\n            \"url\": \"https://hub.docker.com/r/codercom/code-server\"\n         }\n      ],\n      \"memory_limit\": \"Et odit iste deleniti.\",\n      \"memory_request\": \"Illo dignissimos.\",\n      \"name\": \"Code Server (VS Code)\",\n      \"persistent_root_disk\": false,\n      \"persistent_root_disk_size\": \"Voluptatem excepturi at necessitatibus optio amet.\",\n      \"privileged\": false,\n      \"proxy_config\": {\n         \"custom_request_headers\": {\n            \"x-tenant\": \"workspaces\"\n         },\n         \"inject_base_tag\": true,\n         \"needs_noop_sw\": false,\n         \"preserve_path_prefix\": false,\n         \"rewrite_host_absolute_paths\": true,\n         \"tls_insecure\": false,\n         \"websocket_paths\": [\n            \"/websockify\"\n         ]\n      },\n      \"remote_desktop\": {\n         \"path\": \"/\",\n         \"port\": 8080,\n         \"protocol\": \"agent\"\n      },\n      \"source_url\": \"https://github.com/coder/code-server\",\n      \"tags\": [\n         \"development\",\n         \"vscode\"\n      ],\n      \"vm_profile\": \"windows11-amd64-v1\",\n      \"workspace_types\": [\n         \"container\"\n      ]\n   }'")
 }
 
 // namespacesUsage displays the usage of the namespaces command and its
@@ -1647,7 +1707,7 @@ func executionsListUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions list --namespace \"Eligendi quia quia hic in enim.\" --workspace-name \"Maxime ipsam ut inventore velit minima.\" --actor-id \"Et reprehenderit et.\" --since \"1990-09-23T13:54:59Z\" --limit 444")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions list --namespace \"Neque soluta voluptas qui dolores modi.\" --workspace-name \"Provident vero hic et.\" --actor-id \"Veniam in.\" --since \"1995-06-24T11:18:59Z\" --limit 362")
 }
 
 func executionsGetUsage() {
@@ -1683,7 +1743,7 @@ func executionsStartUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions start --body '{\n      \"args\": [\n         \"Consequuntur numquam id omnis ea.\",\n         \"Aperiam totam et.\",\n         \"Doloremque adipisci sint.\"\n      ],\n      \"cwd\": \"C:\\\\Temp\",\n      \"deadline_seconds\": 6,\n      \"executable\": \"C:\\\\Windows\\\\System32\\\\cmd.exe\",\n      \"namespace\": \"team-a\",\n      \"workspace_name\": \"vm-1\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions start --body '{\n      \"args\": [\n         \"Provident vel dignissimos quibusdam iure eos.\",\n         \"Ut dolore.\",\n         \"Laboriosam rerum facere aut.\"\n      ],\n      \"cwd\": \"C:\\\\Temp\",\n      \"deadline_seconds\": 11,\n      \"executable\": \"C:\\\\Windows\\\\System32\\\\cmd.exe\",\n      \"namespace\": \"team-a\",\n      \"workspace_name\": \"vm-1\"\n   }'")
 }
 
 func executionsManifestUsage() {
@@ -1701,7 +1761,7 @@ func executionsManifestUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions manifest --execution-id \"Dignissimos quibusdam iure eos quibusdam ut.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions manifest --execution-id \"Placeat reiciendis eveniet.\"")
 }
 
 func executionsChunkUsage() {
@@ -1721,5 +1781,5 @@ func executionsChunkUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions chunk --execution-id \"Veritatis nemo esse.\" --index 10476190526150026132")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "executions chunk --execution-id \"Voluptatum ex aut.\" --index 11384129732319316381")
 }

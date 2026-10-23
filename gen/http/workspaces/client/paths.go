@@ -11,6 +11,16 @@ import (
 	"fmt"
 )
 
+// GpuProfilesWorkspacesPath returns the URL path to the workspaces service gpu_profiles HTTP endpoint.
+func GpuProfilesWorkspacesPath() string {
+	return "/v1/vm-gpu-profiles"
+}
+
+// SetGpuProfileWorkspacesPath returns the URL path to the workspaces service set_gpu_profile HTTP endpoint.
+func SetGpuProfileWorkspacesPath(name string) string {
+	return fmt.Sprintf("/v1/workspaces/%v/gpu-profile", name)
+}
+
 // CredentialsWorkspacesPath returns the URL path to the workspaces service credentials HTTP endpoint.
 func CredentialsWorkspacesPath(name string) string {
 	return fmt.Sprintf("/v1/workspaces/%v/credentials", name)

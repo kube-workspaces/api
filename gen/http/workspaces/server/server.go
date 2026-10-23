@@ -18,16 +18,18 @@ import (
 
 // Server lists the workspaces service endpoint HTTP handlers.
 type Server struct {
-	Mounts      []*MountPoint
-	Credentials http.Handler
-	List        http.Handler
-	Get         http.Handler
-	Create      http.Handler
-	Delete      http.Handler
-	Start       http.Handler
-	Stop        http.Handler
-	Reset       http.Handler
-	Clone       http.Handler
+	Mounts        []*MountPoint
+	GpuProfiles   http.Handler
+	SetGpuProfile http.Handler
+	Credentials   http.Handler
+	List          http.Handler
+	Get           http.Handler
+	Create        http.Handler
+	Delete        http.Handler
+	Start         http.Handler
+	Stop          http.Handler
+	Reset         http.Handler
+	Clone         http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -57,6 +59,8 @@ func New(
 ) *Server {
 	return &Server{
 		Mounts: []*MountPoint{
+			{"GpuProfiles", "GET", "/v1/vm-gpu-profiles"},
+			{"SetGpuProfile", "PUT", "/v1/workspaces/{name}/gpu-profile"},
 			{"Credentials", "GET", "/v1/workspaces/{name}/credentials"},
 			{"List", "GET", "/v1/workspaces"},
 			{"Get", "GET", "/v1/workspaces/{name}"},
@@ -67,15 +71,17 @@ func New(
 			{"Reset", "POST", "/v1/workspaces/{name}/reset"},
 			{"Clone", "POST", "/v1/workspaces/{name}/clone"},
 		},
-		Credentials: NewCredentialsHandler(e.Credentials, mux, decoder, encoder, errhandler, formatter),
-		List:        NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
-		Get:         NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
-		Create:      NewCreateHandler(e.Create, mux, decoder, encoder, errhandler, formatter),
-		Delete:      NewDeleteHandler(e.Delete, mux, decoder, encoder, errhandler, formatter),
-		Start:       NewStartHandler(e.Start, mux, decoder, encoder, errhandler, formatter),
-		Stop:        NewStopHandler(e.Stop, mux, decoder, encoder, errhandler, formatter),
-		Reset:       NewResetHandler(e.Reset, mux, decoder, encoder, errhandler, formatter),
-		Clone:       NewCloneHandler(e.Clone, mux, decoder, encoder, errhandler, formatter),
+		GpuProfiles:   NewGpuProfilesHandler(e.GpuProfiles, mux, decoder, encoder, errhandler, formatter),
+		SetGpuProfile: NewSetGpuProfileHandler(e.SetGpuProfile, mux, decoder, encoder, errhandler, formatter),
+		Credentials:   NewCredentialsHandler(e.Credentials, mux, decoder, encoder, errhandler, formatter),
+		List:          NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
+		Get:           NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
+		Create:        NewCreateHandler(e.Create, mux, decoder, encoder, errhandler, formatter),
+		Delete:        NewDeleteHandler(e.Delete, mux, decoder, encoder, errhandler, formatter),
+		Start:         NewStartHandler(e.Start, mux, decoder, encoder, errhandler, formatter),
+		Stop:          NewStopHandler(e.Stop, mux, decoder, encoder, errhandler, formatter),
+		Reset:         NewResetHandler(e.Reset, mux, decoder, encoder, errhandler, formatter),
+		Clone:         NewCloneHandler(e.Clone, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -84,6 +90,8 @@ func (s *Server) Service() string { return "workspaces" }
 
 // Use wraps the server handlers with the given middleware.
 func (s *Server) Use(m func(http.Handler) http.Handler) {
+	s.GpuProfiles = m(s.GpuProfiles)
+	s.SetGpuProfile = m(s.SetGpuProfile)
 	s.Credentials = m(s.Credentials)
 	s.List = m(s.List)
 	s.Get = m(s.Get)
@@ -100,6 +108,8 @@ func (s *Server) MethodNames() []string { return workspaces.MethodNames[:] }
 
 // Mount configures the mux to serve the workspaces endpoints.
 func Mount(mux goahttp.Muxer, h *Server) {
+	MountGpuProfilesHandler(mux, h.GpuProfiles)
+	MountSetGpuProfileHandler(mux, h.SetGpuProfile)
 	MountCredentialsHandler(mux, h.Credentials)
 	MountListHandler(mux, h.List)
 	MountGetHandler(mux, h.Get)
@@ -114,6 +124,105 @@ func Mount(mux goahttp.Muxer, h *Server) {
 // Mount configures the mux to serve the workspaces endpoints.
 func (s *Server) Mount(mux goahttp.Muxer) {
 	Mount(mux, s)
+}
+
+// MountGpuProfilesHandler configures the mux to serve the "workspaces" service
+// "gpu_profiles" endpoint.
+func MountGpuProfilesHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/v1/vm-gpu-profiles", f)
+}
+
+// NewGpuProfilesHandler creates a HTTP handler which loads the HTTP request
+// and calls the "workspaces" service "gpu_profiles" endpoint.
+func NewGpuProfilesHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeGpuProfilesResponse(encoder)
+		encodeError    = EncodeGpuProfilesError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "gpu_profiles")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "workspaces")
+		var err error
+		res, err := endpoint(ctx, nil)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountSetGpuProfileHandler configures the mux to serve the "workspaces"
+// service "set_gpu_profile" endpoint.
+func MountSetGpuProfileHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("PUT", "/v1/workspaces/{name}/gpu-profile", f)
+}
+
+// NewSetGpuProfileHandler creates a HTTP handler which loads the HTTP request
+// and calls the "workspaces" service "set_gpu_profile" endpoint.
+func NewSetGpuProfileHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeSetGpuProfileRequest(mux, decoder)
+		encodeResponse = EncodeSetGpuProfileResponse(encoder)
+		encodeError    = EncodeSetGpuProfileError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "set_gpu_profile")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "workspaces")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
 }
 
 // MountCredentialsHandler configures the mux to serve the "workspaces" service

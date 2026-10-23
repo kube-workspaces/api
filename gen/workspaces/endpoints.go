@@ -15,34 +15,40 @@ import (
 
 // Endpoints wraps the "workspaces" service endpoints.
 type Endpoints struct {
-	Credentials goa.Endpoint
-	List        goa.Endpoint
-	Get         goa.Endpoint
-	Create      goa.Endpoint
-	Delete      goa.Endpoint
-	Start       goa.Endpoint
-	Stop        goa.Endpoint
-	Reset       goa.Endpoint
-	Clone       goa.Endpoint
+	GpuProfiles   goa.Endpoint
+	SetGpuProfile goa.Endpoint
+	Credentials   goa.Endpoint
+	List          goa.Endpoint
+	Get           goa.Endpoint
+	Create        goa.Endpoint
+	Delete        goa.Endpoint
+	Start         goa.Endpoint
+	Stop          goa.Endpoint
+	Reset         goa.Endpoint
+	Clone         goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "workspaces" service with endpoints.
 func NewEndpoints(s Service) *Endpoints {
 	return &Endpoints{
-		Credentials: NewCredentialsEndpoint(s),
-		List:        NewListEndpoint(s),
-		Get:         NewGetEndpoint(s),
-		Create:      NewCreateEndpoint(s),
-		Delete:      NewDeleteEndpoint(s),
-		Start:       NewStartEndpoint(s),
-		Stop:        NewStopEndpoint(s),
-		Reset:       NewResetEndpoint(s),
-		Clone:       NewCloneEndpoint(s),
+		GpuProfiles:   NewGpuProfilesEndpoint(s),
+		SetGpuProfile: NewSetGpuProfileEndpoint(s),
+		Credentials:   NewCredentialsEndpoint(s),
+		List:          NewListEndpoint(s),
+		Get:           NewGetEndpoint(s),
+		Create:        NewCreateEndpoint(s),
+		Delete:        NewDeleteEndpoint(s),
+		Start:         NewStartEndpoint(s),
+		Stop:          NewStopEndpoint(s),
+		Reset:         NewResetEndpoint(s),
+		Clone:         NewCloneEndpoint(s),
 	}
 }
 
 // Use applies the given middleware to all the "workspaces" service endpoints.
 func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
+	e.GpuProfiles = m(e.GpuProfiles)
+	e.SetGpuProfile = m(e.SetGpuProfile)
 	e.Credentials = m(e.Credentials)
 	e.List = m(e.List)
 	e.Get = m(e.Get)
@@ -52,6 +58,28 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Stop = m(e.Stop)
 	e.Reset = m(e.Reset)
 	e.Clone = m(e.Clone)
+}
+
+// NewGpuProfilesEndpoint returns an endpoint function that calls the method
+// "gpu_profiles" of service "workspaces".
+func NewGpuProfilesEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.GpuProfiles(ctx)
+	}
+}
+
+// NewSetGpuProfileEndpoint returns an endpoint function that calls the method
+// "set_gpu_profile" of service "workspaces".
+func NewSetGpuProfileEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*SetGpuProfilePayload)
+		res, err := s.SetGpuProfile(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		vres := NewViewedWorkspace(res, "default")
+		return vres, nil
+	}
 }
 
 // NewCredentialsEndpoint returns an endpoint function that calls the method

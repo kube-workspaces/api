@@ -9,6 +9,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/kube-workspaces/api/gen/workspaces"
 	"github.com/kube-workspaces/api/internal/auth"
@@ -155,6 +156,17 @@ func (s *workspacessrvc) Create(ctx context.Context, p *workspaces.CreateWorkspa
 		windowsProfile, err = buildWindowsProfile(p, img)
 		if err != nil {
 			return nil, workspaces.Invalid(err.Error())
+		}
+		if p.VMOptions != nil && p.VMOptions.GpuProfile != nil && *p.VMOptions.GpuProfile != "" {
+			gpu, gpuErr := s.client.ResolveVMGPUProfile(ctx, *p.VMOptions.GpuProfile, p.NodeSelector)
+			if gpuErr != nil {
+				return nil, workspaces.Invalid(gpuErr.Error())
+			}
+			value, gpuErr := runtime.DefaultUnstructuredConverter.ToUnstructured(gpu)
+			if gpuErr != nil {
+				return nil, workspaces.Unavailable("VM GPU profile could not be resolved")
+			}
+			windowsProfile["gpu"] = value
 		}
 	} else if p.VMOptions != nil {
 		return nil, workspaces.Invalid("vm_options requires a Windows catalog image")
@@ -1239,6 +1251,12 @@ func unstructuredToWorkspace(obj *unstructured.Unstructured, rd *k8s.ImageRemote
 
 	if windowsWorkspaceProfile(obj) {
 		ws.VMProfile = strPtr(windowsVMProfile)
+		if value, found, _ := unstructured.NestedMap(obj.Object, "spec", "vmProfile", "gpu"); found {
+			var profile k8s.VMGPUProfile
+			if runtime.DefaultUnstructuredConverter.FromUnstructured(value, &profile) == nil && profile.Validate() == nil {
+				ws.VMGpuProfile = apiVMGPUProfile(&profile)
+			}
+		}
 		generation, _, _ := unstructured.NestedString(obj.Object, "spec", "vmProfile", "generation")
 		ws.Provisioned = boolPtr(generation != "" && obj.GetAnnotations()["kubeworkspaces.io/windows-provisioned-generation"] == generation && obj.GetAnnotations()["kubeworkspaces.io/windows-detaching-generation"] == "")
 		// Windows supports the cross-platform agent transport. Keep its

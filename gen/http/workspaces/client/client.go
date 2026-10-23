@@ -17,6 +17,14 @@ import (
 
 // Client lists the workspaces service endpoint HTTP clients.
 type Client struct {
+	// GpuProfiles Doer is the HTTP client used to make requests to the
+	// gpu_profiles endpoint.
+	GpuProfilesDoer goahttp.Doer
+
+	// SetGpuProfile Doer is the HTTP client used to make requests to the
+	// set_gpu_profile endpoint.
+	SetGpuProfileDoer goahttp.Doer
+
 	// Credentials Doer is the HTTP client used to make requests to the credentials
 	// endpoint.
 	CredentialsDoer goahttp.Doer
@@ -65,6 +73,8 @@ func NewClient(
 	restoreBody bool,
 ) *Client {
 	return &Client{
+		GpuProfilesDoer:     doer,
+		SetGpuProfileDoer:   doer,
 		CredentialsDoer:     doer,
 		ListDoer:            doer,
 		GetDoer:             doer,
@@ -79,6 +89,49 @@ func NewClient(
 		host:                host,
 		decoder:             dec,
 		encoder:             enc,
+	}
+}
+
+// GpuProfiles returns an endpoint that makes HTTP requests to the workspaces
+// service gpu_profiles server.
+func (c *Client) GpuProfiles() goa.Endpoint {
+	var (
+		decodeResponse = DecodeGpuProfilesResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildGpuProfilesRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.GpuProfilesDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("workspaces", "gpu_profiles", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// SetGpuProfile returns an endpoint that makes HTTP requests to the workspaces
+// service set_gpu_profile server.
+func (c *Client) SetGpuProfile() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeSetGpuProfileRequest(c.encoder)
+		decodeResponse = DecodeSetGpuProfileResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildSetGpuProfileRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.SetGpuProfileDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("workspaces", "set_gpu_profile", err)
+		}
+		return decodeResponse(resp)
 	}
 }
 

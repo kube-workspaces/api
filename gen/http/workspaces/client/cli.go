@@ -16,6 +16,42 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
+// BuildSetGpuProfilePayload builds the payload for the workspaces
+// set_gpu_profile endpoint from CLI flags.
+func BuildSetGpuProfilePayload(workspacesSetGpuProfileBody string, workspacesSetGpuProfileName string, workspacesSetGpuProfileNamespace string) (*workspaces.SetGpuProfilePayload, error) {
+	var err error
+	var body SetGpuProfileRequestBody
+	{
+		err = json.Unmarshal([]byte(workspacesSetGpuProfileBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"profile_id\": \"jsn\"\n   }'")
+		}
+		if utf8.RuneCountInString(body.ProfileID) > 63 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.profile_id", body.ProfileID, utf8.RuneCountInString(body.ProfileID), 63, false))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	var name string
+	{
+		name = workspacesSetGpuProfileName
+	}
+	var namespace string
+	{
+		if workspacesSetGpuProfileNamespace != "" {
+			namespace = workspacesSetGpuProfileNamespace
+		}
+	}
+	v := &workspaces.SetGpuProfilePayload{
+		ProfileID: body.ProfileID,
+	}
+	v.Name = name
+	v.Namespace = namespace
+
+	return v, nil
+}
+
 // BuildCredentialsPayload builds the payload for the workspaces credentials
 // endpoint from CLI flags.
 func BuildCredentialsPayload(workspacesCredentialsName string, workspacesCredentialsNamespace string) (*workspaces.CredentialsPayload, error) {
@@ -79,7 +115,7 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 	{
 		err = json.Unmarshal([]byte(workspacesCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 8080\n      },\n      \"env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"nvidia.com/gpu\": \"true\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"vm_options\": {\n         \"import_cert_config_map_name\": \"Voluptatum dolorem deserunt.\",\n         \"import_secret_name\": \"Soluta quo porro eum.\",\n         \"root_disk_size\": \"Dolorem quos tempora rem voluptates.\",\n         \"storage_class_name\": \"Aperiam labore libero.\"\n      },\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"container\": {\n         \"cpu_limit\": \"2\",\n         \"cpu_request\": \"500m\",\n         \"gpu_request\": \"1\",\n         \"gpu_vendor\": \"nvidia.com/gpu\",\n         \"image\": \"codercom/code-server:latest\",\n         \"memory_limit\": \"2Gi\",\n         \"memory_request\": \"512Mi\",\n         \"name\": \"code-server\",\n         \"port\": 8080\n      },\n      \"env\": [\n         {\n            \"name\": \"PASSWORD\",\n            \"value\": \"changeme\"\n         }\n      ],\n      \"image_pull_policy\": \"Always\",\n      \"name\": \"my-workspace\",\n      \"namespace\": \"workspaces\",\n      \"node_selector\": {\n         \"nvidia.com/gpu\": \"true\"\n      },\n      \"shared_memory\": true,\n      \"tolerations\": [\n         {\n            \"effect\": \"NoSchedule\",\n            \"key\": \"nvidia.com/gpu\",\n            \"operator\": \"Equal\",\n            \"value\": \"true\"\n         }\n      ],\n      \"type\": \"container\",\n      \"vm_options\": {\n         \"gpu_profile\": \"g7k\",\n         \"import_cert_config_map_name\": \"Culpa exercitationem corrupti saepe laboriosam ducimus possimus.\",\n         \"import_secret_name\": \"Rem ut a odit blanditiis doloremque.\",\n         \"root_disk_size\": \"Nemo at ullam reiciendis nam id.\",\n         \"storage_class_name\": \"Illo et vero natus voluptas.\"\n      },\n      \"volume_mounts\": [\n         {\n            \"mount_path\": \"/home/coder\",\n            \"name\": \"my-workspace-data\"\n         }\n      ]\n   }'")
 		}
 		if body.Container == nil {
 			err = goa.MergeErrors(err, goa.MissingFieldError("container", "body"))
@@ -90,6 +126,11 @@ func BuildCreatePayload(workspacesCreateBody string) (*workspaces.CreateWorkspac
 		}
 		if !(body.Type == "container" || body.Type == "vm" || body.Type == "scratch") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.type", body.Type, []any{"container", "vm", "scratch"}))
+		}
+		if body.VMOptions != nil {
+			if err2 := ValidateVMOptionsRequestBody(body.VMOptions); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
 		}
 		for _, e := range body.VolumeMounts {
 			if e != nil {

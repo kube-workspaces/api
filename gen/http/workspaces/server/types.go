@@ -15,6 +15,12 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
+// SetGpuProfileRequestBody is the type of the "workspaces" service
+// "set_gpu_profile" endpoint HTTP request body.
+type SetGpuProfileRequestBody struct {
+	ProfileID *string `form:"profile_id,omitempty" json:"profile_id,omitempty" xml:"profile_id,omitempty"`
+}
+
 // CreateRequestBody is the type of the "workspaces" service "create" endpoint
 // HTTP request body.
 type CreateRequestBody struct {
@@ -68,6 +74,55 @@ type CloneRequestBody struct {
 	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
 }
 
+// GpuProfilesResponseBody is the type of the "workspaces" service
+// "gpu_profiles" endpoint HTTP response body.
+type GpuProfilesResponseBody []*VMGPUProfileResponse
+
+// SetGpuProfileResponseBody is the type of the "workspaces" service
+// "set_gpu_profile" endpoint HTTP response body.
+type SetGpuProfileResponseBody struct {
+	// Workspace name
+	Name string `form:"name" json:"name" xml:"name"`
+	// Kubernetes namespace
+	Namespace string `form:"namespace" json:"namespace" xml:"namespace"`
+	// Workspace type: container, vm, or scratch
+	Type string `form:"type" json:"type" xml:"type"`
+	// Container image
+	Image string `form:"image" json:"image" xml:"image"`
+	// Container port
+	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
+	// CPU request
+	CPURequest *string `form:"cpu_request,omitempty" json:"cpu_request,omitempty" xml:"cpu_request,omitempty"`
+	// Memory request
+	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
+	// CPU limit
+	CPULimit *string `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty" xml:"cpu_limit,omitempty"`
+	// Memory limit
+	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	// Number of ready replicas
+	ReadyReplicas int `form:"ready_replicas" json:"ready_replicas" xml:"ready_replicas"`
+	// Container state
+	ContainerState *ContainerStateResponseBody `form:"container_state,omitempty" json:"container_state,omitempty" xml:"container_state,omitempty"`
+	// Workspace conditions
+	Conditions []*WorkspaceConditionResponseBody `form:"conditions,omitempty" json:"conditions,omitempty" xml:"conditions,omitempty"`
+	// Whether the workspace is stopped
+	Stopped bool `form:"stopped" json:"stopped" xml:"stopped"`
+	// Creation timestamp
+	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	// Attached volumes
+	VolumeMounts []*VolumeMountResponseBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponseBody `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
+	// Resolved GPU contract; absent means software rendering, not guest
+	// driver/capture/encode status
+	VMGpuProfile *VMGPUProfileResponseBody `form:"vm_gpu_profile,omitempty" json:"vm_gpu_profile,omitempty" xml:"vm_gpu_profile,omitempty"`
+}
+
 // CredentialsResponseBody is the type of the "workspaces" service
 // "credentials" endpoint HTTP response body.
 type CredentialsResponseBody struct {
@@ -119,6 +174,9 @@ type GetResponseBody struct {
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
+	// Resolved GPU contract; absent means software rendering, not guest
+	// driver/capture/encode status
+	VMGpuProfile *VMGPUProfileResponseBody `form:"vm_gpu_profile,omitempty" json:"vm_gpu_profile,omitempty" xml:"vm_gpu_profile,omitempty"`
 }
 
 // CreateResponseBody is the type of the "workspaces" service "create" endpoint
@@ -161,6 +219,9 @@ type CreateResponseBody struct {
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
+	// Resolved GPU contract; absent means software rendering, not guest
+	// driver/capture/encode status
+	VMGpuProfile *VMGPUProfileResponseBody `form:"vm_gpu_profile,omitempty" json:"vm_gpu_profile,omitempty" xml:"vm_gpu_profile,omitempty"`
 }
 
 // StartResponseBody is the type of the "workspaces" service "start" endpoint
@@ -203,6 +264,9 @@ type StartResponseBody struct {
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
+	// Resolved GPU contract; absent means software rendering, not guest
+	// driver/capture/encode status
+	VMGpuProfile *VMGPUProfileResponseBody `form:"vm_gpu_profile,omitempty" json:"vm_gpu_profile,omitempty" xml:"vm_gpu_profile,omitempty"`
 }
 
 // StopResponseBody is the type of the "workspaces" service "stop" endpoint
@@ -245,6 +309,9 @@ type StopResponseBody struct {
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
+	// Resolved GPU contract; absent means software rendering, not guest
+	// driver/capture/encode status
+	VMGpuProfile *VMGPUProfileResponseBody `form:"vm_gpu_profile,omitempty" json:"vm_gpu_profile,omitempty" xml:"vm_gpu_profile,omitempty"`
 }
 
 // ResetResponseBody is the type of the "workspaces" service "reset" endpoint
@@ -287,6 +354,9 @@ type ResetResponseBody struct {
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
+	// Resolved GPU contract; absent means software rendering, not guest
+	// driver/capture/encode status
+	VMGpuProfile *VMGPUProfileResponseBody `form:"vm_gpu_profile,omitempty" json:"vm_gpu_profile,omitempty" xml:"vm_gpu_profile,omitempty"`
 }
 
 // CloneResponseBody is the type of the "workspaces" service "clone" endpoint
@@ -329,101 +399,21 @@ type CloneResponseBody struct {
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
+	// Resolved GPU contract; absent means software rendering, not guest
+	// driver/capture/encode status
+	VMGpuProfile *VMGPUProfileResponseBody `form:"vm_gpu_profile,omitempty" json:"vm_gpu_profile,omitempty" xml:"vm_gpu_profile,omitempty"`
 }
 
-// WorkspaceResponse is used to define fields on response body types.
-type WorkspaceResponse struct {
-	// Workspace name
-	Name string `form:"name" json:"name" xml:"name"`
-	// Kubernetes namespace
-	Namespace string `form:"namespace" json:"namespace" xml:"namespace"`
-	// Workspace type: container, vm, or scratch
-	Type string `form:"type" json:"type" xml:"type"`
-	// Container image
-	Image string `form:"image" json:"image" xml:"image"`
-	// Container port
-	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
-	// CPU request
-	CPURequest *string `form:"cpu_request,omitempty" json:"cpu_request,omitempty" xml:"cpu_request,omitempty"`
-	// Memory request
-	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
-	// CPU limit
-	CPULimit *string `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty" xml:"cpu_limit,omitempty"`
-	// Memory limit
-	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
-	// Number of ready replicas
-	ReadyReplicas int `form:"ready_replicas" json:"ready_replicas" xml:"ready_replicas"`
-	// Container state
-	ContainerState *ContainerStateResponse `form:"container_state,omitempty" json:"container_state,omitempty" xml:"container_state,omitempty"`
-	// Workspace conditions
-	Conditions []*WorkspaceConditionResponse `form:"conditions,omitempty" json:"conditions,omitempty" xml:"conditions,omitempty"`
-	// Whether the workspace is stopped
-	Stopped bool `form:"stopped" json:"stopped" xml:"stopped"`
-	// Creation timestamp
-	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
-	// Attached volumes
-	VolumeMounts []*VolumeMountResponse `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
-	// Remote desktop agent configuration (Tier 1)
-	RemoteDesktop *ImageRemoteDesktopResponse `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
-	// Resolved guest profile; windows11-amd64-v1 uses display-only native
-	// provisioning
-	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
-	// Windows native setup and bootstrap removal have completed
-	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
-}
-
-// ContainerStateResponse is used to define fields on response body types.
-type ContainerStateResponse struct {
-	// Current state: running, waiting, terminated
-	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
-	// Reason for the state
-	Reason *string `form:"reason,omitempty" json:"reason,omitempty" xml:"reason,omitempty"`
-	// Details about the state
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Time the container started
-	StartedAt *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
-}
-
-// WorkspaceConditionResponse is used to define fields on response body types.
-type WorkspaceConditionResponse struct {
-	// Condition type
-	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
-	// Condition status
-	Status *string `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
-	// Brief reason
-	Reason *string `form:"reason,omitempty" json:"reason,omitempty" xml:"reason,omitempty"`
-	// Detailed message
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Last transition time
-	LastTransitionTime *string `form:"last_transition_time,omitempty" json:"last_transition_time,omitempty" xml:"last_transition_time,omitempty"`
-}
-
-// VolumeMountResponse is used to define fields on response body types.
-type VolumeMountResponse struct {
-	// Volume/PVC name
-	Name string `form:"name" json:"name" xml:"name"`
-	// Mount path in container
-	MountPath string `form:"mount_path" json:"mount_path" xml:"mount_path"`
-	// Volume mount type for VMs: 'disk' (virtio disk) or 'cdrom' (optical disc).
-	// Empty/omitted defaults to 'disk' for VM volume mounts.
-	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
-	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
-	// 'disk' type.
-	Bus *string `form:"bus,omitempty" json:"bus,omitempty" xml:"bus,omitempty"`
-	// Whether the mount is read-only. Omitted defaults to writable for container
-	// PVCs and VM data disks, and read-only for VM CD-ROMs.
-	Readonly *bool `form:"readonly,omitempty" json:"readonly,omitempty" xml:"readonly,omitempty"`
-}
-
-// ImageRemoteDesktopResponse is used to define fields on response body types.
-type ImageRemoteDesktopResponse struct {
-	// Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform
-	// kw-agent)
-	Protocol string `form:"protocol" json:"protocol" xml:"protocol"`
-	// Guest port the agent listens on
-	Port int `form:"port" json:"port" xml:"port"`
-	// Path relative to the agent's base URL
-	Path string `form:"path" json:"path" xml:"path"`
+// VMGPUProfileResponse is used to define fields on response body types.
+type VMGPUProfileResponse struct {
+	ID                 string            `form:"id" json:"id" xml:"id"`
+	DisplayName        string            `form:"display_name" json:"display_name" xml:"display_name"`
+	ResourceName       string            `form:"resource_name" json:"resource_name" xml:"resource_name"`
+	Kind               string            `form:"kind" json:"kind" xml:"kind"`
+	Count              int               `form:"count" json:"count" xml:"count"`
+	NodeSelector       map[string]string `form:"node_selector" json:"node_selector" xml:"node_selector"`
+	GuestDriverVersion string            `form:"guest_driver_version" json:"guest_driver_version" xml:"guest_driver_version"`
+	Experimental       bool              `form:"experimental" json:"experimental" xml:"experimental"`
 }
 
 // ContainerStateResponseBody is used to define fields on response body types.
@@ -482,6 +472,116 @@ type ImageRemoteDesktopResponseBody struct {
 	Path string `form:"path" json:"path" xml:"path"`
 }
 
+// VMGPUProfileResponseBody is used to define fields on response body types.
+type VMGPUProfileResponseBody struct {
+	ID                 string            `form:"id" json:"id" xml:"id"`
+	DisplayName        string            `form:"display_name" json:"display_name" xml:"display_name"`
+	ResourceName       string            `form:"resource_name" json:"resource_name" xml:"resource_name"`
+	Kind               string            `form:"kind" json:"kind" xml:"kind"`
+	Count              int               `form:"count" json:"count" xml:"count"`
+	NodeSelector       map[string]string `form:"node_selector" json:"node_selector" xml:"node_selector"`
+	GuestDriverVersion string            `form:"guest_driver_version" json:"guest_driver_version" xml:"guest_driver_version"`
+	Experimental       bool              `form:"experimental" json:"experimental" xml:"experimental"`
+}
+
+// WorkspaceResponse is used to define fields on response body types.
+type WorkspaceResponse struct {
+	// Workspace name
+	Name string `form:"name" json:"name" xml:"name"`
+	// Kubernetes namespace
+	Namespace string `form:"namespace" json:"namespace" xml:"namespace"`
+	// Workspace type: container, vm, or scratch
+	Type string `form:"type" json:"type" xml:"type"`
+	// Container image
+	Image string `form:"image" json:"image" xml:"image"`
+	// Container port
+	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
+	// CPU request
+	CPURequest *string `form:"cpu_request,omitempty" json:"cpu_request,omitempty" xml:"cpu_request,omitempty"`
+	// Memory request
+	MemoryRequest *string `form:"memory_request,omitempty" json:"memory_request,omitempty" xml:"memory_request,omitempty"`
+	// CPU limit
+	CPULimit *string `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty" xml:"cpu_limit,omitempty"`
+	// Memory limit
+	MemoryLimit *string `form:"memory_limit,omitempty" json:"memory_limit,omitempty" xml:"memory_limit,omitempty"`
+	// Number of ready replicas
+	ReadyReplicas int `form:"ready_replicas" json:"ready_replicas" xml:"ready_replicas"`
+	// Container state
+	ContainerState *ContainerStateResponse `form:"container_state,omitempty" json:"container_state,omitempty" xml:"container_state,omitempty"`
+	// Workspace conditions
+	Conditions []*WorkspaceConditionResponse `form:"conditions,omitempty" json:"conditions,omitempty" xml:"conditions,omitempty"`
+	// Whether the workspace is stopped
+	Stopped bool `form:"stopped" json:"stopped" xml:"stopped"`
+	// Creation timestamp
+	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	// Attached volumes
+	VolumeMounts []*VolumeMountResponse `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
+	// Remote desktop agent configuration (Tier 1)
+	RemoteDesktop *ImageRemoteDesktopResponse `form:"remote_desktop,omitempty" json:"remote_desktop,omitempty" xml:"remote_desktop,omitempty"`
+	// Resolved guest profile; windows11-amd64-v1 uses display-only native
+	// provisioning
+	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Windows native setup and bootstrap removal have completed
+	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
+	// Resolved GPU contract; absent means software rendering, not guest
+	// driver/capture/encode status
+	VMGpuProfile *VMGPUProfileResponse `form:"vm_gpu_profile,omitempty" json:"vm_gpu_profile,omitempty" xml:"vm_gpu_profile,omitempty"`
+}
+
+// ContainerStateResponse is used to define fields on response body types.
+type ContainerStateResponse struct {
+	// Current state: running, waiting, terminated
+	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
+	// Reason for the state
+	Reason *string `form:"reason,omitempty" json:"reason,omitempty" xml:"reason,omitempty"`
+	// Details about the state
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Time the container started
+	StartedAt *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
+}
+
+// WorkspaceConditionResponse is used to define fields on response body types.
+type WorkspaceConditionResponse struct {
+	// Condition type
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
+	// Condition status
+	Status *string `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
+	// Brief reason
+	Reason *string `form:"reason,omitempty" json:"reason,omitempty" xml:"reason,omitempty"`
+	// Detailed message
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Last transition time
+	LastTransitionTime *string `form:"last_transition_time,omitempty" json:"last_transition_time,omitempty" xml:"last_transition_time,omitempty"`
+}
+
+// VolumeMountResponse is used to define fields on response body types.
+type VolumeMountResponse struct {
+	// Volume/PVC name
+	Name string `form:"name" json:"name" xml:"name"`
+	// Mount path in container
+	MountPath string `form:"mount_path" json:"mount_path" xml:"mount_path"`
+	// Volume mount type for VMs: 'disk' (virtio disk) or 'cdrom' (optical disc).
+	// Empty/omitted defaults to 'disk' for VM volume mounts.
+	Type *string `form:"type,omitempty" json:"type,omitempty" xml:"type,omitempty"`
+	// Disk bus type for VMs when type is 'cdrom' (e.g. 'sata', 'ide'). Ignored for
+	// 'disk' type.
+	Bus *string `form:"bus,omitempty" json:"bus,omitempty" xml:"bus,omitempty"`
+	// Whether the mount is read-only. Omitted defaults to writable for container
+	// PVCs and VM data disks, and read-only for VM CD-ROMs.
+	Readonly *bool `form:"readonly,omitempty" json:"readonly,omitempty" xml:"readonly,omitempty"`
+}
+
+// ImageRemoteDesktopResponse is used to define fields on response body types.
+type ImageRemoteDesktopResponse struct {
+	// Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform
+	// kw-agent)
+	Protocol string `form:"protocol" json:"protocol" xml:"protocol"`
+	// Guest port the agent listens on
+	Port int `form:"port" json:"port" xml:"port"`
+	// Path relative to the agent's base URL
+	Path string `form:"path" json:"path" xml:"path"`
+}
+
 // WorkspaceContainerRequestBody is used to define fields on request body types.
 type WorkspaceContainerRequestBody struct {
 	// Container name
@@ -514,6 +614,9 @@ type VMOptionsRequestBody struct {
 	StorageClassName *string `form:"storage_class_name,omitempty" json:"storage_class_name,omitempty" xml:"storage_class_name,omitempty"`
 	// Persistent Windows root capacity, at least 80Gi
 	RootDiskSize *string `form:"root_disk_size,omitempty" json:"root_disk_size,omitempty" xml:"root_disk_size,omitempty"`
+	// Versioned operator-approved VM GPU profile ID; omitted/empty keeps software
+	// graphics
+	GpuProfile *string `form:"gpu_profile,omitempty" json:"gpu_profile,omitempty" xml:"gpu_profile,omitempty"`
 }
 
 // VolumeMountRequestBody is used to define fields on request body types.
@@ -551,6 +654,71 @@ type TolerationRequestBody struct {
 	Value *string `form:"value,omitempty" json:"value,omitempty" xml:"value,omitempty"`
 	// Taint effect: NoSchedule, PreferNoSchedule, or NoExecute
 	Effect *string `form:"effect,omitempty" json:"effect,omitempty" xml:"effect,omitempty"`
+}
+
+// NewGpuProfilesResponseBody builds the HTTP response body from the result of
+// the "gpu_profiles" endpoint of the "workspaces" service.
+func NewGpuProfilesResponseBody(res []*workspaces.VMGPUProfile) GpuProfilesResponseBody {
+	body := make([]*VMGPUProfileResponse, len(res))
+	for i, val := range res {
+		if val == nil {
+			body[i] = nil
+			continue
+		}
+		body[i] = marshalWorkspacesVMGPUProfileToVMGPUProfileResponse(val)
+	}
+	return body
+}
+
+// NewSetGpuProfileResponseBody builds the HTTP response body from the result
+// of the "set_gpu_profile" endpoint of the "workspaces" service.
+func NewSetGpuProfileResponseBody(res *workspacesviews.WorkspaceView) *SetGpuProfileResponseBody {
+	body := &SetGpuProfileResponseBody{
+		Name:          *res.Name,
+		Namespace:     *res.Namespace,
+		Type:          *res.Type,
+		Image:         *res.Image,
+		Port:          res.Port,
+		CPURequest:    res.CPURequest,
+		MemoryRequest: res.MemoryRequest,
+		CPULimit:      res.CPULimit,
+		MemoryLimit:   res.MemoryLimit,
+		ReadyReplicas: *res.ReadyReplicas,
+		Stopped:       *res.Stopped,
+		CreatedAt:     res.CreatedAt,
+		VMProfile:     res.VMProfile,
+		Provisioned:   res.Provisioned,
+	}
+	if res.ContainerState != nil {
+		body.ContainerState = marshalWorkspacesviewsContainerStateViewToContainerStateResponseBody(res.ContainerState)
+	}
+	if res.Conditions != nil {
+		body.Conditions = make([]*WorkspaceConditionResponseBody, len(res.Conditions))
+		for i, val := range res.Conditions {
+			if val == nil {
+				body.Conditions[i] = nil
+				continue
+			}
+			body.Conditions[i] = marshalWorkspacesviewsWorkspaceConditionViewToWorkspaceConditionResponseBody(val)
+		}
+	}
+	if res.VolumeMounts != nil {
+		body.VolumeMounts = make([]*VolumeMountResponseBody, len(res.VolumeMounts))
+		for i, val := range res.VolumeMounts {
+			if val == nil {
+				body.VolumeMounts[i] = nil
+				continue
+			}
+			body.VolumeMounts[i] = marshalWorkspacesviewsVolumeMountViewToVolumeMountResponseBody(val)
+		}
+	}
+	if res.RemoteDesktop != nil {
+		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
+	}
+	if res.VMGpuProfile != nil {
+		body.VMGpuProfile = marshalWorkspacesviewsVMGPUProfileViewToVMGPUProfileResponseBody(res.VMGpuProfile)
+	}
+	return body
 }
 
 // NewCredentialsResponseBody builds the HTTP response body from the result of
@@ -622,6 +790,9 @@ func NewGetResponseBody(res *workspacesviews.WorkspaceView) *GetResponseBody {
 	if res.RemoteDesktop != nil {
 		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
 	}
+	if res.VMGpuProfile != nil {
+		body.VMGpuProfile = marshalWorkspacesviewsVMGPUProfileViewToVMGPUProfileResponseBody(res.VMGpuProfile)
+	}
 	return body
 }
 
@@ -669,6 +840,9 @@ func NewCreateResponseBody(res *workspacesviews.WorkspaceView) *CreateResponseBo
 	}
 	if res.RemoteDesktop != nil {
 		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
+	}
+	if res.VMGpuProfile != nil {
+		body.VMGpuProfile = marshalWorkspacesviewsVMGPUProfileViewToVMGPUProfileResponseBody(res.VMGpuProfile)
 	}
 	return body
 }
@@ -718,6 +892,9 @@ func NewStartResponseBody(res *workspacesviews.WorkspaceView) *StartResponseBody
 	if res.RemoteDesktop != nil {
 		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
 	}
+	if res.VMGpuProfile != nil {
+		body.VMGpuProfile = marshalWorkspacesviewsVMGPUProfileViewToVMGPUProfileResponseBody(res.VMGpuProfile)
+	}
 	return body
 }
 
@@ -765,6 +942,9 @@ func NewStopResponseBody(res *workspacesviews.WorkspaceView) *StopResponseBody {
 	}
 	if res.RemoteDesktop != nil {
 		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
+	}
+	if res.VMGpuProfile != nil {
+		body.VMGpuProfile = marshalWorkspacesviewsVMGPUProfileViewToVMGPUProfileResponseBody(res.VMGpuProfile)
 	}
 	return body
 }
@@ -814,6 +994,9 @@ func NewResetResponseBody(res *workspacesviews.WorkspaceView) *ResetResponseBody
 	if res.RemoteDesktop != nil {
 		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
 	}
+	if res.VMGpuProfile != nil {
+		body.VMGpuProfile = marshalWorkspacesviewsVMGPUProfileViewToVMGPUProfileResponseBody(res.VMGpuProfile)
+	}
 	return body
 }
 
@@ -862,7 +1045,22 @@ func NewCloneResponseBody(res *workspacesviews.WorkspaceView) *CloneResponseBody
 	if res.RemoteDesktop != nil {
 		body.RemoteDesktop = marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBody(res.RemoteDesktop)
 	}
+	if res.VMGpuProfile != nil {
+		body.VMGpuProfile = marshalWorkspacesviewsVMGPUProfileViewToVMGPUProfileResponseBody(res.VMGpuProfile)
+	}
 	return body
+}
+
+// NewSetGpuProfilePayload builds a workspaces service set_gpu_profile endpoint
+// payload.
+func NewSetGpuProfilePayload(body *SetGpuProfileRequestBody, name string, namespace string) *workspaces.SetGpuProfilePayload {
+	v := &workspaces.SetGpuProfilePayload{
+		ProfileID: *body.ProfileID,
+	}
+	v.Name = name
+	v.Namespace = namespace
+
+	return v
 }
 
 // NewCredentialsPayload builds a workspaces service credentials endpoint
@@ -1016,6 +1214,20 @@ func NewClonePayload(body *CloneRequestBody, name string, namespace string) *wor
 	return v
 }
 
+// ValidateSetGpuProfileRequestBody runs the validations defined on
+// set_gpu_profile_request_body
+func ValidateSetGpuProfileRequestBody(body *SetGpuProfileRequestBody) (err error) {
+	if body.ProfileID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("profile_id", "body"))
+	}
+	if body.ProfileID != nil {
+		if utf8.RuneCountInString(*body.ProfileID) > 63 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.profile_id", *body.ProfileID, utf8.RuneCountInString(*body.ProfileID), 63, false))
+		}
+	}
+	return
+}
+
 // ValidateCreateRequestBody runs the validations defined on CreateRequestBody
 func ValidateCreateRequestBody(body *CreateRequestBody) (err error) {
 	if body.Name == nil {
@@ -1039,6 +1251,11 @@ func ValidateCreateRequestBody(body *CreateRequestBody) (err error) {
 	}
 	if body.Container != nil {
 		if err2 := ValidateWorkspaceContainerRequestBody(body.Container); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.VMOptions != nil {
+		if err2 := ValidateVMOptionsRequestBody(body.VMOptions); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -1095,6 +1312,17 @@ func ValidateWorkspaceContainerRequestBody(body *WorkspaceContainerRequestBody) 
 	}
 	if body.Image == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("image", "body"))
+	}
+	return
+}
+
+// ValidateVMOptionsRequestBody runs the validations defined on
+// VMOptionsRequestBody
+func ValidateVMOptionsRequestBody(body *VMOptionsRequestBody) (err error) {
+	if body.GpuProfile != nil {
+		if utf8.RuneCountInString(*body.GpuProfile) > 63 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gpu_profile", *body.GpuProfile, utf8.RuneCountInString(*body.GpuProfile), 63, false))
+		}
 	}
 	return
 }

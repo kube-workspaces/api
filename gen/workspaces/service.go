@@ -15,6 +15,13 @@ import (
 
 // Workspace management service
 type Service interface {
+	// List validated operator-declared Windows VM GPU profiles; device
+	// availability is determined by scheduling
+	GpuProfiles(context.Context) (res []*VMGPUProfile, err error)
+	// Add, change or remove a Windows GPU profile only while its VM is fully
+	// stopped; preserves root/EFI/TPM/identity. Empty profile_id restores software
+	// graphics.
+	SetGpuProfile(context.Context, *SetGpuProfilePayload) (res *Workspace, err error)
 	// Retrieve this Windows workspace's unique initial credentials; namespace
 	// editors/admins only
 	Credentials(context.Context, *CredentialsPayload) (res *WorkspaceInitialCredentials, err error)
@@ -51,7 +58,7 @@ const ServiceName = "workspaces"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [9]string{"credentials", "list", "get", "create", "delete", "start", "stop", "reset", "clone"}
+var MethodNames = [11]string{"gpu_profiles", "set_gpu_profile", "credentials", "list", "get", "create", "delete", "start", "stop", "reset", "clone"}
 
 // ClonePayload is the payload type of the workspaces service clone method.
 type ClonePayload struct {
@@ -177,6 +184,14 @@ type ResetPayload struct {
 	Name string
 }
 
+// SetGpuProfilePayload is the payload type of the workspaces service
+// set_gpu_profile method.
+type SetGpuProfilePayload struct {
+	Name      string
+	Namespace string
+	ProfileID string
+}
+
 // StartPayload is the payload type of the workspaces service start method.
 type StartPayload struct {
 	// Namespace
@@ -205,6 +220,19 @@ type Toleration struct {
 	Effect *string
 }
 
+// Operator-declared render-only Windows GPU contract; driver version is
+// required configuration, not observed guest readiness
+type VMGPUProfile struct {
+	ID                 string
+	DisplayName        string
+	ResourceName       string
+	Kind               string
+	Count              int
+	NodeSelector       map[string]string
+	GuestDriverVersion string
+	Experimental       bool
+}
+
 // Namespaced Windows root import settings; credentials remain in Kubernetes
 // Secrets
 type VMOptions struct {
@@ -216,6 +244,9 @@ type VMOptions struct {
 	StorageClassName *string
 	// Persistent Windows root capacity, at least 80Gi
 	RootDiskSize *string
+	// Versioned operator-approved VM GPU profile ID; omitted/empty keeps software
+	// graphics
+	GpuProfile *string
 }
 
 // Container PVC mount, or reusable CDI VM data disk with an absolute guest
@@ -236,7 +267,8 @@ type VolumeMount struct {
 	Readonly *bool
 }
 
-// Workspace is the result type of the workspaces service get method.
+// Workspace is the result type of the workspaces service set_gpu_profile
+// method.
 type Workspace struct {
 	// Workspace name
 	Name string
@@ -275,6 +307,9 @@ type Workspace struct {
 	VMProfile *string
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool
+	// Resolved GPU contract; absent means software rendering, not guest
+	// driver/capture/encode status
+	VMGpuProfile *VMGPUProfile
 }
 
 // Condition of a workspace
@@ -324,9 +359,10 @@ type WorkspaceInitialCredentials struct {
 // Workspace already exists
 type AlreadyExists string
 
+type Conflict string
+
 type Forbidden string
 
-// Invalid workspace specification
 type Invalid string
 
 type NotFound string
@@ -351,6 +387,23 @@ func (e AlreadyExists) GoaErrorName() string {
 }
 
 // Error returns an error description.
+func (e Conflict) Error() string {
+	return ""
+}
+
+// ErrorName returns the error name.
+//
+// Deprecated: Use GoaErrorName - https://github.com/goadesign/goa/issues/3105
+func (e Conflict) ErrorName() string {
+	return e.GoaErrorName()
+}
+
+// GoaErrorName returns the error name.
+func (e Conflict) GoaErrorName() string {
+	return "conflict"
+}
+
+// Error returns an error description.
 func (e Forbidden) Error() string {
 	return ""
 }
@@ -369,7 +422,7 @@ func (e Forbidden) GoaErrorName() string {
 
 // Error returns an error description.
 func (e Invalid) Error() string {
-	return "Invalid workspace specification"
+	return ""
 }
 
 // ErrorName returns the error name.
@@ -490,6 +543,9 @@ func newWorkspace(vres *workspacesviews.WorkspaceView) *Workspace {
 	if vres.RemoteDesktop != nil {
 		res.RemoteDesktop = transformWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktop(vres.RemoteDesktop)
 	}
+	if vres.VMGpuProfile != nil {
+		res.VMGpuProfile = transformWorkspacesviewsVMGPUProfileViewToVMGPUProfile(vres.VMGpuProfile)
+	}
 	return res
 }
 
@@ -537,6 +593,9 @@ func newWorkspaceView(res *Workspace) *workspacesviews.WorkspaceView {
 	}
 	if res.RemoteDesktop != nil {
 		vres.RemoteDesktop = transformImageRemoteDesktopToWorkspacesviewsImageRemoteDesktopView(res.RemoteDesktop)
+	}
+	if res.VMGpuProfile != nil {
+		vres.VMGpuProfile = transformVMGPUProfileToWorkspacesviewsVMGPUProfileView(res.VMGpuProfile)
 	}
 	return vres
 }
@@ -614,6 +673,33 @@ func transformWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktop(v *works
 	return res
 }
 
+// transformWorkspacesviewsVMGPUProfileViewToVMGPUProfile builds a value of
+// type *VMGPUProfile from a value of type *workspacesviews.VMGPUProfileView.
+func transformWorkspacesviewsVMGPUProfileViewToVMGPUProfile(v *workspacesviews.VMGPUProfileView) *VMGPUProfile {
+	if v == nil {
+		return nil
+	}
+	res := &VMGPUProfile{
+		ID:                 *v.ID,
+		DisplayName:        *v.DisplayName,
+		ResourceName:       *v.ResourceName,
+		Kind:               *v.Kind,
+		Count:              *v.Count,
+		GuestDriverVersion: *v.GuestDriverVersion,
+		Experimental:       *v.Experimental,
+	}
+	if v.NodeSelector != nil {
+		res.NodeSelector = make(map[string]string, len(v.NodeSelector))
+		for key, val := range v.NodeSelector {
+			tk := key
+			tv := val
+			res.NodeSelector[tk] = tv
+		}
+	}
+
+	return res
+}
+
 // transformContainerStateToWorkspacesviewsContainerStateView builds a value of
 // type *workspacesviews.ContainerStateView from a value of type
 // *ContainerState.
@@ -677,6 +763,33 @@ func transformImageRemoteDesktopToWorkspacesviewsImageRemoteDesktopView(v *Image
 		Protocol: &v.Protocol,
 		Port:     &v.Port,
 		Path:     &v.Path,
+	}
+
+	return res
+}
+
+// transformVMGPUProfileToWorkspacesviewsVMGPUProfileView builds a value of
+// type *workspacesviews.VMGPUProfileView from a value of type *VMGPUProfile.
+func transformVMGPUProfileToWorkspacesviewsVMGPUProfileView(v *VMGPUProfile) *workspacesviews.VMGPUProfileView {
+	if v == nil {
+		return nil
+	}
+	res := &workspacesviews.VMGPUProfileView{
+		ID:                 &v.ID,
+		DisplayName:        &v.DisplayName,
+		ResourceName:       &v.ResourceName,
+		Kind:               &v.Kind,
+		Count:              &v.Count,
+		GuestDriverVersion: &v.GuestDriverVersion,
+		Experimental:       &v.Experimental,
+	}
+	if v.NodeSelector != nil {
+		res.NodeSelector = make(map[string]string, len(v.NodeSelector))
+		for key, val := range v.NodeSelector {
+			tk := key
+			tv := val
+			res.NodeSelector[tk] = tv
+		}
 	}
 
 	return res

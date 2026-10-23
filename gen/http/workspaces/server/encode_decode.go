@@ -19,6 +19,154 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
+// EncodeGpuProfilesResponse returns an encoder for responses returned by the
+// workspaces gpu_profiles endpoint.
+func EncodeGpuProfilesResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.([]*workspaces.VMGPUProfile)
+		enc := encoder(ctx, w)
+		body := NewGpuProfilesResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// EncodeGpuProfilesError returns an encoder for errors returned by the
+// gpu_profiles workspaces endpoint.
+func EncodeGpuProfilesError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "unavailable":
+			var res workspaces.Unavailable
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeSetGpuProfileResponse returns an encoder for responses returned by the
+// workspaces set_gpu_profile endpoint.
+func EncodeSetGpuProfileResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res := v.(*workspacesviews.Workspace)
+		enc := encoder(ctx, w)
+		body := NewSetGpuProfileResponseBody(res.Projected)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeSetGpuProfileRequest returns a decoder for requests sent to the
+// workspaces set_gpu_profile endpoint.
+func DecodeSetGpuProfileRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*workspaces.SetGpuProfilePayload, error) {
+	return func(r *http.Request) (*workspaces.SetGpuProfilePayload, error) {
+		var payload *workspaces.SetGpuProfilePayload
+		var (
+			body SetGpuProfileRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return payload, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return payload, gerr
+			}
+			return payload, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateSetGpuProfileRequestBody(&body)
+		if err != nil {
+			return payload, err
+		}
+
+		var (
+			name      string
+			namespace string
+
+			params = mux.Vars(r)
+		)
+		name = params["name"]
+		namespaceRaw := r.URL.Query().Get("namespace")
+		if namespaceRaw != "" {
+			namespace = namespaceRaw
+		} else {
+			namespace = "workspaces"
+		}
+		payload = NewSetGpuProfilePayload(&body, name, namespace)
+
+		return payload, nil
+	}
+}
+
+// EncodeSetGpuProfileError returns an encoder for errors returned by the
+// set_gpu_profile workspaces endpoint.
+func EncodeSetGpuProfileError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "conflict":
+			var res workspaces.Conflict
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "forbidden":
+			var res workspaces.Forbidden
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		case "invalid":
+			var res workspaces.Invalid
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		case "not_found":
+			var res workspaces.NotFound
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "unavailable":
+			var res workspaces.Unavailable
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeCredentialsResponse returns an encoder for responses returned by the
 // workspaces credentials endpoint.
 func EncodeCredentialsResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -603,122 +751,24 @@ func EncodeCloneError(encoder func(context.Context, http.ResponseWriter) goahttp
 	}
 }
 
-// marshalWorkspacesWorkspaceToWorkspaceResponse builds a value of type
-// *WorkspaceResponse from a value of type *workspaces.Workspace.
-func marshalWorkspacesWorkspaceToWorkspaceResponse(v *workspaces.Workspace) *WorkspaceResponse {
-	res := &WorkspaceResponse{
-		Name:          v.Name,
-		Namespace:     v.Namespace,
-		Type:          v.Type,
-		Image:         v.Image,
-		Port:          v.Port,
-		CPURequest:    v.CPURequest,
-		MemoryRequest: v.MemoryRequest,
-		CPULimit:      v.CPULimit,
-		MemoryLimit:   v.MemoryLimit,
-		ReadyReplicas: v.ReadyReplicas,
-		Stopped:       v.Stopped,
-		CreatedAt:     v.CreatedAt,
-		VMProfile:     v.VMProfile,
-		Provisioned:   v.Provisioned,
+// marshalWorkspacesVMGPUProfileToVMGPUProfileResponse builds a value of type
+// *VMGPUProfileResponse from a value of type *workspaces.VMGPUProfile.
+func marshalWorkspacesVMGPUProfileToVMGPUProfileResponse(v *workspaces.VMGPUProfile) *VMGPUProfileResponse {
+	res := &VMGPUProfileResponse{
+		ID:                 v.ID,
+		DisplayName:        v.DisplayName,
+		ResourceName:       v.ResourceName,
+		Kind:               v.Kind,
+		Count:              v.Count,
+		GuestDriverVersion: v.GuestDriverVersion,
+		Experimental:       v.Experimental,
 	}
-	if v.ContainerState != nil {
-		res.ContainerState = marshalWorkspacesContainerStateToContainerStateResponse(v.ContainerState)
-	}
-	if v.Conditions != nil {
-		res.Conditions = make([]*WorkspaceConditionResponse, len(v.Conditions))
-		for i, val := range v.Conditions {
-			if val == nil {
-				res.Conditions[i] = nil
-				continue
-			}
-			res.Conditions[i] = marshalWorkspacesWorkspaceConditionToWorkspaceConditionResponse(val)
-		}
-	}
-	if v.VolumeMounts != nil {
-		res.VolumeMounts = make([]*VolumeMountResponse, len(v.VolumeMounts))
-		for i, val := range v.VolumeMounts {
-			if val == nil {
-				res.VolumeMounts[i] = nil
-				continue
-			}
-			res.VolumeMounts[i] = marshalWorkspacesVolumeMountToVolumeMountResponse(val)
-		}
-	}
-	if v.RemoteDesktop != nil {
-		res.RemoteDesktop = marshalWorkspacesImageRemoteDesktopToImageRemoteDesktopResponse(v.RemoteDesktop)
-	}
-
-	return res
-}
-
-// marshalWorkspacesContainerStateToContainerStateResponse builds a value of
-// type *ContainerStateResponse from a value of type *workspaces.ContainerState.
-func marshalWorkspacesContainerStateToContainerStateResponse(v *workspaces.ContainerState) *ContainerStateResponse {
-	if v == nil {
-		return nil
-	}
-	res := &ContainerStateResponse{
-		State:     v.State,
-		Reason:    v.Reason,
-		Message:   v.Message,
-		StartedAt: v.StartedAt,
-	}
-
-	return res
-}
-
-// marshalWorkspacesWorkspaceConditionToWorkspaceConditionResponse builds a
-// value of type *WorkspaceConditionResponse from a value of type
-// *workspaces.WorkspaceCondition.
-func marshalWorkspacesWorkspaceConditionToWorkspaceConditionResponse(v *workspaces.WorkspaceCondition) *WorkspaceConditionResponse {
-	if v == nil {
-		return nil
-	}
-	res := &WorkspaceConditionResponse{
-		Type:               v.Type,
-		Status:             v.Status,
-		Reason:             v.Reason,
-		Message:            v.Message,
-		LastTransitionTime: v.LastTransitionTime,
-	}
-
-	return res
-}
-
-// marshalWorkspacesVolumeMountToVolumeMountResponse builds a value of type
-// *VolumeMountResponse from a value of type *workspaces.VolumeMount.
-func marshalWorkspacesVolumeMountToVolumeMountResponse(v *workspaces.VolumeMount) *VolumeMountResponse {
-	if v == nil {
-		return nil
-	}
-	res := &VolumeMountResponse{
-		Name:      v.Name,
-		MountPath: v.MountPath,
-		Type:      v.Type,
-		Bus:       v.Bus,
-		Readonly:  v.Readonly,
-	}
-
-	return res
-}
-
-// marshalWorkspacesImageRemoteDesktopToImageRemoteDesktopResponse builds a
-// value of type *ImageRemoteDesktopResponse from a value of type
-// *workspaces.ImageRemoteDesktop.
-func marshalWorkspacesImageRemoteDesktopToImageRemoteDesktopResponse(v *workspaces.ImageRemoteDesktop) *ImageRemoteDesktopResponse {
-	if v == nil {
-		return nil
-	}
-	res := &ImageRemoteDesktopResponse{
-		Protocol: v.Protocol,
-		Port:     v.Port,
-		Path:     v.Path,
-	}
-	{
-		var zero string
-		if res.Path == zero {
-			res.Path = "/"
+	if v.NodeSelector != nil {
+		res.NodeSelector = make(map[string]string, len(v.NodeSelector))
+		for key, val := range v.NodeSelector {
+			tk := key
+			tv := val
+			res.NodeSelector[tk] = tv
 		}
 	}
 
@@ -799,6 +849,159 @@ func marshalWorkspacesviewsImageRemoteDesktopViewToImageRemoteDesktopResponseBod
 	return res
 }
 
+// marshalWorkspacesviewsVMGPUProfileViewToVMGPUProfileResponseBody builds a
+// value of type *VMGPUProfileResponseBody from a value of type
+// *workspacesviews.VMGPUProfileView.
+func marshalWorkspacesviewsVMGPUProfileViewToVMGPUProfileResponseBody(v *workspacesviews.VMGPUProfileView) *VMGPUProfileResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &VMGPUProfileResponseBody{
+		ID:                 *v.ID,
+		DisplayName:        *v.DisplayName,
+		ResourceName:       *v.ResourceName,
+		Kind:               *v.Kind,
+		Count:              *v.Count,
+		GuestDriverVersion: *v.GuestDriverVersion,
+		Experimental:       *v.Experimental,
+	}
+	if v.NodeSelector != nil {
+		res.NodeSelector = make(map[string]string, len(v.NodeSelector))
+		for key, val := range v.NodeSelector {
+			tk := key
+			tv := val
+			res.NodeSelector[tk] = tv
+		}
+	}
+
+	return res
+}
+
+// marshalWorkspacesWorkspaceToWorkspaceResponse builds a value of type
+// *WorkspaceResponse from a value of type *workspaces.Workspace.
+func marshalWorkspacesWorkspaceToWorkspaceResponse(v *workspaces.Workspace) *WorkspaceResponse {
+	res := &WorkspaceResponse{
+		Name:          v.Name,
+		Namespace:     v.Namespace,
+		Type:          v.Type,
+		Image:         v.Image,
+		Port:          v.Port,
+		CPURequest:    v.CPURequest,
+		MemoryRequest: v.MemoryRequest,
+		CPULimit:      v.CPULimit,
+		MemoryLimit:   v.MemoryLimit,
+		ReadyReplicas: v.ReadyReplicas,
+		Stopped:       v.Stopped,
+		CreatedAt:     v.CreatedAt,
+		VMProfile:     v.VMProfile,
+		Provisioned:   v.Provisioned,
+	}
+	if v.ContainerState != nil {
+		res.ContainerState = marshalWorkspacesContainerStateToContainerStateResponse(v.ContainerState)
+	}
+	if v.Conditions != nil {
+		res.Conditions = make([]*WorkspaceConditionResponse, len(v.Conditions))
+		for i, val := range v.Conditions {
+			if val == nil {
+				res.Conditions[i] = nil
+				continue
+			}
+			res.Conditions[i] = marshalWorkspacesWorkspaceConditionToWorkspaceConditionResponse(val)
+		}
+	}
+	if v.VolumeMounts != nil {
+		res.VolumeMounts = make([]*VolumeMountResponse, len(v.VolumeMounts))
+		for i, val := range v.VolumeMounts {
+			if val == nil {
+				res.VolumeMounts[i] = nil
+				continue
+			}
+			res.VolumeMounts[i] = marshalWorkspacesVolumeMountToVolumeMountResponse(val)
+		}
+	}
+	if v.RemoteDesktop != nil {
+		res.RemoteDesktop = marshalWorkspacesImageRemoteDesktopToImageRemoteDesktopResponse(v.RemoteDesktop)
+	}
+	if v.VMGpuProfile != nil {
+		res.VMGpuProfile = marshalWorkspacesVMGPUProfileToVMGPUProfileResponse(v.VMGpuProfile)
+	}
+
+	return res
+}
+
+// marshalWorkspacesContainerStateToContainerStateResponse builds a value of
+// type *ContainerStateResponse from a value of type *workspaces.ContainerState.
+func marshalWorkspacesContainerStateToContainerStateResponse(v *workspaces.ContainerState) *ContainerStateResponse {
+	if v == nil {
+		return nil
+	}
+	res := &ContainerStateResponse{
+		State:     v.State,
+		Reason:    v.Reason,
+		Message:   v.Message,
+		StartedAt: v.StartedAt,
+	}
+
+	return res
+}
+
+// marshalWorkspacesWorkspaceConditionToWorkspaceConditionResponse builds a
+// value of type *WorkspaceConditionResponse from a value of type
+// *workspaces.WorkspaceCondition.
+func marshalWorkspacesWorkspaceConditionToWorkspaceConditionResponse(v *workspaces.WorkspaceCondition) *WorkspaceConditionResponse {
+	if v == nil {
+		return nil
+	}
+	res := &WorkspaceConditionResponse{
+		Type:               v.Type,
+		Status:             v.Status,
+		Reason:             v.Reason,
+		Message:            v.Message,
+		LastTransitionTime: v.LastTransitionTime,
+	}
+
+	return res
+}
+
+// marshalWorkspacesVolumeMountToVolumeMountResponse builds a value of type
+// *VolumeMountResponse from a value of type *workspaces.VolumeMount.
+func marshalWorkspacesVolumeMountToVolumeMountResponse(v *workspaces.VolumeMount) *VolumeMountResponse {
+	if v == nil {
+		return nil
+	}
+	res := &VolumeMountResponse{
+		Name:      v.Name,
+		MountPath: v.MountPath,
+		Type:      v.Type,
+		Bus:       v.Bus,
+		Readonly:  v.Readonly,
+	}
+
+	return res
+}
+
+// marshalWorkspacesImageRemoteDesktopToImageRemoteDesktopResponse builds a
+// value of type *ImageRemoteDesktopResponse from a value of type
+// *workspaces.ImageRemoteDesktop.
+func marshalWorkspacesImageRemoteDesktopToImageRemoteDesktopResponse(v *workspaces.ImageRemoteDesktop) *ImageRemoteDesktopResponse {
+	if v == nil {
+		return nil
+	}
+	res := &ImageRemoteDesktopResponse{
+		Protocol: v.Protocol,
+		Port:     v.Port,
+		Path:     v.Path,
+	}
+	{
+		var zero string
+		if res.Path == zero {
+			res.Path = "/"
+		}
+	}
+
+	return res
+}
+
 // unmarshalWorkspaceContainerRequestBodyToWorkspacesWorkspaceContainer builds
 // a value of type *workspaces.WorkspaceContainer from a value of type
 // *WorkspaceContainerRequestBody.
@@ -859,6 +1062,7 @@ func unmarshalVMOptionsRequestBodyToWorkspacesVMOptions(v *VMOptionsRequestBody)
 		ImportCertConfigMapName: v.ImportCertConfigMapName,
 		StorageClassName:        v.StorageClassName,
 		RootDiskSize:            v.RootDiskSize,
+		GpuProfile:              v.GpuProfile,
 	}
 
 	return res

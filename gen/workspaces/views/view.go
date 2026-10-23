@@ -58,6 +58,9 @@ type WorkspaceView struct {
 	VMProfile *string
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool
+	// Resolved GPU contract; absent means software rendering, not guest
+	// driver/capture/encode status
+	VMGpuProfile *VMGPUProfileView
 }
 
 // ContainerStateView is a type that runs validations on a projected type.
@@ -114,6 +117,18 @@ type ImageRemoteDesktopView struct {
 	Path *string
 }
 
+// VMGPUProfileView is a type that runs validations on a projected type.
+type VMGPUProfileView struct {
+	ID                 *string
+	DisplayName        *string
+	ResourceName       *string
+	Kind               *string
+	Count              *int
+	NodeSelector       map[string]string
+	GuestDriverVersion *string
+	Experimental       *bool
+}
+
 var (
 	// WorkspaceMap is a map indexing the attribute names of Workspace by view name.
 	WorkspaceMap = map[string][]string{
@@ -136,6 +151,7 @@ var (
 			"remote_desktop",
 			"vm_profile",
 			"provisioned",
+			"vm_gpu_profile",
 		},
 	}
 )
@@ -195,6 +211,11 @@ func ValidateWorkspaceView(result *WorkspaceView) (err error) {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if result.VMGpuProfile != nil {
+		if err2 := ValidateVMGPUProfileView(result.VMGpuProfile); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return
 }
 
@@ -249,6 +270,40 @@ func ValidateImageRemoteDesktopView(result *ImageRemoteDesktopView) (err error) 
 	if result.Protocol != nil {
 		if !(*result.Protocol == "selkies" || *result.Protocol == "agent") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.protocol", *result.Protocol, []any{"selkies", "agent"}))
+		}
+	}
+	return
+}
+
+// ValidateVMGPUProfileView runs the validations defined on VMGPUProfileView.
+func ValidateVMGPUProfileView(result *VMGPUProfileView) (err error) {
+	if result.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "result"))
+	}
+	if result.DisplayName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("display_name", "result"))
+	}
+	if result.ResourceName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("resource_name", "result"))
+	}
+	if result.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "result"))
+	}
+	if result.Count == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("count", "result"))
+	}
+	if result.NodeSelector == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("node_selector", "result"))
+	}
+	if result.GuestDriverVersion == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("guest_driver_version", "result"))
+	}
+	if result.Experimental == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("experimental", "result"))
+	}
+	if result.Kind != nil {
+		if !(*result.Kind == "pci" || *result.Kind == "mediated") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.kind", *result.Kind, []any{"pci", "mediated"}))
 		}
 	}
 	return

@@ -29,7 +29,7 @@ func buildWindowsProfile(p *workspaces.CreateWorkspacePayload, image *k8s.Image)
 		return nil, fmt.Errorf("Windows requires type vm and a catalog-pinned persistent OCI root")
 	}
 	if p.SharedMemory || len(p.VolumeMounts) != 0 || len(p.Env) != 0 || (p.Container.GpuRequest != nil && *p.Container.GpuRequest != "" && *p.Container.GpuRequest != "0") {
-		return nil, fmt.Errorf("Windows supports display-only roots; Linux mounts, environment, shared memory and GPU options are unavailable")
+		return nil, fmt.Errorf("Windows supports native roots; Linux mounts, environment, shared memory and generic GPU quantities are unavailable; use an operator VM GPU profile")
 	}
 	cpu, err := resource.ParseQuantity(p.Container.CPULimit)
 	if err != nil || cpu.Value() < 2 || cpu.MilliValue()%1000 != 0 {

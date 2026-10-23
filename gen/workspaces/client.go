@@ -15,30 +15,65 @@ import (
 
 // Client is the "workspaces" service client.
 type Client struct {
-	CredentialsEndpoint goa.Endpoint
-	ListEndpoint        goa.Endpoint
-	GetEndpoint         goa.Endpoint
-	CreateEndpoint      goa.Endpoint
-	DeleteEndpoint      goa.Endpoint
-	StartEndpoint       goa.Endpoint
-	StopEndpoint        goa.Endpoint
-	ResetEndpoint       goa.Endpoint
-	CloneEndpoint       goa.Endpoint
+	GpuProfilesEndpoint   goa.Endpoint
+	SetGpuProfileEndpoint goa.Endpoint
+	CredentialsEndpoint   goa.Endpoint
+	ListEndpoint          goa.Endpoint
+	GetEndpoint           goa.Endpoint
+	CreateEndpoint        goa.Endpoint
+	DeleteEndpoint        goa.Endpoint
+	StartEndpoint         goa.Endpoint
+	StopEndpoint          goa.Endpoint
+	ResetEndpoint         goa.Endpoint
+	CloneEndpoint         goa.Endpoint
 }
 
 // NewClient initializes a "workspaces" service client given the endpoints.
-func NewClient(credentials, list, get, create, delete_, start, stop, reset, clone goa.Endpoint) *Client {
+func NewClient(gpuProfiles, setGpuProfile, credentials, list, get, create, delete_, start, stop, reset, clone goa.Endpoint) *Client {
 	return &Client{
-		CredentialsEndpoint: credentials,
-		ListEndpoint:        list,
-		GetEndpoint:         get,
-		CreateEndpoint:      create,
-		DeleteEndpoint:      delete_,
-		StartEndpoint:       start,
-		StopEndpoint:        stop,
-		ResetEndpoint:       reset,
-		CloneEndpoint:       clone,
+		GpuProfilesEndpoint:   gpuProfiles,
+		SetGpuProfileEndpoint: setGpuProfile,
+		CredentialsEndpoint:   credentials,
+		ListEndpoint:          list,
+		GetEndpoint:           get,
+		CreateEndpoint:        create,
+		DeleteEndpoint:        delete_,
+		StartEndpoint:         start,
+		StopEndpoint:          stop,
+		ResetEndpoint:         reset,
+		CloneEndpoint:         clone,
 	}
+}
+
+// GpuProfiles calls the "gpu_profiles" endpoint of the "workspaces" service.
+// GpuProfiles may return the following errors:
+//   - "unavailable" (type Unavailable)
+//   - error: internal error
+func (c *Client) GpuProfiles(ctx context.Context) (res []*VMGPUProfile, err error) {
+	var ires any
+	ires, err = c.GpuProfilesEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.([]*VMGPUProfile), nil
+}
+
+// SetGpuProfile calls the "set_gpu_profile" endpoint of the "workspaces"
+// service.
+// SetGpuProfile may return the following errors:
+//   - "forbidden" (type Forbidden)
+//   - "not_found" (type NotFound)
+//   - "invalid" (type Invalid)
+//   - "conflict" (type Conflict)
+//   - "unavailable" (type Unavailable)
+//   - error: internal error
+func (c *Client) SetGpuProfile(ctx context.Context, p *SetGpuProfilePayload) (res *Workspace, err error) {
+	var ires any
+	ires, err = c.SetGpuProfileEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*Workspace), nil
 }
 
 // Credentials calls the "credentials" endpoint of the "workspaces" service.

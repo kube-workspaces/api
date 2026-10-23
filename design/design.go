@@ -114,6 +114,22 @@ var VMOptions = Type("VMOptions", func() {
 	Attribute("import_cert_config_map_name", String, "Same-namespace registry CA ConfigMap")
 	Attribute("storage_class_name", String, "Persistent root StorageClass; empty uses cluster default")
 	Attribute("root_disk_size", String, "Persistent Windows root capacity, at least 80Gi")
+	Attribute("gpu_profile", String, "Versioned operator-approved VM GPU profile ID; omitted/empty keeps software graphics", func() {
+		MaxLength(63)
+	})
+})
+
+var VMGPUProfile = Type("VMGPUProfile", func() {
+	Description("Operator-declared render-only Windows GPU contract; driver version is required configuration, not observed guest readiness")
+	Attribute("id", String)
+	Attribute("display_name", String)
+	Attribute("resource_name", String)
+	Attribute("kind", String, func() { Enum("pci", "mediated") })
+	Attribute("count", Int)
+	Attribute("node_selector", MapOf(String, String))
+	Attribute("guest_driver_version", String)
+	Attribute("experimental", Boolean)
+	Required("id", "display_name", "resource_name", "kind", "count", "node_selector", "guest_driver_version", "experimental")
 })
 
 var WorkspaceInitialCredentials = Type("WorkspaceInitialCredentials", func() {
@@ -258,6 +274,7 @@ var WorkspaceResult = ResultType("application/vnd.workspace+json", func() {
 		Attribute("remote_desktop", ImageRemoteDesktop, "Remote desktop agent configuration (Tier 1)")
 		Attribute("vm_profile", String, "Resolved guest profile; windows11-amd64-v1 uses display-only native provisioning")
 		Attribute("provisioned", Boolean, "Windows native setup and bootstrap removal have completed")
+		Attribute("vm_gpu_profile", VMGPUProfile, "Resolved GPU contract; absent means software rendering, not guest driver/capture/encode status")
 	})
 	Required("name", "namespace", "image", "type", "ready_replicas", "stopped")
 })
@@ -813,6 +830,41 @@ var ControlResult = ResultType("application/vnd.display-control+json", func() {
 
 var _ = Service("workspaces", func() {
 	Description("Workspace management service")
+	Method("gpu_profiles", func() {
+		Description("List validated operator-declared Windows VM GPU profiles; device availability is determined by scheduling")
+		Result(ArrayOf(VMGPUProfile))
+		Error("unavailable", String)
+		HTTP(func() {
+			GET("/v1/vm-gpu-profiles")
+			Response(StatusOK)
+			Response("unavailable", StatusServiceUnavailable)
+		})
+	})
+	Method("set_gpu_profile", func() {
+		Description("Add, change or remove a Windows GPU profile only while its VM is fully stopped; preserves root/EFI/TPM/identity. Empty profile_id restores software graphics.")
+		Payload(func() {
+			Attribute("name", String)
+			Attribute("namespace", String, func() { Default("workspaces") })
+			Attribute("profile_id", String, func() { MaxLength(63) })
+			Required("name", "profile_id")
+		})
+		Result(WorkspaceResult)
+		Error("forbidden", String)
+		Error("not_found", String)
+		Error("invalid", String)
+		Error("conflict", String)
+		Error("unavailable", String)
+		HTTP(func() {
+			PUT("/v1/workspaces/{name}/gpu-profile")
+			Param("namespace")
+			Response(StatusOK)
+			Response("forbidden", StatusForbidden)
+			Response("not_found", StatusNotFound)
+			Response("invalid", StatusBadRequest)
+			Response("conflict", StatusConflict)
+			Response("unavailable", StatusServiceUnavailable)
+		})
+	})
 	Method("credentials", func() {
 		Description("Retrieve this Windows workspace's unique initial credentials; namespace editors/admins only")
 		Payload(func() {
