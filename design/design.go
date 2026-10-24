@@ -19,6 +19,8 @@ var _ = API("kube-workspaces", func() {
 
 var WorkspaceContainer = Type("WorkspaceContainer", func() {
 	Description("Container specification for a workspace")
+	Attribute("command", ArrayOf(String), "Container entrypoint override, passed verbatim")
+	Attribute("args", ArrayOf(String), "Container argument override, passed verbatim")
 	Attribute("name", String, "Container name", func() {
 		Example("code-server")
 	})

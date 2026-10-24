@@ -328,6 +328,10 @@ type WorkspaceCondition struct {
 
 // Container specification for a workspace
 type WorkspaceContainer struct {
+	// Container entrypoint override, passed verbatim
+	Command []string
+	// Container argument override, passed verbatim
+	Args []string
 	// Container name
 	Name string
 	// Container image

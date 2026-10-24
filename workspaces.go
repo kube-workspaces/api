@@ -652,6 +652,24 @@ func buildWorkspaceCR(p *workspaces.CreateWorkspacePayload, imageClient *k8s.Ima
 		}
 	}
 
+	// Explicit entrypoints replace image defaults; do not append catalog args
+	// to a user-specified command unless arguments were explicitly supplied.
+	if len(p.Container.Command) > 0 {
+		command := make([]interface{}, len(p.Container.Command))
+		for i, value := range p.Container.Command {
+			command[i] = value
+		}
+		container["command"] = command
+		delete(container, "args")
+	}
+	if p.Container.Args != nil {
+		args := make([]interface{}, len(p.Container.Args))
+		for i, value := range p.Container.Args {
+			args[i] = value
+		}
+		container["args"] = args
+	}
+
 	// Resolve the image pull policy. An explicit workspace-level choice wins,
 	// then the image's defaultImagePullPolicy, and finally the field is left
 	// unset so Kubernetes applies its own default (Always for :latest or untagged

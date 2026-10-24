@@ -584,6 +584,10 @@ type ImageRemoteDesktopResponse struct {
 
 // WorkspaceContainerRequestBody is used to define fields on request body types.
 type WorkspaceContainerRequestBody struct {
+	// Container entrypoint override, passed verbatim
+	Command []string `form:"command,omitempty" json:"command,omitempty" xml:"command,omitempty"`
+	// Container argument override, passed verbatim
+	Args []string `form:"args,omitempty" json:"args,omitempty" xml:"args,omitempty"`
 	// Container name
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// Container image

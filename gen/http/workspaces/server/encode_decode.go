@@ -1029,6 +1029,18 @@ func unmarshalWorkspaceContainerRequestBodyToWorkspacesWorkspaceContainer(v *Wor
 	if v.GpuVendor != nil {
 		res.GpuVendor = *v.GpuVendor
 	}
+	if v.Command != nil {
+		res.Command = make([]string, len(v.Command))
+		for i, val := range v.Command {
+			res.Command[i] = val
+		}
+	}
+	if v.Args != nil {
+		res.Args = make([]string, len(v.Args))
+		for i, val := range v.Args {
+			res.Args[i] = val
+		}
+	}
 	if v.Port == nil {
 		res.Port = 8080
 	}
