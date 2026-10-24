@@ -23,6 +23,27 @@ func newAgentSvc(t *testing.T) genagent.Service {
 	return NewAgent(k8s.NewWorkspaceClientFor(fake), agent.NewStore(), keys)
 }
 
+func TestLinuxAgentTicketCannotRenewAfterRootReset(t *testing.T) {
+	ctx := context.Background()
+	ws := workspaceCR("workspaces", "arch", "vm")
+	ws.SetAnnotations(map[string]string{"kubeworkspaces.io/agent-generation": "root-one"})
+	dyn := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), ws)
+	svc := NewAgent(k8s.NewWorkspaceClientFor(dyn), agent.NewStore(), func(context.Context) ([][]byte, error) {
+		return [][]byte{[]byte("test-key-0123456789abcdef")}, nil
+	})
+	ticket, err := svc.Attach(ctx, &genagent.AgentAttachPayload{Namespace: "workspaces", Name: "arch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws.SetAnnotations(map[string]string{"kubeworkspaces.io/agent-generation": "root-two"})
+	if _, err := k8s.NewWorkspaceClientFor(dyn).UpdateWorkspace(ctx, ws); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Renew(ctx, &genagent.RenewPayload{Namespace: "workspaces", Name: "arch", SessionID: ticket.ID}); err == nil {
+		t.Fatal("old-root ticket renewed against new Linux generation")
+	}
+}
+
 func TestAgentAttachMintsBoundTicket(t *testing.T) {
 	svc := newAgentSvc(t)
 	ctx := context.Background()

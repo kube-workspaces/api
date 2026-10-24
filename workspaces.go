@@ -151,6 +151,9 @@ func (s *workspacessrvc) Get(ctx context.Context, p *workspaces.GetPayload) (res
 // Create a new workspace
 func (s *workspacessrvc) Create(ctx context.Context, p *workspaces.CreateWorkspacePayload) (res *workspaces.Workspace, err error) {
 	log.Printf(ctx, "workspaces.create name=%s namespace=%s type=%s", p.Name, p.Namespace, p.Type)
+	if err := s.validateCloudImage(ctx, p.Container.Image, p.Type); err != nil {
+		return nil, workspaces.Invalid(err.Error())
+	}
 	var windowsProfile map[string]interface{}
 	if img, lookupErr := s.imageClient.GetImageByRef(ctx, p.Container.Image); lookupErr == nil && img.VMProfile == windowsVMProfile {
 		windowsProfile, err = buildWindowsProfile(p, img)
@@ -472,6 +475,7 @@ func (s *workspacessrvc) Clone(ctx context.Context, p *workspaces.ClonePayload) 
 		"kubeworkspaces.io/reboot",
 		"kubeworkspaces.io/windows-provisioned-generation",
 		"kubeworkspaces.io/windows-detaching-generation",
+		"kubeworkspaces.io/agent-generation",
 	} {
 		delete(annotations, a)
 	}
@@ -542,6 +546,12 @@ func (s *workspacessrvc) Clone(ctx context.Context, p *workspaces.ClonePayload) 
 		}
 	}
 
+	if ref, ok := workspaceImage(clone); ok {
+		wsType, _, _ := unstructured.NestedString(clone.Object, "spec", "type")
+		if err := s.validateCloudImage(ctx, ref, wsType); err != nil {
+			return nil, workspaces.Invalid(err.Error())
+		}
+	}
 	created, err := s.client.CreateWorkspace(ctx, clone)
 	if err != nil {
 		if apierrors.IsAlreadyExists(err) {

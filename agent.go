@@ -71,6 +71,9 @@ func (s *agentsrvc) agentWorkspace(ctx context.Context, ns, name string) (uid, g
 	uid = string(obj.GetUID())
 	annotations := obj.GetAnnotations()
 	generation = annotations["kubeworkspaces.io/windows-provisioned-generation"]
+	if generation == "" {
+		generation = annotations["kubeworkspaces.io/agent-generation"]
+	}
 	return uid, generation, nil
 }
 

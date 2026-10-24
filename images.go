@@ -214,6 +214,11 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 		}
 	}
 
+	persistent, _ := spec["persistentRootDisk"].(bool)
+	profile, _ := spec["vmProfile"].(string)
+	if err := k8s.ValidateCloudImage(p.Image, persistent, p.WorkspaceTypes, profile); err != nil {
+		return nil, images.Invalid(err.Error())
+	}
 	_, err = s.imageClient.CreateImage(ctx, crName, spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create image: %w", err)
