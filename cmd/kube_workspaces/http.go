@@ -1816,8 +1816,17 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 				json.NewEncoder(w).Encode(map[string]string{"error": "serial console is only available for VM workspaces"})
 				return
 			}
+			availability, err := wsClient.VMConsoleAvailability(r.Context(), ns, name)
+			if err != nil {
+				http.Error(w, "failed to check VM console availability", http.StatusServiceUnavailable)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]bool{"inUse": exec.SerialConsoleInUse(ns, name)})
+			json.NewEncoder(w).Encode(map[string]bool{
+				"inUse":            exec.SerialConsoleInUse(ns, name),
+				"available":        availability.Available,
+				"displayAvailable": availability.DisplayAvailable,
+			})
 		})
 
 		// Serial console take-over: POST /v1/workspaces/{name}/console/takeover
