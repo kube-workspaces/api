@@ -544,8 +544,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 					},
 					"mustChangePassword": true,
 				}
-				unstructured.SetNestedMap(user.Object, spec, "spec")
-				updated, updateErr := authProvider.UpdateUser(r.Context(), user)
+				updated, updateErr := authProvider.UpdateUserSpec(r.Context(), user, spec)
 				if updateErr != nil {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusInternalServerError)
@@ -561,19 +560,7 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			}
 		}
 
-		unstructured.SetNestedMap(user.Object, spec, "spec")
-
-		// Update labels
-		labels := user.GetLabels()
-		if labels == nil {
-			labels = make(map[string]string)
-		}
-		if role, ok := spec["role"].(string); ok {
-			labels["kubeworkspaces.io/role"] = role
-		}
-		user.SetLabels(labels)
-
-		updated, err := authProvider.UpdateUser(r.Context(), user)
+		updated, err := authProvider.UpdateUserSpec(r.Context(), user, spec)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)

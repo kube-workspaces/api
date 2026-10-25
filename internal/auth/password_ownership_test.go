@@ -141,3 +141,52 @@ func TestConflictedPasswordResetDoesNotReplaceCredentialOrReportPassword(t *test
 		t.Fatal("losing reset revoked the active credential")
 	}
 }
+
+func TestCredentialPublicationRetriesOnlyMetadataAndStatusConflicts(t *testing.T) {
+	for _, mode := range []string{"controller-finalizer", "changed-password-reference", "replacement-user"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newLifecycleFixture(t, false)
+			ctx := context.Background()
+			cl := f.h.provider.dynamicClient.(*dynamicfake.FakeDynamicClient)
+			injected := false
+			cl.PrependReactor("update", "users", func(action clienttesting.Action) (bool, runtime.Object, error) {
+				if injected {
+					return false, nil, nil
+				}
+				injected = true
+				obj, err := cl.Tracker().Get(userGVR, "", f.user.GetName())
+				if err != nil {
+					t.Fatal(err)
+				}
+				current := obj.(*unstructured.Unstructured).DeepCopy()
+				current.SetFinalizers([]string{"kubeworkspaces.io/user-finalizer"})
+				_ = unstructured.SetNestedField(current.Object, "retained-namespace", "status", "personalNamespace")
+				if mode == "changed-password-reference" {
+					_ = unstructured.SetNestedField(current.Object, "concurrent-reset", "spec", "localAuth", "passwordSecretRef", "name")
+				}
+				if mode == "replacement-user" {
+					current.SetUID("replacement-uid")
+				}
+				if err := cl.Tracker().Update(userGVR, current, ""); err != nil {
+					t.Fatal(err)
+				}
+				return true, nil, k8serrors.NewConflict(userGVR.GroupResource(), current.GetName(), ErrIdentityConflict)
+			})
+			password, err := ResetLocalUserPassword(ctx, f.h.provider, f.user.GetName())
+			if mode != "controller-finalizer" {
+				if err == nil || password != "" {
+					t.Fatal("credential publication overwrote a changed account")
+				}
+				return
+			}
+			if err != nil || password == "" {
+				t.Fatalf("controller-only conflict prevented credential publication: %v", err)
+			}
+			current, _ := f.h.provider.GetUser(ctx, f.user.GetName())
+			personal, _, _ := unstructured.NestedString(current.Object, "status", "personalNamespace")
+			if len(current.GetFinalizers()) != 1 || personal != "retained-namespace" {
+				t.Fatal("publication overwrote controller finalizer/status")
+			}
+		})
+	}
+}

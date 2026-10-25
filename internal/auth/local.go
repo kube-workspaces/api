@@ -424,8 +424,9 @@ func ProvisionLocalUser(ctx context.Context, provider *ConfigProvider, email, di
 	if err != nil {
 		return "", "", fmt.Errorf("account created without a local credential; enable its local password to resume: %w", err)
 	}
-	_ = unstructured.SetNestedMap(user.Object, map[string]interface{}{"enabled": true, "passwordSecretRef": map[string]interface{}{"name": secretName, "key": "passwordHash"}, "mustChangePassword": true}, "spec", "localAuth")
-	if _, err := provider.UpdateUser(ctx, user); err != nil {
+	spec, _, _ := unstructured.NestedMap(user.Object, "spec")
+	spec["localAuth"] = map[string]interface{}{"enabled": true, "passwordSecretRef": map[string]interface{}{"name": secretName, "key": "passwordHash"}, "mustChangePassword": true}
+	if _, err := provider.UpdateUserSpec(ctx, user, spec); err != nil {
 		return "", "", err
 	}
 
@@ -478,9 +479,7 @@ func ResetLocalUserPassword(ctx context.Context, provider *ConfigProvider, userN
 	localAuth["mustChangePassword"] = true
 	localAuth["passwordSecretRef"] = map[string]interface{}{"name": secretName, "key": "passwordHash"}
 	spec["localAuth"] = localAuth
-	unstructured.SetNestedMap(userCR.Object, spec, "spec")
-
-	if _, err := provider.UpdateUser(ctx, userCR); err != nil {
+	if _, err := provider.UpdateUserSpec(ctx, userCR, spec); err != nil {
 		return "", err
 	}
 

@@ -5,12 +5,47 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"reflect"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/util/retry"
 )
 
 const passwordUserUIDAnnotation = "kubeworkspaces.io/user-uid"
+
+// UpdateUserSpec publishes an explicitly approved spec without overwriting
+// concurrent account edits. Controller finalizer/status writes may be retried,
+// but a replacement UID or changed spec requires a fresh administrative decision.
+func (p *ConfigProvider) UpdateUserSpec(ctx context.Context, original *unstructured.Unstructured, spec map[string]interface{}) (*unstructured.Unstructured, error) {
+	if original.GetUID() == "" {
+		return nil, fmt.Errorf("persisted User UID required")
+	}
+	var updated *unstructured.Unstructured
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := p.GetUser(ctx, original.GetName())
+		if err != nil {
+			return err
+		}
+		if current.GetUID() != original.GetUID() || current.GetDeletionTimestamp() != nil || !reflect.DeepEqual(current.Object["spec"], original.Object["spec"]) {
+			return fmt.Errorf("account changed; refresh before retrying: %w", ErrIdentityConflict)
+		}
+		if err := unstructured.SetNestedMap(current.Object, spec, "spec"); err != nil {
+			return err
+		}
+		if role, ok := spec["role"].(string); ok {
+			labels := current.GetLabels()
+			if labels == nil {
+				labels = map[string]string{}
+			}
+			labels["kubeworkspaces.io/role"] = role
+			current.SetLabels(labels)
+		}
+		updated, err = p.UpdateUser(ctx, current)
+		return err
+	})
+	return updated, err
+}
 
 // CreateOwnedPasswordSecret allocates a fresh credential for one persisted UID.
 // It never adopts or overwrites an existing Secret. Callers publish its reference
