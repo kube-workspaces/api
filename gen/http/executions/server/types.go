@@ -30,6 +30,8 @@ type StartRequestBody struct {
 	Cwd *string `form:"cwd,omitempty" json:"cwd,omitempty" xml:"cwd,omitempty"`
 	// Guest execution deadline in seconds
 	DeadlineSeconds *int `form:"deadline_seconds,omitempty" json:"deadline_seconds,omitempty" xml:"deadline_seconds,omitempty"`
+	// Script to execute (mutually exclusive with executable/args)
+	Script *ExecutionScriptPayloadRequestBody `form:"script,omitempty" json:"script,omitempty" xml:"script,omitempty"`
 }
 
 // StatusResponseBody is the type of the "executions" service "status" endpoint
@@ -177,6 +179,17 @@ type ExecutionRecordResponse struct {
 	RecordingLost *bool   `form:"recording_lost,omitempty" json:"recording_lost,omitempty" xml:"recording_lost,omitempty"`
 }
 
+// ExecutionScriptPayloadRequestBody is used to define fields on request body
+// types.
+type ExecutionScriptPayloadRequestBody struct {
+	// Script content
+	Body *string `form:"body,omitempty" json:"body,omitempty" xml:"body,omitempty"`
+	// Optional filename hint (e.g. run.sh, script.ps1)
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// Optional working directory for the script
+	Cwd *string `form:"cwd,omitempty" json:"cwd,omitempty" xml:"cwd,omitempty"`
+}
+
 // NewStatusResponseBody builds the HTTP response body from the result of the
 // "status" endpoint of the "executions" service.
 func NewStatusResponseBody(res *executionsviews.ExecutionStatusView) *StatusResponseBody {
@@ -306,18 +319,23 @@ func NewStartPayload(body *StartRequestBody) *executions.StartPayload {
 	v := &executions.StartPayload{
 		Namespace:     *body.Namespace,
 		WorkspaceName: *body.WorkspaceName,
-		Executable:    *body.Executable,
+		Executable:    body.Executable,
 		Cwd:           body.Cwd,
 	}
 	if body.DeadlineSeconds != nil {
 		v.DeadlineSeconds = *body.DeadlineSeconds
 	}
-	v.Args = make([]string, len(body.Args))
-	for i, val := range body.Args {
-		v.Args[i] = val
+	if body.Args != nil {
+		v.Args = make([]string, len(body.Args))
+		for i, val := range body.Args {
+			v.Args[i] = val
+		}
 	}
 	if body.DeadlineSeconds == nil {
 		v.DeadlineSeconds = 20
+	}
+	if body.Script != nil {
+		v.Script = unmarshalExecutionScriptPayloadRequestBodyToExecutionsExecutionScriptPayload(body.Script)
 	}
 
 	return v
@@ -347,12 +365,6 @@ func ValidateStartRequestBody(body *StartRequestBody) (err error) {
 	}
 	if body.WorkspaceName == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("workspace_name", "body"))
-	}
-	if body.Executable == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("executable", "body"))
-	}
-	if body.Args == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("args", "body"))
 	}
 	if body.Namespace != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.namespace", *body.Namespace, "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"))
@@ -396,6 +408,43 @@ func ValidateStartRequestBody(body *StartRequestBody) (err error) {
 	if body.DeadlineSeconds != nil {
 		if *body.DeadlineSeconds > 20 {
 			err = goa.MergeErrors(err, goa.InvalidRangeError("body.deadline_seconds", *body.DeadlineSeconds, 20, false))
+		}
+	}
+	if body.Script != nil {
+		if err2 := ValidateExecutionScriptPayloadRequestBody(body.Script); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
+// ValidateExecutionScriptPayloadRequestBody runs the validations defined on
+// ExecutionScriptPayloadRequestBody
+func ValidateExecutionScriptPayloadRequestBody(body *ExecutionScriptPayloadRequestBody) (err error) {
+	if body.Body == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("body", "body"))
+	}
+	if body.Body != nil {
+		if utf8.RuneCountInString(*body.Body) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.body", *body.Body, utf8.RuneCountInString(*body.Body), 1, true))
+		}
+	}
+	if body.Body != nil {
+		if utf8.RuneCountInString(*body.Body) > 65536 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.body", *body.Body, utf8.RuneCountInString(*body.Body), 65536, false))
+		}
+	}
+	if body.Name != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.name", *body.Name, "^[^/\\\\]+$"))
+	}
+	if body.Name != nil {
+		if utf8.RuneCountInString(*body.Name) > 128 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", *body.Name, utf8.RuneCountInString(*body.Name), 128, false))
+		}
+	}
+	if body.Cwd != nil {
+		if utf8.RuneCountInString(*body.Cwd) > 1024 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.cwd", *body.Cwd, utf8.RuneCountInString(*body.Cwd), 1024, false))
 		}
 	}
 	return

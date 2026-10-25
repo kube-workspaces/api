@@ -8,6 +8,8 @@
 package client
 
 import (
+	"unicode/utf8"
+
 	executions "github.com/kube-workspaces/api/gen/executions"
 	executionsviews "github.com/kube-workspaces/api/gen/executions/views"
 	goa "goa.design/goa/v3/pkg"
@@ -21,13 +23,15 @@ type StartRequestBody struct {
 	// Workspace name
 	WorkspaceName string `form:"workspace_name" json:"workspace_name" xml:"workspace_name"`
 	// Absolute path or name of the program to run
-	Executable string `form:"executable" json:"executable" xml:"executable"`
+	Executable *string `form:"executable,omitempty" json:"executable,omitempty" xml:"executable,omitempty"`
 	// Arguments passed to the executable verbatim
-	Args []string `form:"args" json:"args" xml:"args"`
+	Args []string `form:"args,omitempty" json:"args,omitempty" xml:"args,omitempty"`
 	// Optional working directory for the new process
 	Cwd *string `form:"cwd,omitempty" json:"cwd,omitempty" xml:"cwd,omitempty"`
 	// Guest execution deadline in seconds
 	DeadlineSeconds int `form:"deadline_seconds" json:"deadline_seconds" xml:"deadline_seconds"`
+	// Script to execute (mutually exclusive with executable/args)
+	Script *ExecutionScriptPayloadRequestBody `form:"script,omitempty" json:"script,omitempty" xml:"script,omitempty"`
 }
 
 // StatusResponseBody is the type of the "executions" service "status" endpoint
@@ -171,6 +175,17 @@ type ExecutionRecordResponse struct {
 	RecordingLost *bool   `form:"recording_lost,omitempty" json:"recording_lost,omitempty" xml:"recording_lost,omitempty"`
 }
 
+// ExecutionScriptPayloadRequestBody is used to define fields on request body
+// types.
+type ExecutionScriptPayloadRequestBody struct {
+	// Script content
+	Body string `form:"body" json:"body" xml:"body"`
+	// Optional filename hint (e.g. run.sh, script.ps1)
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// Optional working directory for the script
+	Cwd *string `form:"cwd,omitempty" json:"cwd,omitempty" xml:"cwd,omitempty"`
+}
+
 // NewStartRequestBody builds the HTTP request body from the payload of the
 // "start" endpoint of the "executions" service.
 func NewStartRequestBody(p *executions.StartPayload) *StartRequestBody {
@@ -186,14 +201,15 @@ func NewStartRequestBody(p *executions.StartPayload) *StartRequestBody {
 		for i, val := range p.Args {
 			body.Args[i] = val
 		}
-	} else {
-		body.Args = []string{}
 	}
 	{
 		var zero int
 		if body.DeadlineSeconds == zero {
 			body.DeadlineSeconds = 20
 		}
+	}
+	if p.Script != nil {
+		body.Script = marshalExecutionsExecutionScriptPayloadToExecutionScriptPayloadRequestBody(p.Script)
 	}
 	return body
 }
@@ -621,6 +637,31 @@ func ValidateExecutionRecordResponse(body *ExecutionRecordResponse) (err error) 
 	}
 	if body.EndTime != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.end_time", *body.EndTime, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateExecutionScriptPayloadRequestBody runs the validations defined on
+// ExecutionScriptPayloadRequestBody
+func ValidateExecutionScriptPayloadRequestBody(body *ExecutionScriptPayloadRequestBody) (err error) {
+	if utf8.RuneCountInString(body.Body) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.body", body.Body, utf8.RuneCountInString(body.Body), 1, true))
+	}
+	if utf8.RuneCountInString(body.Body) > 65536 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.body", body.Body, utf8.RuneCountInString(body.Body), 65536, false))
+	}
+	if body.Name != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.name", *body.Name, "^[^/\\\\]+$"))
+	}
+	if body.Name != nil {
+		if utf8.RuneCountInString(*body.Name) > 128 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", *body.Name, utf8.RuneCountInString(*body.Name), 128, false))
+		}
+	}
+	if body.Cwd != nil {
+		if utf8.RuneCountInString(*body.Cwd) > 1024 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.cwd", *body.Cwd, utf8.RuneCountInString(*body.Cwd), 1024, false))
+		}
 	}
 	return
 }

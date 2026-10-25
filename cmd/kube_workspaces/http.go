@@ -65,7 +65,7 @@ var godocFS embed.FS
 
 // handleHTTPServer starts configures and starts a HTTP server on the given
 // URL. It shuts down the server if any error is received in the error channel.
-func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, displayEndpoints *gendisplay.Endpoints, agentEndpoints *genagent.Endpoints, executionsEndpoints *genexecutions.Endpoints, agentUpgradesEndpoints *genagentupgrades.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, displaySessions *display.Sessions, wg *sync.WaitGroup, errc chan error, dbg bool) {
+func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *workspaces.Endpoints, volumesEndpoints *volumes.Endpoints, imagesEndpoints *images.Endpoints, namespacesEndpoints *namespaces.Endpoints, sshkeysEndpoints *sshkeys.Endpoints, healthEndpoints *health.Endpoints, displayEndpoints *gendisplay.Endpoints, agentEndpoints *genagent.Endpoints, executionsEndpoints *genexecutions.Endpoints, agentUpgradesEndpoints *genagentupgrades.Endpoints, wsClient *k8s.WorkspaceClient, coreClient *k8s.CoreClient, crdClient *k8s.CRDClient, imageClient *k8s.ImageClient, imageRepoClient *k8s.ImageRepositoryClient, metricsBuffer *k8s.MetricsBuffer, dynClient dynamic.Interface, podDefaultClient *k8s.PodDefaultClient, displaySessions *display.Sessions, wg *sync.WaitGroup, errc chan error, dbg bool) {
 	monitor := monitoring.New("api")
 	if err := monitoring.Listen(ctx, monitor, ":9090", os.Getenv("KW_MONITORING_TOKEN")); err != nil {
 		log.Fatal(ctx, err)
@@ -943,6 +943,155 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			return
 		}
 
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(updated)
+	})
+
+	// Admin: list image repositories
+	mux.Handle("GET", "/admin/crds/imagerepositories", func(w http.ResponseWriter, r *http.Request) {
+		list, err := imageRepoClient.ListImageRepositories(r.Context())
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(list)
+	})
+
+	// Admin: get single image repository CR
+	mux.Handle("GET", "/admin/crds/imagerepositories/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if name == "" {
+			parts := splitPath(r.URL.Path)
+			if len(parts) >= 4 {
+				name = parts[3]
+			}
+		}
+		obj, err := imageRepoClient.GetImageRepositoryRaw(r.Context(), name)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(obj)
+	})
+
+	// Admin: create image repository CR
+	mux.Handle("POST", "/admin/crds/imagerepositories", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("invalid JSON body: %v", err)})
+			return
+		}
+		obj := &unstructured.Unstructured{Object: body}
+		if obj.GetKind() == "" {
+			obj.SetKind("ImageRepository")
+		}
+		if obj.GetAPIVersion() == "" {
+			obj.SetAPIVersion("kubeworkspaces.io/v1alpha1")
+		}
+		created, err := imageRepoClient.CreateImageRepository(r.Context(), obj)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(created)
+	})
+
+	// Admin: update image repository CR
+	mux.Handle("PUT", "/admin/crds/imagerepositories/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if name == "" {
+			parts := splitPath(r.URL.Path)
+			if len(parts) >= 4 {
+				name = parts[3]
+			}
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("invalid JSON body: %v", err)})
+			return
+		}
+		obj := &unstructured.Unstructured{Object: body}
+		if obj.GetName() == "" {
+			obj.SetName(name)
+		}
+		if obj.GetKind() == "" {
+			obj.SetKind("ImageRepository")
+		}
+		if obj.GetAPIVersion() == "" {
+			obj.SetAPIVersion("kubeworkspaces.io/v1alpha1")
+		}
+		updated, err := imageRepoClient.UpdateImageRepository(r.Context(), obj)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(updated)
+	})
+
+	// Admin: delete image repository CR
+	mux.Handle("DELETE", "/admin/crds/imagerepositories/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if name == "" {
+			parts := splitPath(r.URL.Path)
+			if len(parts) >= 4 {
+				name = parts[3]
+			}
+		}
+		if err := imageRepoClient.DeleteImageRepository(r.Context(), name); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	// Admin: trigger sync of image repository by adding annotation
+	mux.Handle("POST", "/admin/crds/imagerepositories/{name}/sync", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if name == "" {
+			parts := splitPath(r.URL.Path)
+			if len(parts) >= 5 {
+				name = parts[3]
+			}
+		}
+		obj, err := imageRepoClient.GetImageRepositoryRaw(r.Context(), name)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		ann := obj.GetAnnotations()
+		if ann == nil {
+			ann = map[string]string{}
+		}
+		ann["kubeworkspaces.io/sync"] = fmt.Sprintf("%d", metav1.Now().UnixNano())
+		obj.SetAnnotations(ann)
+		updated, err := imageRepoClient.UpdateImageRepository(r.Context(), obj)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(updated)
 	})

@@ -50,7 +50,7 @@ type qgaRequest struct {
 	DeadlineSeconds        int      `json:"deadline_seconds"`
 }
 
-// Command is one bounded elevated command. ExecutionID/RecordingID/ActorUID are
+// Command is one bounded elevated command or script. ExecutionID/RecordingID/ActorUID are
 // server-minted or authenticated values, never raw client input.
 type Command struct {
 	ActorUID        string
@@ -60,6 +60,14 @@ type Command struct {
 	Args            []string
 	Cwd             *string
 	DeadlineSeconds int
+	Script          *Script
+}
+
+// Script describes an inline script to be written to a temp file and executed
+// via shebang.
+type Script struct {
+	Body string
+	Name string
 }
 
 // TargetResolver resolves the fresh launcher target for one workspace.
@@ -160,6 +168,10 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 		// The guest deserializes a JSON array, never null.
 		args = []string{}
 	}
+	operation := "command"
+	if command.Script != nil {
+		operation = "script"
+	}
 	request := qgaRequest{
 		Version:                1,
 		Challenge:              challenge,
@@ -171,7 +183,7 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 		ProvisioningGeneration: target.VMUID,
 		ExecutionID:            command.ExecutionID,
 		RecordingID:            command.RecordingID,
-		Operation:              "command",
+		Operation:              operation,
 		OSIdentity:             target.OSIdentity(),
 		Elevated:               true,
 		PolicyVersion:          policyVersion,

@@ -6,6 +6,22 @@ import (
 
 // Execution management types
 
+var ExecutionScriptPayload = Type("ExecutionScriptPayload", func() {
+	Description("Inline script to write to a temp file and execute via shebang")
+	Attribute("body", String, "Script content", func() {
+		MinLength(1)
+		MaxLength(65536)
+	})
+	Attribute("name", String, "Optional filename hint (e.g. run.sh, script.ps1)", func() {
+		MaxLength(128)
+		Pattern("^[^/\\\\]+$")
+	})
+	Attribute("cwd", String, "Optional working directory for the script", func() {
+		MaxLength(1024)
+	})
+	Required("body")
+})
+
 var ExecutionGrantPayload = Type("ExecutionGrantPayload", func() {
 	Description("Signed, short-lived grant used to admit an execution request (placeholder)")
 	Attribute("grant", String, "Opaque, versioned, guest-verified grant token", func() {
@@ -79,7 +95,7 @@ var ExecutionRecordingManifest = Type("ExecutionRecordingManifest", func() {
 })
 
 var ExecutionCommandResult = ResultType("application/vnd.execution-command+json", func() {
-	Description("Synchronous outcome of one pilot command execution")
+	Description("Synchronous outcome of one pilot command or script execution")
 	Attributes(func() {
 		Attribute("execution_id", String, "Execution identifier", func() { Example("exec_9f82") })
 		Attribute("recording_id", String, "Recording identifier", func() { Example("rec_9f82") })
@@ -165,7 +181,7 @@ var _ = Service("executions", func() {
 		})
 	})
 	Method("start", func() {
-		Description("Execute one bounded root (Linux) or SYSTEM (Windows) command in an eligible running agent-equipped VM and return its recorded outcome synchronously")
+		Description("Execute one bounded root (Linux) or SYSTEM (Windows) command or script in an eligible running agent-equipped VM and return its recorded outcome synchronously")
 		Payload(func() {
 			Attribute("namespace", String, "Workspace namespace", func() {
 				Pattern("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
@@ -194,7 +210,8 @@ var _ = Service("executions", func() {
 				Maximum(20)
 				Default(20)
 			})
-			Required("namespace", "workspace_name", "executable", "args")
+			Attribute("script", ExecutionScriptPayload, "Script to execute (mutually exclusive with executable/args)")
+			Required("namespace", "workspace_name")
 		})
 		Result(ExecutionCommandResult)
 		HTTP(func() {

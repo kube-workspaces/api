@@ -613,3 +613,19 @@ func marshalExecutionsExecutionRecordToExecutionRecordResponse(v *executions.Exe
 
 	return res
 }
+
+// unmarshalExecutionScriptPayloadRequestBodyToExecutionsExecutionScriptPayload
+// builds a value of type *executions.ExecutionScriptPayload from a value of
+// type *ExecutionScriptPayloadRequestBody.
+func unmarshalExecutionScriptPayloadRequestBodyToExecutionsExecutionScriptPayload(v *ExecutionScriptPayloadRequestBody) *executions.ExecutionScriptPayload {
+	if v == nil {
+		return nil
+	}
+	res := &executions.ExecutionScriptPayload{
+		Body: *v.Body,
+		Name: v.Name,
+		Cwd:  v.Cwd,
+	}
+
+	return res
+}

@@ -811,3 +811,35 @@ func unmarshalExecutionRecordResponseToExecutionsExecutionRecord(v *ExecutionRec
 
 	return res
 }
+
+// marshalExecutionsExecutionScriptPayloadToExecutionScriptPayloadRequestBody
+// builds a value of type *ExecutionScriptPayloadRequestBody from a value of
+// type *executions.ExecutionScriptPayload.
+func marshalExecutionsExecutionScriptPayloadToExecutionScriptPayloadRequestBody(v *executions.ExecutionScriptPayload) *ExecutionScriptPayloadRequestBody {
+	if v == nil {
+		return nil
+	}
+	res := &ExecutionScriptPayloadRequestBody{
+		Body: v.Body,
+		Name: v.Name,
+		Cwd:  v.Cwd,
+	}
+
+	return res
+}
+
+// marshalExecutionScriptPayloadRequestBodyToExecutionsExecutionScriptPayload
+// builds a value of type *executions.ExecutionScriptPayload from a value of
+// type *ExecutionScriptPayloadRequestBody.
+func marshalExecutionScriptPayloadRequestBodyToExecutionsExecutionScriptPayload(v *ExecutionScriptPayloadRequestBody) *executions.ExecutionScriptPayload {
+	if v == nil {
+		return nil
+	}
+	res := &executions.ExecutionScriptPayload{
+		Body: v.Body,
+		Name: v.Name,
+		Cwd:  v.Cwd,
+	}
+
+	return res
+}

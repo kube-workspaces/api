@@ -21,8 +21,9 @@ type Service interface {
 	List(context.Context, *ListPayload) (res []*ExecutionRecord, err error)
 	// Get an execution record and its last known outcome
 	Get(context.Context, *GetPayload) (res *ExecutionRecord, err error)
-	// Execute one bounded root (Linux) or SYSTEM (Windows) command in an eligible
-	// running agent-equipped VM and return its recorded outcome synchronously
+	// Execute one bounded root (Linux) or SYSTEM (Windows) command or script in an
+	// eligible running agent-equipped VM and return its recorded outcome
+	// synchronously
 	Start(context.Context, *StartPayload) (res *ExecutionCommand, err error)
 	// Verify recording integrity and audit protected playback access
 	Manifest(context.Context, *ManifestPayload) (res *ExecutionRecordingManifest, err error)
@@ -138,6 +139,16 @@ type ExecutionRecordingManifest struct {
 	Verified       bool
 }
 
+// Inline script to write to a temp file and execute via shebang
+type ExecutionScriptPayload struct {
+	// Script content
+	Body string
+	// Optional filename hint (e.g. run.sh, script.ps1)
+	Name *string
+	// Optional working directory for the script
+	Cwd *string
+}
+
 // ExecutionStatus is the result type of the executions service status method.
 type ExecutionStatus struct {
 	// Whether VM execution is enabled by policy
@@ -188,13 +199,15 @@ type StartPayload struct {
 	// Workspace name
 	WorkspaceName string
 	// Absolute path or name of the program to run
-	Executable string
+	Executable *string
 	// Arguments passed to the executable verbatim
 	Args []string
 	// Optional working directory for the new process
 	Cwd *string
 	// Guest execution deadline in seconds
 	DeadlineSeconds int
+	// Script to execute (mutually exclusive with executable/args)
+	Script *ExecutionScriptPayload
 }
 
 // Scoped execution permission is required

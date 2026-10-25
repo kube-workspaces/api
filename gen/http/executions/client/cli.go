@@ -100,10 +100,7 @@ func BuildStartPayload(executionsStartBody string) (*executions.StartPayload, er
 	{
 		err = json.Unmarshal([]byte(executionsStartBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"args\": [\n         \"Quas ut reiciendis minus odio quas facilis.\",\n         \"Doloribus aut facilis et.\",\n         \"In quaerat culpa non vitae.\"\n      ],\n      \"cwd\": \"C:\\\\Temp\",\n      \"deadline_seconds\": 4,\n      \"executable\": \"C:\\\\Windows\\\\System32\\\\cmd.exe\",\n      \"namespace\": \"team-a\",\n      \"workspace_name\": \"vm-1\"\n   }'")
-		}
-		if body.Args == nil {
-			err = goa.MergeErrors(err, goa.MissingFieldError("args", "body"))
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"args\": [\n         \"Doloribus aut facilis et.\",\n         \"In quaerat culpa non vitae.\",\n         \"Perspiciatis dolorem distinctio accusamus quis nam.\"\n      ],\n      \"cwd\": \"C:\\\\Temp\",\n      \"deadline_seconds\": 19,\n      \"executable\": \"C:\\\\Windows\\\\System32\\\\cmd.exe\",\n      \"namespace\": \"team-a\",\n      \"script\": {\n         \"body\": \"0\",\n         \"cwd\": \"jf3\",\n         \"name\": \"cim\"\n      },\n      \"workspace_name\": \"vm-1\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.namespace", body.Namespace, "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"))
 		if utf8.RuneCountInString(body.Namespace) > 63 {
@@ -113,11 +110,15 @@ func BuildStartPayload(executionsStartBody string) (*executions.StartPayload, er
 		if utf8.RuneCountInString(body.WorkspaceName) > 253 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.workspace_name", body.WorkspaceName, utf8.RuneCountInString(body.WorkspaceName), 253, false))
 		}
-		if utf8.RuneCountInString(body.Executable) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.executable", body.Executable, utf8.RuneCountInString(body.Executable), 1, true))
+		if body.Executable != nil {
+			if utf8.RuneCountInString(*body.Executable) < 1 {
+				err = goa.MergeErrors(err, goa.InvalidLengthError("body.executable", *body.Executable, utf8.RuneCountInString(*body.Executable), 1, true))
+			}
 		}
-		if utf8.RuneCountInString(body.Executable) > 1024 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.executable", body.Executable, utf8.RuneCountInString(body.Executable), 1024, false))
+		if body.Executable != nil {
+			if utf8.RuneCountInString(*body.Executable) > 1024 {
+				err = goa.MergeErrors(err, goa.InvalidLengthError("body.executable", *body.Executable, utf8.RuneCountInString(*body.Executable), 1024, false))
+			}
 		}
 		if len(body.Args) > 64 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.args", body.Args, len(body.Args), 64, false))
@@ -132,6 +133,11 @@ func BuildStartPayload(executionsStartBody string) (*executions.StartPayload, er
 		}
 		if body.DeadlineSeconds > 20 {
 			err = goa.MergeErrors(err, goa.InvalidRangeError("body.deadline_seconds", body.DeadlineSeconds, 20, false))
+		}
+		if body.Script != nil {
+			if err2 := ValidateExecutionScriptPayloadRequestBody(body.Script); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
 		}
 		if err != nil {
 			return nil, err
@@ -149,14 +155,15 @@ func BuildStartPayload(executionsStartBody string) (*executions.StartPayload, er
 		for i, val := range body.Args {
 			v.Args[i] = val
 		}
-	} else {
-		v.Args = []string{}
 	}
 	{
 		var zero int
 		if v.DeadlineSeconds == zero {
 			v.DeadlineSeconds = 20
 		}
+	}
+	if body.Script != nil {
+		v.Script = marshalExecutionScriptPayloadRequestBodyToExecutionsExecutionScriptPayload(body.Script)
 	}
 
 	return v, nil

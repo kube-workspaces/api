@@ -174,10 +174,46 @@ func newExecutionID(prefix string) (string, error) {
 // validateStartCommand mirrors the guest's structural pilot bounds so an
 // out-of-bounds command is rejected before anything is admitted or staged.
 func validateStartCommand(p *executions.StartPayload) error {
-	if p.Namespace == "" || p.WorkspaceName == "" || p.Executable == "" {
+	if p.Namespace == "" || p.WorkspaceName == "" {
+		return errors.New("namespace and workspace name are required")
+	}
+	if p.Script != nil {
+		if p.Executable != nil || p.Args != nil {
+			return errors.New("script is mutually exclusive with executable and args")
+		}
+		if p.Script.Body == "" {
+			return errors.New("script body is required")
+		}
+		if len(p.Script.Body) > 65536 {
+			return errors.New("script body is too large")
+		}
+		if strings.IndexFunc(p.Script.Body, func(r rune) bool { return r == 0 }) >= 0 {
+			return errors.New("script body contains null bytes")
+		}
+		if p.Script.Name != nil {
+			name := *p.Script.Name
+			if len(name) > 128 || strings.ContainsAny(name, "/\\") || strings.IndexFunc(name, unicode.IsControl) >= 0 {
+				return errors.New("script name is out of bounds")
+			}
+		}
+		if p.Cwd != nil {
+			cwd := *p.Cwd
+			if cwd == "" || len(cwd) > qga.MaxCwdBytes || strings.TrimSpace(cwd) != cwd || strings.IndexFunc(cwd, unicode.IsControl) >= 0 {
+				return errors.New("cwd is out of bounds")
+			}
+		}
+		if p.DeadlineSeconds < 1 || p.DeadlineSeconds > qga.MaxDeadlineSeconds {
+			return errors.New("deadline_seconds must be between 1 and 20")
+		}
+		return nil
+	}
+	if p.Executable == nil || p.Args == nil {
+		return errors.New("namespace, workspace name, executable and args are required")
+	}
+	if *p.Executable == "" {
 		return errors.New("namespace, workspace name and executable are required")
 	}
-	if strings.TrimSpace(p.Executable) != p.Executable || strings.IndexFunc(p.Executable, unicode.IsControl) >= 0 {
+	if strings.TrimSpace(*p.Executable) != *p.Executable || strings.IndexFunc(*p.Executable, unicode.IsControl) >= 0 {
 		return errors.New("executable is missing or out of bounds")
 	}
 	if len(p.Args) > qga.MaxArgs {
@@ -352,14 +388,33 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 		return nil, managementError("unavailable", "execution admission unavailable")
 	}
 	rec := session.Record()
+	execName := ""
+	var execArgs []string
+	if p.Script != nil {
+		execName = "[script]"
+		execArgs = []string{}
+	} else if p.Executable != nil {
+		execName = *p.Executable
+		if p.Args != nil {
+			execArgs = p.Args
+		}
+	}
+	var cwd *string
+	if p.Cwd != nil {
+		c := *p.Cwd
+		cwd = &c
+	} else if p.Script != nil && p.Script.Cwd != nil {
+		c := *p.Script.Cwd
+		cwd = &c
+	}
 	chunk, err := json.Marshal(recordingStart{
 		ProvisioningGeneration: target.VMUID,
 		RevocationEpoch:        target.RevocationEpoch,
 		Type:                   "start",
 		Time:                   time.Now().UTC().Format(time.RFC3339),
-		Executable:             p.Executable,
-		Args:                   p.Args,
-		Cwd:                    p.Cwd,
+		Executable:             execName,
+		Args:                   execArgs,
+		Cwd:                    cwd,
 		DeadlineSeconds:        p.DeadlineSeconds,
 	})
 	if err == nil {
@@ -381,15 +436,35 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	runCtx, cancelRun := s.runContext(ctx, p.DeadlineSeconds)
 	defer cancelRun()
 	log.Printf(runCtx, "executions.start execution=%s namespace=%s workspace=%s", executionID, p.Namespace, p.WorkspaceName)
-	result, execErr := s.qga.Execute(runCtx, target, qga.Command{
+	cmd := qga.Command{
 		ActorUID:        user.UID,
 		ExecutionID:     executionID,
 		RecordingID:     recordingID,
-		Executable:      p.Executable,
-		Args:            p.Args,
-		Cwd:             p.Cwd,
+		Executable:      "",
+		Args:            []string{},
 		DeadlineSeconds: p.DeadlineSeconds,
-	})
+	}
+	if p.Script != nil {
+		name := ""
+		if p.Script.Name != nil {
+			name = *p.Script.Name
+		}
+		cwd := p.Cwd
+		if p.Script.Cwd != nil {
+			cwd = p.Script.Cwd
+		}
+		cmd.Script = &qga.Script{Body: p.Script.Body, Name: name}
+		cmd.Cwd = cwd
+	} else {
+		if p.Executable != nil {
+			cmd.Executable = *p.Executable
+		}
+		if p.Args != nil {
+			cmd.Args = p.Args
+		}
+		cmd.Cwd = p.Cwd
+	}
+	result, execErr := s.qga.Execute(runCtx, target, cmd)
 	// Finalization gets its own caller-independent budget: even an expired run
 	// budget must not turn a known outcome into a recording gap.
 	finishCtx, cancelFinish := finalizeContext(ctx)

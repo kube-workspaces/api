@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -280,6 +282,10 @@ type guestExecStatus struct {
 // other protocol failure without a parsed result returns ErrTransport: an
 // unknown outcome.
 func (b *Bridge) Run(ctx context.Context, target Target, executionID string, envelope, keysJSON []byte, deadlineSeconds int) (*GuestResult, error) {
+	return b.runWithExtras(ctx, target, executionID, envelope, keysJSON, deadlineSeconds, nil)
+}
+
+func (b *Bridge) runWithExtras(ctx context.Context, target Target, executionID string, envelope, keysJSON []byte, deadlineSeconds int, extras map[string][]byte) (*GuestResult, error) {
 	if !validExecutionID(executionID) {
 		return nil, fmt.Errorf("%w: execution id is not safe to stage", ErrTransport)
 	}
@@ -304,9 +310,17 @@ func (b *Bridge) Run(ctx context.Context, target Target, executionID string, env
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 		defer cancel()
 		_ = b.stageFile(cleanup, target, envelopePath, nil)
+		for _, path := range extraPaths(dataDir, target.Linux, extras) {
+			_ = b.stageFile(cleanup, target, path, nil)
+		}
 	}()
 	if err := b.stageFile(ctx, target, envelopePath, envelope); err != nil {
 		return nil, err
+	}
+	for path, content := range extras {
+		if err := b.stageFile(ctx, target, path, content); err != nil {
+			return nil, err
+		}
 	}
 	var started guestExecStart
 	start := map[string]any{
@@ -390,6 +404,51 @@ func parseRunnerResult(raw []byte) (*GuestResult, error) {
 		DurationMS: parsed.DurationMS,
 		Denial:     parsed.Denial,
 	}, nil
+}
+
+func extraPaths(dataDir string, linux bool, extras map[string][]byte) []string {
+	if len(extras) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(extras))
+	for path := range extras {
+		paths = append(paths, path)
+	}
+	return paths
+}
+
+// RunWithExtras stages extras for tests/callers.
+func (b *Bridge) RunWithExtras(ctx context.Context, target Target, executionID string, envelope, keysJSON []byte, deadlineSeconds int, extras map[string][]byte) (*GuestResult, error) {
+	return b.runWithExtras(ctx, target, executionID, envelope, keysJSON, deadlineSeconds, extras)
+}
+
+// ScriptPath builds the script staging path for a target.
+func ScriptPath(target Target, executionID, name string) string {
+	name = sanitizeName(name)
+	if target.Linux {
+		if name == "" {
+			name = "script.sh"
+		}
+		return "/var/lib/workspace-agent/script-" + executionID + "-" + name
+	}
+	if name == "" {
+		name = "script.ps1"
+	}
+	return `C:\ProgramData\workspace-agent\script-` + executionID + "-" + name
+}
+
+func sanitizeName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r == '/' || r == '\\' || r == ':' || unicode.IsControl(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return b.String()
 }
 
 // validExecutionID keeps generated ids safe inside a fixed Windows path.
