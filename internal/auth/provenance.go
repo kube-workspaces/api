@@ -45,6 +45,9 @@ func passwordReference(user *unstructured.Unstructured) (string, string, error) 
 }
 
 func localCredentialState(user, secret *unstructured.Unstructured) (string, bool, error) {
+	if err := validatePasswordOwner(user, secret); err != nil {
+		return "", false, err
+	}
 	if secret.GetDeletionTimestamp() != nil {
 		return "", false, fmt.Errorf("password credential deleting")
 	}

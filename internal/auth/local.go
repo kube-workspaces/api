@@ -91,13 +91,6 @@ func ValidatePasswordComplexity(password string) error {
 	return nil
 }
 
-// localAuthSecretName returns the conventional Secret name for a local user's
-// password material, given their slugified identifier. Matches the naming
-// convention used by the controller's bootstrap-admin reconciliation.
-func localAuthSecretName(slug string) string {
-	return fmt.Sprintf("kw-user-%s-local-auth", slug)
-}
-
 // HandleLocalLogin authenticates a user via email/password and, on success,
 // issues the same kind of session token/cookie as the OIDC flow.
 func (h *LocalAuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
@@ -317,6 +310,10 @@ func (h *LocalAuthHandler) HandleChangePassword(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	if err := h.provider.validateExclusivePassword(ctx, userCR, secret); err != nil {
+		writeJSONError(w, http.StatusConflict, "credential_ownership_conflict", err.Error())
+		return
+	}
 	if err := h.provider.replacePasswordHash(ctx, secret, passwordKey, newHash, false); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "failed to update password")
 		return
@@ -332,6 +329,10 @@ func (h *LocalAuthHandler) HandleChangePassword(w http.ResponseWriter, r *http.R
 		}
 		if current.GetUID() != userCR.GetUID() {
 			return fmt.Errorf("account replaced")
+		}
+		currentName, currentKey, refErr := passwordReference(current)
+		if refErr != nil || currentName != secretName || currentKey != passwordKey {
+			return fmt.Errorf("credential reference changed again")
 		}
 		latest, err := h.provider.GetPasswordSecret(ctx, secretName)
 		if err != nil {
@@ -394,10 +395,6 @@ func ProvisionLocalUser(ctx context.Context, provider *ConfigProvider, email, di
 	}
 
 	name := slugifyEmail(email)
-	secretName := localAuthSecretName(name)
-	if err := provider.CreatePasswordSecret(ctx, secretName, hash, password); err != nil {
-		return "", "", fmt.Errorf("failed to create password secret: %w", err)
-	}
 
 	user := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -415,19 +412,20 @@ func ProvisionLocalUser(ctx context.Context, provider *ConfigProvider, email, di
 				"role":        role,
 				"disabled":    false,
 				"groups":      toInterfaceSlice(groups),
-				"localAuth": map[string]interface{}{
-					"enabled": true,
-					"passwordSecretRef": map[string]interface{}{
-						"name": secretName,
-						"key":  "passwordHash",
-					},
-					"mustChangePassword": true,
-				},
 			},
 		},
 	}
 
-	if _, err := provider.CreateUser(ctx, user); err != nil {
+	user, err = provider.CreateUser(ctx, user)
+	if err != nil {
+		return "", "", err
+	}
+	secretName, err := provider.CreateOwnedPasswordSecret(ctx, user, hash, password)
+	if err != nil {
+		return "", "", fmt.Errorf("account created without a local credential; enable its local password to resume: %w", err)
+	}
+	_ = unstructured.SetNestedMap(user.Object, map[string]interface{}{"enabled": true, "passwordSecretRef": map[string]interface{}{"name": secretName, "key": "passwordHash"}, "mustChangePassword": true}, "spec", "localAuth")
+	if _, err := provider.UpdateUser(ctx, user); err != nil {
 		return "", "", err
 	}
 
@@ -462,15 +460,10 @@ func ResetLocalUserPassword(ctx context.Context, provider *ConfigProvider, userN
 		return "", err
 	}
 
-	_, key, err := passwordReference(userCR)
+	// Reset also migrates legacy/shared credentials without altering the source.
+	// Publishing a fresh reference atomically revokes only this UID's local method.
+	secretName, err = provider.CreateOwnedPasswordSecret(ctx, userCR, hash, password)
 	if err != nil {
-		return "", err
-	}
-	secret, err := provider.GetPasswordSecret(ctx, secretName)
-	if err != nil {
-		return "", err
-	}
-	if err := provider.replacePasswordHash(ctx, secret, key, hash, true); err != nil {
 		return "", err
 	}
 
@@ -483,6 +476,7 @@ func ResetLocalUserPassword(ctx context.Context, provider *ConfigProvider, userN
 		localAuth = make(map[string]interface{})
 	}
 	localAuth["mustChangePassword"] = true
+	localAuth["passwordSecretRef"] = map[string]interface{}{"name": secretName, "key": "passwordHash"}
 	spec["localAuth"] = localAuth
 	unstructured.SetNestedMap(userCR.Object, spec, "spec")
 

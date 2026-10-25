@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -14,9 +15,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-// Adoption is deliberately narrower than general delegated linking: an admin
-// approves one existing, unbound OIDC-only UID and its current email. A verified
-// provider round trip must prove that exact email before supplying issuer/sub.
+// An administrator approves one exact UID and its current email. A verified
+// provider round trip must prove that email before supplying issuer/sub. Legacy
+// invitations retain their narrower, unbound OIDC-only scope; general delegated
+// approvals also snapshot the account spec and require an explicit target UID.
 // Neither the invitation nor email equality alone is a login credential.
 type identityAdoption struct {
 	UserName   string `json:"userName"`
@@ -26,13 +28,28 @@ type identityAdoption struct {
 	ClientID   string `json:"clientID"`
 	AdminToken string `json:"adminToken"`
 	ExpiresAt  int64  `json:"expiresAt"`
+	// SpecRevision marks a general delegated approval, scoped to the complete
+	// account spec the administrator approved. Empty retains legacy-only scope.
+	SpecRevision string `json:"specRevision,omitempty"`
+}
+
+func adoptionSpecRevision(u *unstructured.Unstructured) string {
+	data, _ := json.Marshal(u.Object["spec"])
+	return fmt.Sprintf("%x", sha256.Sum256(data))
 }
 
 func adoptionAccountMatches(a identityAdoption, u *unstructured.Unstructured) error {
 	email, _, emailErr := unstructured.NestedString(u.Object, "spec", "email")
 	local, _, localErr := unstructured.NestedBool(u.Object, "spec", "localAuth", "enabled")
 	bindings, bindingErr := identityBindings(u)
-	if !identityAccountValid(u) || string(u.GetUID()) != a.UserUID || emailErr != nil || email == "" || email != a.Email || localErr != nil || local || bindingErr != nil || len(bindings) != 0 {
+	if !identityAccountValid(u) || string(u.GetUID()) != a.UserUID || emailErr != nil || email == "" || email != a.Email || localErr != nil || bindingErr != nil {
+		return ErrIdentityConflict
+	}
+	if a.SpecRevision != "" {
+		if adoptionSpecRevision(u) != a.SpecRevision {
+			return ErrIdentityConflict
+		}
+	} else if local || len(bindings) != 0 {
 		return ErrIdentityConflict
 	}
 	return nil
@@ -78,7 +95,8 @@ func (h *OIDCHandler) validateAdoption(ctx context.Context, cfg *Config, a ident
 // or the recipient's signed (readable) OIDC state cookie.
 func (h *OIDCHandler) HandleCreateIdentityAdoption(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	if r.Method != http.MethodPost || r.Header.Get("X-KW-Link-Intent") != "adopt-legacy-identity" {
+	delegated := r.Header.Get("X-KW-Link-Intent") == "link-account-identity"
+	if r.Method != http.MethodPost || (!delegated && r.Header.Get("X-KW-Link-Intent") != "adopt-legacy-identity") {
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", "explicit legacy adoption intent required")
 		return
 	}
@@ -93,6 +111,7 @@ func (h *OIDCHandler) HandleCreateIdentityAdoption(w http.ResponseWriter, r *htt
 	}
 	var body struct {
 		UserName string `json:"userName"`
+		UserUID  string `json:"userUID"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body); err != nil || body.UserName == "" {
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", "userName is required")
@@ -105,8 +124,15 @@ func (h *OIDCHandler) HandleCreateIdentityAdoption(w http.ResponseWriter, r *htt
 	}
 	email, _, _ := unstructured.NestedString(u.Object, "spec", "email")
 	a := identityAdoption{UserName: u.GetName(), UserUID: string(u.GetUID()), Email: email, Issuer: cfg.IssuerURL, ClientID: cfg.ClientID, AdminToken: sessionTokenFromRequest(r), ExpiresAt: time.Now().Add(authStateTTL).Unix()}
+	if delegated {
+		if body.UserUID == "" || body.UserUID != a.UserUID {
+			writeJSONError(w, http.StatusConflict, "adoption_denied", "the exact target User UID is required; refresh the account list")
+			return
+		}
+		a.SpecRevision = adoptionSpecRevision(u)
+	}
 	if _, err := h.adoptionTarget(r.Context(), a); err != nil {
-		writeJSONError(w, http.StatusConflict, "adoption_denied", "an enabled, unambiguous, unbound OIDC-only account is required")
+		writeJSONError(w, http.StatusConflict, "adoption_denied", "an enabled, unambiguous account within the approved linking scope is required")
 		return
 	}
 	code, err := h.issueAdoption(a, "adoption-invitation")

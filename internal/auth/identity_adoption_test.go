@@ -236,6 +236,86 @@ func TestLegacyAdoptionRequiresVerifiedIdentityAndPreservesAccount(t *testing.T)
 	}
 }
 
+func TestDelegatedLinkingLocalAndDualAccounts(t *testing.T) {
+	for _, mode := range []string{"local", "dual", "wrong-uid", "concurrent-change", "wrong-email"} {
+		t.Run(mode, func(t *testing.T) {
+			claims := IDTokenClaims{Sub: "delegated-subject", Email: "cookie@example.com", EmailVerified: true}
+			if mode == "wrong-email" {
+				claims.Email = "different@example.com"
+			}
+			idp := newFakeIDP(t, claims)
+			h, adminToken, target := adoptionFixture(t, testConfig(idp.URL))
+			ctx := context.Background()
+			_ = unstructured.SetNestedMap(target.Object, map[string]interface{}{"enabled": true, "passwordSecretRef": map[string]interface{}{"name": "retained-password", "key": "passwordHash"}}, "spec", "localAuth")
+			if mode == "dual" {
+				_ = unstructured.SetNestedSlice(target.Object, []interface{}{map[string]interface{}{"issuer": "https://old.example.com", "subject": "retained-subject"}}, "spec", "externalIdentities")
+			}
+			var err error
+			target, err = h.provider.UpdateUser(ctx, target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			uid := string(target.GetUID())
+			if mode == "wrong-uid" {
+				uid = "replacement-uid"
+			}
+			payload, _ := json.Marshal(map[string]string{"userName": target.GetName(), "userUID": uid})
+			req := httptest.NewRequest("POST", "/auth/oidc/adoptions", strings.NewReader(string(payload)))
+			req.Header.Set("X-KW-Link-Intent", "link-account-identity")
+			req.Header.Set("Authorization", "Bearer "+adminToken)
+			rec := httptest.NewRecorder()
+			h.HandleCreateIdentityAdoption(rec, req)
+			if mode == "wrong-uid" {
+				if rec.Code != http.StatusConflict {
+					t.Fatal("approval accepted replacement UID")
+				}
+				return
+			}
+			if rec.Code != http.StatusOK {
+				t.Fatalf("delegated approval: %d %s", rec.Code, rec.Body.String())
+			}
+			var body struct{ AdoptionURL string }
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			u, _ := url.Parse(body.AdoptionURL)
+			cookie := startAdoption(t, h, u.Query().Get("code"), adminToken)
+			if mode == "concurrent-change" {
+				changed := target.DeepCopy()
+				_ = unstructured.SetNestedField(changed.Object, "viewer", "spec", "role")
+				if _, err := h.provider.UpdateUser(ctx, changed); err != nil {
+					t.Fatal(err)
+				}
+			}
+			other := NewOIDCHandler(h.provider)
+			t.Cleanup(other.Close)
+			rec = httptest.NewRecorder()
+			other.HandleCallback(rec, callbackRequest(t, cookie))
+			bound, err := h.provider.GetUserByIdentity(ctx, ExternalIdentity{Issuer: idp.URL, Subject: "delegated-subject"})
+			if mode == "concurrent-change" || mode == "wrong-email" {
+				if err == nil {
+					t.Fatal("changed approval scope accepted")
+				}
+				return
+			}
+			if err != nil || rec.Code != http.StatusFound || sessionCookie(rec) != nil || bound.GetUID() != target.GetUID() {
+				t.Fatalf("delegated callback: %d %v", rec.Code, err)
+			}
+			before, _, _ := unstructured.NestedMap(target.Object, "spec")
+			after, _, _ := unstructured.NestedMap(bound.Object, "spec")
+			delete(before, "externalIdentities")
+			delete(after, "externalIdentities")
+			if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(target.Object["status"], bound.Object["status"]) {
+				t.Fatal("delegated linking changed credentials, namespace, ownership or grants")
+			}
+			bindings, _ := identityBindings(bound)
+			if (mode == "dual" && len(bindings) != 2) || (mode == "local" && len(bindings) != 1) {
+				t.Fatal("delegated linking replaced existing bindings")
+			}
+		})
+	}
+}
+
 func TestLegacyAdoptionRevalidatesApprovalAndTarget(t *testing.T) {
 	for _, mode := range []string{"wrong email", "unverified email", "admin demoted", "admin disabled", "target disabled", "target replaced", "email changed", "local enabled", "already bound", "expired", "provider changed"} {
 		t.Run(mode, func(t *testing.T) {

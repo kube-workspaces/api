@@ -529,8 +529,8 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 					json.NewEncoder(w).Encode(map[string]string{"error": hashErr.Error()})
 					return
 				}
-				secretName := fmt.Sprintf("kw-user-%s-local-auth", name)
-				if createErr := authProvider.CreatePasswordSecret(r.Context(), secretName, hash, password); createErr != nil {
+				secretName, createErr := authProvider.CreateOwnedPasswordSecret(r.Context(), user, hash, password)
+				if createErr != nil {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusInternalServerError)
 					json.NewEncoder(w).Encode(map[string]string{"error": createErr.Error()})
@@ -598,12 +598,8 @@ func handleHTTPServer(ctx context.Context, u *url.URL, workspacesEndpoints *work
 			json.NewEncoder(w).Encode(map[string]string{"error": "user name is required"})
 			return
 		}
-		// Best-effort cleanup of the local-auth password secret, if any.
-		if userCR, getErr := authProvider.GetUser(r.Context(), name); getErr == nil {
-			if secretName, _, _ := unstructured.NestedString(userCR.Object, "spec", "localAuth", "passwordSecretRef", "name"); secretName != "" {
-				_ = authProvider.DeletePasswordSecret(r.Context(), secretName)
-			}
-		}
+		// UID-owned credentials are garbage-collected with their User. Retain
+		// unowned legacy Secrets: other accounts may still reference them.
 		if err := authProvider.DeleteUser(r.Context(), name); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)

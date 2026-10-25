@@ -184,14 +184,6 @@ func TestValidatePasswordComplexity(t *testing.T) {
 	}
 }
 
-func TestLocalAuthSecretName(t *testing.T) {
-	got := localAuthSecretName("admin-at-local")
-	want := "kw-user-admin-at-local-local-auth"
-	if got != want {
-		t.Errorf("localAuthSecretName() = %q, want %q", got, want)
-	}
-}
-
 func TestLockoutBackoff(t *testing.T) {
 	tests := []struct {
 		attempts int
