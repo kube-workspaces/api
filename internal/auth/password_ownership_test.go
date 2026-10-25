@@ -89,6 +89,27 @@ func TestProvisionedCredentialUsesPersistedUIDAndRejectsSlugCollision(t *testing
 		u.SetUID("persisted-local-uid")
 		return false, nil, nil
 	})
+	cl.PrependReactor("create", "secrets", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		secret := action.(clienttesting.CreateAction).GetObject().(*unstructured.Unstructured)
+		if secret.GetAnnotations()[passwordUserUIDAnnotation] != "persisted-local-uid" {
+			return false, nil, nil
+		}
+		obj, err := cl.Tracker().Get(userGVR, "", "first-last-at-example-com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		user := obj.(*unstructured.Unstructured).DeepCopy()
+		// The controller's typed User drops these omitempty zero values when
+		// adding its finalizer, unlike the dynamic fake's normal behaviour.
+		for _, field := range []string{"displayName", "groups", "disabled"} {
+			unstructured.RemoveNestedField(user.Object, "spec", field)
+		}
+		user.SetFinalizers([]string{"kubeworkspaces.io/user-finalizer"})
+		if err := cl.Tracker().Update(userGVR, user, ""); err != nil {
+			t.Fatal(err)
+		}
+		return false, nil, nil
+	})
 	ctx := context.Background()
 	_, name, err := ProvisionLocalUser(ctx, h.provider, "first.last@example.com", "", "editor", "Initial-password-123!", nil)
 	if err != nil {

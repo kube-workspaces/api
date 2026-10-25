@@ -407,13 +407,19 @@ func ProvisionLocalUser(ctx context.Context, provider *ConfigProvider, email, di
 				},
 			},
 			"spec": map[string]interface{}{
-				"email":       email,
-				"displayName": displayName,
-				"role":        role,
-				"disabled":    false,
-				"groups":      toInterfaceSlice(groups),
+				"email": email,
+				"role":  role,
 			},
 		},
+	}
+	// Match the controller's typed omitempty representation. Its initial
+	// finalizer write must not look like an administrative spec change merely
+	// because it omits an empty display name, groups or disabled=false.
+	if displayName != "" {
+		_ = unstructured.SetNestedField(user.Object, displayName, "spec", "displayName")
+	}
+	if len(groups) != 0 {
+		_ = unstructured.SetNestedSlice(user.Object, toInterfaceSlice(groups), "spec", "groups")
 	}
 
 	user, err = provider.CreateUser(ctx, user)
