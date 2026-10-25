@@ -137,6 +137,11 @@ func main() {
 		log.Fatal(ctx, fmt.Errorf("failed to create image client: %w", err))
 	}
 
+	imageRepoClient, err := k8s.NewImageRepositoryClient()
+	if err != nil {
+		log.Fatal(ctx, fmt.Errorf("failed to create image repository client: %w", err))
+	}
+
 	var metricsBuffer *k8s.MetricsBuffer
 	metricsClient, err := k8s.NewMetricsClient()
 	if err != nil {
@@ -379,7 +384,7 @@ func main() {
 			} else if u.Port() == "" {
 				u.Host = net.JoinHostPort(u.Host, "80")
 			}
-			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, agentEndpoints, executionsEndpoints, agentUpgradesEndpoints, wsClient, coreClient, crdClient, imageClient, metricsBuffer, dynClient, podDefaultClient, displaySessions, &wg, errc, *dbgF)
+			handleHTTPServer(ctx, u, workspacesEndpoints, volumesEndpoints, imagesEndpoints, namespacesEndpoints, sshkeysEndpoints, healthEndpoints, displayEndpoints, agentEndpoints, executionsEndpoints, agentUpgradesEndpoints, wsClient, coreClient, crdClient, imageClient, imageRepoClient, metricsBuffer, dynClient, podDefaultClient, displaySessions, &wg, errc, *dbgF)
 		}
 
 	default:
