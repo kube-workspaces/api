@@ -47,7 +47,7 @@ func UsageCommands() []string {
 
 // UsageExamples produces an example of a valid invocation of the CLI tool.
 func UsageExamples() string {
-	return os.Args[0] + " " + "agentupgrades availability --name \"Fuga accusantium.\" --namespace \"Dolor quod culpa autem.\"" + "\n" +
+	return os.Args[0] + " " + "agentupgrades availability --name \"Beatae debitis ut.\" --namespace \"Consequatur laboriosam alias nam porro optio praesentium.\"" + "\n" +
 		os.Args[0] + " " + "workspaces gpu-profiles" + "\n" +
 		os.Args[0] + " " + "volumes list --namespace \"workspaces\"" + "\n" +
 		os.Args[0] + " " + "sshkeys list --namespace \"chris-at-fordham-id-au\"" + "\n" +
@@ -783,7 +783,7 @@ func agentupgradesAvailabilityUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades availability --name \"Fuga accusantium.\" --namespace \"Dolor quod culpa autem.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades availability --name \"Beatae debitis ut.\" --namespace \"Consequatur laboriosam alias nam porro optio praesentium.\"")
 }
 
 func agentupgradesStartUsage() {
@@ -827,7 +827,7 @@ func agentupgradesStatusUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades status --name \"Dolore autem corporis fuga blanditiis repellat facilis.\" --attempt-id \"upg_ff27074f0f21374a804439da\" --namespace \"Quam officiis maiores aut non.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "agentupgrades status --name \"Quisquam consequatur saepe voluptas ea dolor.\" --attempt-id \"upg_374a804439da2bb3792faf38\" --namespace \"Quis possimus soluta.\"")
 }
 
 func agentupgradesCancelUsage() {
