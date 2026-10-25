@@ -101,6 +101,16 @@ type ListResponseBody []*ImageResponse
 type CreateResponseBody struct {
 	// Kubernetes resource name (metadata.name)
 	CrName string `form:"cr_name" json:"cr_name" xml:"cr_name"`
+	// Origin ImageRepository resource name; absent when provenance is not recorded
+	SourceRepository *string `form:"source_repository,omitempty" json:"source_repository,omitempty" xml:"source_repository,omitempty"`
+	// Git URL of the originating image catalog
+	SourceRepositoryURL *string `form:"source_repository_url,omitempty" json:"source_repository_url,omitempty" xml:"source_repository_url,omitempty"`
+	// Git ref used by the originating image catalog
+	SourceRepositoryRef *string `form:"source_repository_ref,omitempty" json:"source_repository_ref,omitempty" xml:"source_repository_ref,omitempty"`
+	// Git commit from which the Image CR was imported
+	SourceRepositoryCommit *string `form:"source_repository_commit,omitempty" json:"source_repository_commit,omitempty" xml:"source_repository_commit,omitempty"`
+	// Image CR file path within the originating image catalog
+	SourceRepositoryPath *string `form:"source_repository_path,omitempty" json:"source_repository_path,omitempty" xml:"source_repository_path,omitempty"`
 	// Display name
 	Name string `form:"name" json:"name" xml:"name"`
 	// Full image reference
@@ -177,6 +187,16 @@ type CreateResponseBody struct {
 type ImageResponse struct {
 	// Kubernetes resource name (metadata.name)
 	CrName string `form:"cr_name" json:"cr_name" xml:"cr_name"`
+	// Origin ImageRepository resource name; absent when provenance is not recorded
+	SourceRepository *string `form:"source_repository,omitempty" json:"source_repository,omitempty" xml:"source_repository,omitempty"`
+	// Git URL of the originating image catalog
+	SourceRepositoryURL *string `form:"source_repository_url,omitempty" json:"source_repository_url,omitempty" xml:"source_repository_url,omitempty"`
+	// Git ref used by the originating image catalog
+	SourceRepositoryRef *string `form:"source_repository_ref,omitempty" json:"source_repository_ref,omitempty" xml:"source_repository_ref,omitempty"`
+	// Git commit from which the Image CR was imported
+	SourceRepositoryCommit *string `form:"source_repository_commit,omitempty" json:"source_repository_commit,omitempty" xml:"source_repository_commit,omitempty"`
+	// Image CR file path within the originating image catalog
+	SourceRepositoryPath *string `form:"source_repository_path,omitempty" json:"source_repository_path,omitempty" xml:"source_repository_path,omitempty"`
 	// Display name
 	Name string `form:"name" json:"name" xml:"name"`
 	// Full image reference
@@ -437,6 +457,11 @@ func NewListResponseBody(res []*images.Image) ListResponseBody {
 func NewCreateResponseBody(res *imagesviews.ImageView) *CreateResponseBody {
 	body := &CreateResponseBody{
 		CrName:                 *res.CrName,
+		SourceRepository:       res.SourceRepository,
+		SourceRepositoryURL:    res.SourceRepositoryURL,
+		SourceRepositoryRef:    res.SourceRepositoryRef,
+		SourceRepositoryCommit: res.SourceRepositoryCommit,
+		SourceRepositoryPath:   res.SourceRepositoryPath,
 		Name:                   *res.Name,
 		Image:                  *res.Image,
 		Description:            res.Description,

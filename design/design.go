@@ -519,6 +519,11 @@ var ImageResult = ResultType("application/vnd.image+json", func() {
 		Attribute("cr_name", String, "Kubernetes resource name (metadata.name)", func() {
 			Example("code-server")
 		})
+		Attribute("source_repository", String, "Origin ImageRepository resource name; absent when provenance is not recorded")
+		Attribute("source_repository_url", String, "Git URL of the originating image catalog")
+		Attribute("source_repository_ref", String, "Git ref used by the originating image catalog")
+		Attribute("source_repository_commit", String, "Git commit from which the Image CR was imported")
+		Attribute("source_repository_path", String, "Image CR file path within the originating image catalog")
 		Attribute("name", String, "Display name", func() {
 			Example("Code Server (VS Code)")
 		})

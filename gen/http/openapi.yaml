@@ -1848,7 +1848,7 @@ definitions:
                 pattern: ^upg_[0-9a-f]{24}$
             awaiting_reboot_at:
                 type: string
-                example: "1979-07-26T03:32:02Z"
+                example: "2002-08-11T16:09:32Z"
                 format: date-time
             cancel_requested:
                 type: boolean
@@ -1868,7 +1868,7 @@ definitions:
                 pattern: ^[0-9a-f]{64}$
             installing_at:
                 type: string
-                example: "1976-12-22T07:16:59Z"
+                example: "2003-11-30T02:47:12Z"
                 format: date-time
             journal_sequence:
                 type: integer
@@ -1881,7 +1881,7 @@ definitions:
             predecessor_manifest_sha256:
                 type: string
                 description: Pinned rollback predecessor manifest digest
-                example: 2a86a226bb520fa1db85d46a4f81c9c9b318d7e09529320b9d86a7937479158e
+                example: 81c9c9b318d7e09529320b9d86a7937479158e059bb59c7ee18e74f37e393d78
                 pattern: ^[0-9a-f]{64}$
             predecessor_target_id:
                 type: string
@@ -1889,7 +1889,7 @@ definitions:
                 example: windows11-amd64-v1
             prepared_at:
                 type: string
-                example: "1976-01-16T17:20:42Z"
+                example: "1970-07-15T15:16:03Z"
                 format: date-time
             recording_id:
                 type: string
@@ -1901,15 +1901,15 @@ definitions:
                 example: /v1/executions/exec_9f82/recording
             rollback_requested_at:
                 type: string
-                example: "2008-11-02T19:45:22Z"
+                example: "1975-07-27T04:41:21Z"
                 format: date-time
             rolling_back_at:
                 type: string
-                example: "2000-11-04T21:41:46Z"
+                example: "2002-03-13T06:56:47Z"
                 format: date-time
             staging_at:
                 type: string
-                example: "1978-10-08T09:48:17Z"
+                example: "1978-01-16T05:49:19Z"
                 format: date-time
             state:
                 type: string
@@ -1944,15 +1944,15 @@ definitions:
                 pattern: ^[0-9a-f]{64}$
             terminal_at:
                 type: string
-                example: "2008-12-15T01:27:10Z"
+                example: "2005-04-17T10:59:41Z"
                 format: date-time
             updated_at:
                 type: string
-                example: "1974-12-07T19:50:21Z"
+                example: "2015-04-27T10:14:56Z"
                 format: date-time
             verifying_at:
                 type: string
-                example: "1988-04-17T18:50:31Z"
+                example: "1978-12-12T01:21:24Z"
                 format: date-time
             vm_uid:
                 type: string
@@ -1970,29 +1970,29 @@ definitions:
             admitted_at: "2026-10-19T00:00:00Z"
             allow_reboot: false
             attempt_id: upg_9f82c1a0b3d4e5f60718293a
-            awaiting_reboot_at: "2005-04-09T01:33:01Z"
+            awaiting_reboot_at: "2012-07-06T22:58:26Z"
             cancel_requested: false
             error_code: ""
             execution_id: exec_9f82
             expected_installed_inventory_sha256: 810151abf0615815b24e01967ec665e0eb583500f1eb5fa456361935b22b183b
-            installing_at: "1972-11-25T09:20:13Z"
+            installing_at: "1974-04-10T12:21:04Z"
             journal_sequence: 0
             namespace: team-a
-            predecessor_manifest_sha256: 72b9496516bd075e91db61d6b65d90550b827da641f9db0c58619f138ac11127
+            predecessor_manifest_sha256: b61d6b65d90550b827da641f9db0c58619f138ac11127bfd567245db62faa7ec
             predecessor_target_id: windows11-amd64-v1
-            prepared_at: "1988-01-29T03:17:27Z"
+            prepared_at: "1970-02-21T20:29:07Z"
             recording_id: rec_9f82
             recording_url: /v1/executions/exec_9f82/recording
-            rollback_requested_at: "1975-02-21T06:53:29Z"
-            rolling_back_at: "2003-12-12T02:11:08Z"
-            staging_at: "1995-12-08T01:21:14Z"
+            rollback_requested_at: "1997-07-08T16:30:41Z"
+            rolling_back_at: "1995-05-08T21:39:25Z"
+            staging_at: "1977-03-22T08:38:40Z"
             state: admitted
             status_url: /v1/workspaces/vm-1/agent-upgrades/upg_9f82c1a0b3d4e5f60718293a?namespace=team-a
             target_id: windows11-amd64-v2
             target_manifest_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-            terminal_at: "1993-10-23T17:44:43Z"
-            updated_at: "1986-06-13T23:40:29Z"
-            verifying_at: "1986-01-21T06:10:59Z"
+            terminal_at: "1995-09-12T13:50:25Z"
+            updated_at: "2015-05-05T19:39:29Z"
+            verifying_at: "1989-11-21T01:37:27Z"
             vm_uid: 0d3f9a7e-6b1c-4f2a-9e8d-1a2b3c4d5e6f
             workspace_name: vm-1
             workspace_uid: abc123
@@ -2174,7 +2174,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Sunt sed et.
+                    example: Ex quas eius omnis ut odit.
                 description: Default command-line args
                 example:
                     - --bind-addr
@@ -2272,11 +2272,11 @@ definitions:
             memory_limit:
                 type: string
                 description: Guest memory default
-                example: Tenetur rem dignissimos.
+                example: Et amet facilis dolor nobis rerum distinctio.
             memory_request:
                 type: string
                 description: Guest memory request default
-                example: Suscipit est neque.
+                example: Eos quo possimus.
             name:
                 type: string
                 description: Display name
@@ -2288,7 +2288,7 @@ definitions:
             persistent_root_disk_size:
                 type: string
                 description: Persistent root capacity
-                example: Natus quos officia consectetur a cum.
+                example: Enim libero ad.
             privileged:
                 type: boolean
                 description: Run container in privileged mode
@@ -2306,7 +2306,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Ipsam quis voluptatem.
+                    example: Dolorem cum magnam harum reiciendis ea vero.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -2321,7 +2321,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Quidem quibusdam velit.
+                    example: Quis vitae similique.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -2357,11 +2357,11 @@ definitions:
                   url: https://github.com/coder/code-server
                 - title: Docker Hub
                   url: https://hub.docker.com/r/codercom/code-server
-            memory_limit: A impedit ut id cumque.
-            memory_request: Ut dolor.
+            memory_limit: Placeat omnis nesciunt aut.
+            memory_request: Qui explicabo reprehenderit numquam et.
             name: Code Server (VS Code)
             persistent_root_disk: false
-            persistent_root_disk_size: Est ut est et.
+            persistent_root_disk_size: Quas sunt provident facere impedit.
             privileged: false
             proxy_config:
                 custom_request_headers:
@@ -2455,7 +2455,7 @@ definitions:
                 type: string
                 description: 'Volume type: container PVC or reusable CDI blank VM disk'
                 default: pvc
-                example: vm-disk
+                example: pvc
                 enum:
                     - pvc
                     - vm-disk
@@ -2509,7 +2509,7 @@ definitions:
                     nvidia.com/gpu: "true"
                 additionalProperties:
                     type: string
-                    example: Maxime et rerum.
+                    example: Veritatis natus.
             shared_memory:
                 type: boolean
                 description: Mount /dev/shm as an emptyDir with medium=Memory (required for Chrome, ML frameworks)
@@ -2643,7 +2643,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Autem minus quis quo id quo.
+                    example: Eius deleniti voluptas aut voluptas.
                 description: Supported display transports
                 example:
                     - rfb
@@ -2716,7 +2716,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Illum commodi nobis voluptatem.
+                    example: Ex est velit.
                 description: Supported display transports
                 example:
                     - rfb
@@ -2857,6 +2857,10 @@ definitions:
                       id: 97f8c4b7a2
                       joined_at: "2026-09-19T15:04:05Z"
                       role: observer
+                    - connected: false
+                      id: 97f8c4b7a2
+                      joined_at: "2026-09-19T15:04:05Z"
+                      role: observer
             participants:
                 type: integer
                 description: Total participant count (controller + observers)
@@ -2877,10 +2881,6 @@ definitions:
             enabled: false
             epoch: 8f2ac64d91
             observers:
-                - connected: false
-                  id: 97f8c4b7a2
-                  joined_at: "2026-09-19T15:04:05Z"
-                  role: observer
                 - connected: false
                   id: 97f8c4b7a2
                   joined_at: "2026-09-19T15:04:05Z"
@@ -2989,56 +2989,70 @@ definitions:
                 type: string
                 description: Standard error, truncated to the pilot output bound
                 example:
-                    - 81
+                    - 84
+                    - 101
+                    - 109
+                    - 112
+                    - 111
+                    - 114
+                    - 105
+                    - 98
                     - 117
-                    - 97
                     - 115
                     - 32
-                    - 113
+                    - 115
                     - 117
-                    - 111
-                    - 100
-                    - 32
-                    - 97
+                    - 110
                     - 116
-                    - 113
-                    - 117
-                    - 101
                     - 46
                 format: byte
             stdout:
                 type: string
                 description: Standard output, truncated to the pilot output bound
                 example:
-                    - 65
+                    - 77
+                    - 105
+                    - 110
+                    - 105
+                    - 109
+                    - 97
+                    - 32
                     - 117
                     - 116
                     - 32
-                    - 113
-                    - 117
-                    - 97
-                    - 115
-                    - 105
-                    - 32
-                    - 113
-                    - 117
-                    - 105
-                    - 97
-                    - 32
-                    - 110
-                    - 111
-                    - 110
-                    - 32
-                    - 111
-                    - 109
-                    - 110
-                    - 105
-                    - 115
-                    - 32
                     - 101
                     - 115
-                    - 115
+                    - 116
+                    - 32
+                    - 105
+                    - 108
+                    - 108
+                    - 111
+                    - 32
+                    - 110
+                    - 105
+                    - 104
+                    - 105
+                    - 108
+                    - 32
                     - 101
+                    - 108
+                    - 105
+                    - 103
+                    - 101
+                    - 110
+                    - 100
+                    - 105
+                    - 32
+                    - 111
+                    - 99
+                    - 99
+                    - 97
+                    - 101
+                    - 99
+                    - 97
+                    - 116
+                    - 105
                     - 46
                 format: byte
             truncated:
@@ -3065,55 +3079,68 @@ definitions:
             recording_id: rec_9f82
             state: succeeded
             stderr:
-                - 73
-                - 112
-                - 115
-                - 97
+                - 84
+                - 101
                 - 109
-                - 32
-                - 101
+                - 112
+                - 111
+                - 114
+                - 105
+                - 98
+                - 117
                 - 115
-                - 115
-                - 101
                 - 32
                 - 114
                 - 101
-                - 99
+                - 109
+                - 32
+                - 112
+                - 97
+                - 114
+                - 105
+                - 97
+                - 116
                 - 117
-                - 115
-                - 97
+                - 114
+                - 32
                 - 110
-                - 100
-                - 97
                 - 101
+                - 109
+                - 111
+                - 32
+                - 118
+                - 111
+                - 108
+                - 117
+                - 112
+                - 116
+                - 97
+                - 116
+                - 101
+                - 115
+                - 32
+                - 101
+                - 120
+                - 99
+                - 101
+                - 112
+                - 116
+                - 117
+                - 114
+                - 105
+                - 32
+                - 97
+                - 112
+                - 101
+                - 114
+                - 105
+                - 97
+                - 109
                 - 46
             stdout:
-                - 68
-                - 111
-                - 108
-                - 111
-                - 114
-                - 101
-                - 115
-                - 32
-                - 105
-                - 112
-                - 115
-                - 97
-                - 32
-                - 113
+                - 81
                 - 117
                 - 105
-                - 32
-                - 109
-                - 111
-                - 108
-                - 101
-                - 115
-                - 116
-                - 105
-                - 97
-                - 115
                 - 32
                 - 99
                 - 111
@@ -3124,15 +3151,12 @@ definitions:
                 - 105
                 - 115
                 - 32
-                - 105
-                - 110
-                - 118
+                - 115
                 - 101
-                - 110
-                - 116
-                - 111
-                - 114
+                - 100
+                - 32
                 - 101
+                - 97
                 - 46
             truncated: false
             workspace_name: vm-1
@@ -3176,7 +3200,7 @@ definitions:
             end_time:
                 type: string
                 description: RFC3339 timestamp
-                example: "1972-04-28T23:02:31Z"
+                example: "1988-12-24T17:20:09Z"
                 format: date-time
             execution_id:
                 type: string
@@ -3220,7 +3244,7 @@ definitions:
             start_time:
                 type: string
                 description: RFC3339 timestamp
-                example: "2014-03-24T14:25:47Z"
+                example: "1994-10-11T01:07:46Z"
                 format: date-time
             state:
                 type: string
@@ -3257,7 +3281,7 @@ definitions:
             deny_reason: ""
             durability: none
             elevated: false
-            end_time: "2008-05-29T10:30:01Z"
+            end_time: "2005-05-04T11:34:21Z"
             execution_id: exec_9f82
             exit_code: 0
             grant_version: "1.0"
@@ -3267,7 +3291,7 @@ definitions:
             os_identity: root
             recording_id: rec_9f82
             recording_lost: false
-            start_time: "1979-09-15T07:55:23Z"
+            start_time: "2012-07-06T02:38:20Z"
             state: succeeded
             termination: graceful
             workspace_generation: 3
@@ -3291,45 +3315,27 @@ definitions:
                 type: string
                 description: Base64-encoded plaintext recording data
                 example:
-                    - 82
-                    - 101
+                    - 65
+                    - 108
                     - 105
-                    - 99
-                    - 105
-                    - 101
-                    - 110
-                    - 100
-                    - 105
-                    - 115
-                    - 32
-                    - 110
-                    - 117
-                    - 109
                     - 113
                     - 117
-                    - 97
-                    - 109
+                    - 105
+                    - 100
                     - 32
-                    - 97
-                    - 99
-                    - 99
+                    - 118
+                    - 111
+                    - 108
                     - 117
-                    - 115
-                    - 97
-                    - 109
-                    - 117
-                    - 115
-                    - 32
-                    - 97
-                    - 115
                     - 112
-                    - 101
-                    - 114
-                    - 110
-                    - 97
                     - 116
+                    - 97
+                    - 115
+                    - 32
+                    - 113
                     - 117
-                    - 114
+                    - 111
+                    - 115
                     - 46
                 format: byte
             index:
@@ -3339,14 +3345,9 @@ definitions:
                 format: int64
         example:
             data:
-                - 69
-                - 108
-                - 105
-                - 103
-                - 101
-                - 110
-                - 100
-                - 105
+                - 65
+                - 117
+                - 116
                 - 32
                 - 100
                 - 101
@@ -3356,40 +3357,6 @@ definitions:
                 - 117
                 - 110
                 - 116
-                - 32
-                - 110
-                - 101
-                - 109
-                - 111
-                - 32
-                - 101
-                - 117
-                - 109
-                - 32
-                - 114
-                - 101
-                - 112
-                - 114
-                - 101
-                - 104
-                - 101
-                - 110
-                - 100
-                - 101
-                - 114
-                - 105
-                - 116
-                - 32
-                - 100
-                - 105
-                - 115
-                - 116
-                - 105
-                - 110
-                - 99
-                - 116
-                - 105
-                - 111
                 - 46
             index: 0
         required:
@@ -3401,23 +3368,23 @@ definitions:
         properties:
             chunks:
                 type: integer
-                example: 15003614892842092488
+                example: 4273928424775565000
                 format: int64
             plaintext_bytes:
                 type: integer
-                example: 4181429424842293574
+                example: 2038555331276025256
                 format: int64
             recording_id:
                 type: string
-                example: Numquam exercitationem voluptatibus ut placeat nemo consequatur.
+                example: Et eligendi.
             verified:
                 type: boolean
-                example: true
+                example: false
         example:
-            chunks: 8121866621087370602
-            plaintext_bytes: 2040430318616563892
-            recording_id: Qui officia cumque laudantium rerum.
-            verified: false
+            chunks: 13723724521613463665
+            plaintext_bytes: 3383933288113971620
+            recording_id: Distinctio animi et.
+            verified: true
         required:
             - recording_id
             - chunks
@@ -3430,25 +3397,25 @@ definitions:
             body:
                 type: string
                 description: Script content
-                example: "5"
+                example: 6nk
                 minLength: 1
                 maxLength: 65536
             cwd:
                 type: string
                 description: Optional working directory for the script
-                example: j96
+                example: 42f
                 maxLength: 1024
             name:
                 type: string
                 description: Optional filename hint (e.g. run.sh, script.ps1)
-                example: ai1
+                example: h3t
                 pattern: ^[^/\\]+$
                 maxLength: 128
         description: Inline script to write to a temp file and execute via shebang
         example:
-            body: "37"
-            cwd: 7cs
-            name: no3
+            body: t7n
+            cwd: oer
+            name: 3l1
         required:
             - body
     ExecutionStatus:
@@ -3507,12 +3474,12 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Illum minima ut est illo nihil.
+                    example: Id placeat modi maxime amet.
                 description: Arguments passed to the executable verbatim
                 example:
-                    - Et temporibus sunt laborum qui.
-                    - Sed ea totam temporibus rem.
-                    - Nemo voluptates excepturi.
+                    - Sunt et.
+                    - Deserunt quisquam et.
+                    - Consequatur est autem consectetur quia rem sapiente.
                 maxItems: 64
             cwd:
                 type: string
@@ -3523,7 +3490,7 @@ definitions:
                 type: integer
                 description: Guest execution deadline in seconds
                 default: 20
-                example: 10
+                example: 9
                 format: int64
                 minimum: 1
                 maximum: 20
@@ -3549,11 +3516,11 @@ definitions:
                 maxLength: 253
         example:
             args:
-                - Consequatur rerum dolor blanditiis voluptatum non eligendi.
-                - Ex quisquam.
-                - Sit iusto sunt in commodi quasi mollitia.
+                - Consequatur eius numquam itaque ut qui.
+                - Cumque laudantium rerum iste.
+                - Dignissimos blanditiis reiciendis numquam.
             cwd: C:\Temp
-            deadline_seconds: 15
+            deadline_seconds: 8
             executable: C:\Windows\System32\cmd.exe
             namespace: team-a
             script:
@@ -3592,7 +3559,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Totam eos voluptas fuga.
+                    example: Deleniti consequatur necessitatibus.
                 description: Default command-line args injected at workspace creation
                 example:
                     - --bind-addr
@@ -3685,20 +3652,20 @@ definitions:
                       url: https://hub.docker.com/r/codercom/code-server
             memory_limit:
                 type: string
-                example: Eveniet dolores.
+                example: Quibusdam velit voluptates ut reprehenderit natus quos.
             memory_request:
                 type: string
-                example: Repellendus aut esse.
+                example: Consectetur a cum sit tenetur rem dignissimos.
             name:
                 type: string
                 description: Display name
                 example: Code Server (VS Code)
             persistent_root_disk:
                 type: boolean
-                example: false
+                example: true
             persistent_root_disk_size:
                 type: string
-                example: Libero consectetur ratione nostrum ipsam autem nemo.
+                example: Sed et rerum.
             privileged:
                 type: boolean
                 description: Run container in privileged mode
@@ -3707,6 +3674,26 @@ definitions:
                 $ref: '#/definitions/ImageProxyConfig'
             remote_desktop:
                 $ref: '#/definitions/ImageRemoteDesktop'
+            source_repository:
+                type: string
+                description: Origin ImageRepository resource name; absent when provenance is not recorded
+                example: Qui minima aperiam ducimus non.
+            source_repository_commit:
+                type: string
+                description: Git commit from which the Image CR was imported
+                example: Autem enim accusantium.
+            source_repository_path:
+                type: string
+                description: Image CR file path within the originating image catalog
+                example: Delectus cupiditate harum.
+            source_repository_ref:
+                type: string
+                description: Git ref used by the originating image catalog
+                example: Eum totam eos voluptas fuga.
+            source_repository_url:
+                type: string
+                description: Git URL of the originating image catalog
+                example: Consectetur molestiae est sed qui cupiditate.
             source_url:
                 type: string
                 description: Source code repository URL
@@ -3715,7 +3702,7 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Eum aliquid veritatis natus quo eveniet non.
+                    example: Voluptatem libero consectetur ratione nostrum ipsam.
                 description: Tags for filtering/searching images
                 example:
                     - development
@@ -3723,12 +3710,12 @@ definitions:
             vm_profile:
                 type: string
                 description: Controller-supported guest profile
-                example: Delectus cupiditate harum.
+                example: Ipsam quis voluptatem.
             workspace_types:
                 type: array
                 items:
                     type: string
-                    example: Autem enim accusantium.
+                    example: Laudantium aut temporibus omnis.
                 description: Workspace types this image supports (container, vm, scratch). Empty means container-only
                 example:
                     - container
@@ -3766,11 +3753,11 @@ definitions:
                   url: https://github.com/coder/code-server
                 - title: Docker Hub
                   url: https://hub.docker.com/r/codercom/code-server
-            memory_limit: Et ex deleniti consequatur necessitatibus omnis.
-            memory_request: Aut temporibus omnis.
+            memory_limit: Mollitia odio aperiam.
+            memory_request: Nisi aut omnis aspernatur atque.
             name: Code Server (VS Code)
             persistent_root_disk: true
-            persistent_root_disk_size: Quia incidunt aut eos.
+            persistent_root_disk_size: Sapiente illum commodi nobis voluptatem autem.
             privileged: false
             proxy_config:
                 custom_request_headers:
@@ -3786,11 +3773,16 @@ definitions:
                 path: /
                 port: 8080
                 protocol: agent
+            source_repository: Suscipit est neque.
+            source_repository_commit: Sit a impedit ut id.
+            source_repository_path: Id ut dolor eos autem.
+            source_repository_ref: Ut est.
+            source_repository_url: Ut sequi.
             source_url: https://github.com/coder/code-server
             tags:
                 - development
                 - vscode
-            vm_profile: Quia qui ratione dolor quia quia.
+            vm_profile: Quis quo id quo.
             workspace_types:
                 - container
         required:
@@ -3863,17 +3855,17 @@ definitions:
                     x-tenant: workspaces
                 additionalProperties:
                     type: string
-                    example: Omnis omnis qui minima aperiam ducimus non.
+                    example: Quia qui ratione dolor quia quia.
             inject_base_tag:
                 type: boolean
                 description: Inject a <base> tag into HTML responses to fix relative path resolution
                 default: false
-                example: false
+                example: true
             needs_noop_sw:
                 type: boolean
                 description: Serve a no-op ServiceWorker at /sw.js to prevent SW registration errors
                 default: false
-                example: true
+                example: false
             preserve_path_prefix:
                 type: boolean
                 description: Forward the full proxy path (including /proxy/{ns}/{name}) to the pod instead of stripping it. Required for apps configured with a base URL matching the proxy prefix.
@@ -3888,12 +3880,12 @@ definitions:
                 type: boolean
                 description: Connect to backend over HTTPS with skip-verify (for self-signed certs)
                 default: false
-                example: true
+                example: false
             websocket_paths:
                 type: array
                 items:
                     type: string
-                    example: Dicta dolores officia.
+                    example: Ut eveniet dolores ex repellendus aut.
                 description: Paths that use WebSocket (informational, all paths support WS transparently)
                 example:
                     - /websockify
@@ -3901,9 +3893,9 @@ definitions:
         example:
             custom_request_headers:
                 x-tenant: workspaces
-            inject_base_tag: false
-            needs_noop_sw: false
-            preserve_path_prefix: false
+            inject_base_tag: true
+            needs_noop_sw: true
+            preserve_path_prefix: true
             rewrite_host_absolute_paths: true
             tls_insecure: false
             websocket_paths:
@@ -3925,7 +3917,7 @@ definitions:
             protocol:
                 type: string
                 description: 'Protocol name: "selkies" (Linux in-guest agent) or "agent" (cross-platform kw-agent)'
-                example: selkies
+                example: agent
                 enum:
                     - selkies
                     - agent
@@ -3933,7 +3925,7 @@ definitions:
         example:
             path: /
             port: 8080
-            protocol: selkies
+            protocol: agent
         required:
             - protocol
             - port
@@ -3945,7 +3937,7 @@ definitions:
                 type: string
                 description: Initial role. Defaults to observer
                 default: observer
-                example: controller
+                example: observer
                 enum:
                     - observer
                     - controller
@@ -4092,20 +4084,20 @@ definitions:
         properties:
             count:
                 type: integer
-                example: 7480353911980388663
+                example: 8879948673462926866
                 format: int64
             display_name:
                 type: string
-                example: Nulla aut deserunt enim.
+                example: Et accusamus.
             experimental:
                 type: boolean
                 example: true
             guest_driver_version:
                 type: string
-                example: Non libero.
+                example: Et quas qui quia dicta non.
             id:
                 type: string
-                example: Et enim modi ut voluptatum aliquid voluptas.
+                example: Qui et vel rem.
             kind:
                 type: string
                 example: mediated
@@ -4115,26 +4107,26 @@ definitions:
             node_selector:
                 type: object
                 example:
-                    Eius tempora eos enim aperiam non hic.: Ut reiciendis voluptas aut quia reprehenderit deleniti.
-                    Molestiae qui placeat delectus sed.: Et quas qui quia dicta non.
-                    Qui sed ipsum necessitatibus.: Sed ut ratione necessitatibus eum animi molestiae.
+                    Sed ut ratione necessitatibus eum animi molestiae.: Molestiae qui placeat delectus sed.
+                    Ut reiciendis voluptas aut quia reprehenderit deleniti.: Qui sed ipsum necessitatibus.
                 additionalProperties:
                     type: string
-                    example: Laborum est qui.
+                    example: Tempora eos enim aperiam non.
             resource_name:
                 type: string
-                example: Et vel rem commodi.
+                example: Laborum est qui.
         description: Operator-declared render-only Windows GPU contract; driver version is required configuration, not observed guest readiness
         example:
-            count: 7933284968927104283
-            display_name: Est consectetur expedita beatae et ex voluptas.
+            count: 2823127507759540384
+            display_name: Ut repudiandae itaque quos est.
             experimental: false
-            guest_driver_version: Atque nihil modi deleniti quae.
-            id: Et ut repudiandae itaque.
-            kind: mediated
+            guest_driver_version: Quia enim est atque nihil modi.
+            id: Libero ullam ut.
+            kind: pci
             node_selector:
-                Maxime repellendus voluptas nisi nisi similique dignissimos.: Veritatis dicta et ipsa quia enim.
-            resource_name: Voluptate non perspiciatis modi quia qui.
+                Perspiciatis modi quia qui est.: Dolorem at maxime.
+                Voluptas nisi.: Similique dignissimos facilis veritatis dicta et.
+            resource_name: Expedita beatae et ex.
         required:
             - id
             - display_name
@@ -4151,31 +4143,31 @@ definitions:
             gpu_profile:
                 type: string
                 description: Versioned operator-approved VM GPU profile ID; omitted/empty keeps software graphics
-                example: 3o5
+                example: k7h
                 maxLength: 63
             import_cert_config_map_name:
                 type: string
                 description: Same-namespace registry CA ConfigMap
-                example: Optio quo ducimus amet explicabo.
+                example: Sed aspernatur eveniet.
             import_secret_name:
                 type: string
                 description: Same-namespace CDI accessKeyId/secretKey Secret
-                example: Saepe recusandae rerum possimus dolorem vel quasi.
+                example: Quia voluptatem nisi sapiente natus.
             root_disk_size:
                 type: string
                 description: Persistent Windows root capacity, at least 80Gi
-                example: Quia voluptatem nisi sapiente natus.
+                example: Doloribus quae assumenda dolor.
             storage_class_name:
                 type: string
                 description: Persistent root StorageClass; empty uses cluster default
-                example: Laborum enim sed id.
+                example: Enim ut.
         description: Namespaced Windows root import settings; credentials remain in Kubernetes Secrets
         example:
-            gpu_profile: "233"
-            import_cert_config_map_name: Doloribus quae assumenda dolor.
-            import_secret_name: Enim ut.
-            root_disk_size: Pariatur necessitatibus nihil expedita dolor.
-            storage_class_name: Ipsa doloribus expedita expedita ut nisi.
+            gpu_profile: 13y
+            import_cert_config_map_name: Necessitatibus nihil expedita dolor molestiae repellat.
+            import_secret_name: Ut nisi similique.
+            root_disk_size: Et quae et in vero optio voluptatum.
+            storage_class_name: Quidem sunt maxime et rerum.
     Volume:
         title: 'Mediatype identifier: application/vnd.volume+json; view=default'
         type: object
@@ -4196,7 +4188,7 @@ definitions:
                     workspace: my-workspace
                 additionalProperties:
                     type: string
-                    example: Quae et in vero optio.
+                    example: Non possimus porro dicta dolores officia.
             name:
                 type: string
                 description: PVC name
@@ -4221,7 +4213,7 @@ definitions:
                 type: string
                 description: 'Volume type: pvc or vm-disk'
                 default: pvc
-                example: vm-disk
+                example: pvc
                 enum:
                     - pvc
                     - vm-disk
@@ -4318,7 +4310,7 @@ definitions:
             execution_identity:
                 type: string
                 description: Configured elevated command identity hint, not live runner readiness; admission verifies policy, ownership and installed runner
-                example: root
+                example: SYSTEM
                 enum:
                     - root
                     - SYSTEM
@@ -4350,7 +4342,7 @@ definitions:
             provisioned:
                 type: boolean
                 description: Windows native setup and bootstrap removal have completed
-                example: true
+                example: false
             ready_replicas:
                 type: integer
                 description: Number of ready replicas
@@ -4376,7 +4368,7 @@ definitions:
             vm_profile:
                 type: string
                 description: Resolved guest profile; windows11-amd64-v1 uses display-only native provisioning
-                example: Voluptas ea.
+                example: Laboriosam doloribus voluptas ea hic libero.
             volume_mounts:
                 type: array
                 items:
@@ -4401,14 +4393,14 @@ definitions:
             cpu_limit: "1"
             cpu_request: 500m
             created_at: "2025-01-02T15:04:05Z"
-            execution_identity: root
+            execution_identity: SYSTEM
             image: codercom/code-server:latest
             memory_limit: 2Gi
             memory_request: 512Mi
             name: my-workspace
             namespace: workspaces
             port: 8080
-            provisioned: false
+            provisioned: true
             ready_replicas: 1
             remote_desktop:
                 path: /
@@ -4428,7 +4420,7 @@ definitions:
                     Neque animi eligendi.: Illo voluptas.
                     Voluptatem eligendi eos.: Aspernatur nam nobis.
                 resource_name: Vel aut culpa ut alias aut autem.
-            vm_profile: Quia deserunt et voluptatibus ab ratione.
+            vm_profile: Et voluptatibus ab ratione labore.
             volume_mounts:
                 - mount_path: /home/coder
                   name: my-workspace-data
@@ -4478,21 +4470,24 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Commodi et.
+                    example: Minima recusandae deserunt nobis eos.
                 description: Container argument override, passed verbatim
                 example:
-                    - Quia reiciendis dolorem minus.
-                    - Esse nesciunt quasi.
-                    - Provident minima recusandae deserunt nobis.
+                    - Eum voluptate harum est voluptatem voluptatum aut.
+                    - Qui amet exercitationem deserunt laudantium aspernatur.
+                    - Sint dolore.
+                    - Distinctio nihil.
             command:
                 type: array
                 items:
                     type: string
-                    example: Rem aut accusamus nihil doloribus ipsam voluptate.
+                    example: Ad fugit error rerum facilis quis.
                 description: Container entrypoint override, passed verbatim
                 example:
-                    - Fugit error rerum facilis.
-                    - Voluptatem omnis aut nobis.
+                    - Aut nobis.
+                    - Commodi et.
+                    - Animi quia reiciendis dolorem minus molestiae esse.
+                    - Quasi velit.
             cpu_limit:
                 type: string
                 description: CPU limit
@@ -4539,13 +4534,12 @@ definitions:
         description: Container specification for a workspace
         example:
             args:
+                - Recusandae rerum.
+                - Dolorem vel quasi et optio quo ducimus.
+                - Explicabo quam laborum enim sed id.
+            command:
                 - Voluptatem sed aperiam doloremque.
                 - Ipsa dignissimos dolores quas sed autem quia.
-            command:
-                - Et eum voluptate harum.
-                - Voluptatem voluptatum aut doloremque qui.
-                - Exercitationem deserunt laudantium aspernatur deserunt sint.
-                - In distinctio nihil.
             cpu_limit: "2"
             cpu_request: 500m
             gpu_request: "1"
@@ -4564,13 +4558,13 @@ definitions:
         properties:
             password:
                 type: string
-                example: Rerum molestias quam quo a.
+                example: Quo a vero ratione ut et aspernatur.
             username:
                 type: string
-                example: Quae enim.
+                example: Enim quia rerum molestias.
         example:
-            password: Non rerum nobis ut.
-            username: Ratione ut et aspernatur accusamus.
+            password: Rem aut accusamus nihil doloribus ipsam voluptate.
+            username: Dolor non rerum nobis ut.
         required:
             - username
             - password
@@ -4625,9 +4619,9 @@ definitions:
         properties:
             profile_id:
                 type: string
-                example: ts5
+                example: s5q
                 maxLength: 63
         example:
-            profile_id: 1tb
+            profile_id: tb3
         required:
             - profile_id

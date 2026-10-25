@@ -110,6 +110,11 @@ func EncodeCreateError(encoder func(context.Context, http.ResponseWriter) goahtt
 func marshalImagesImageToImageResponse(v *images.Image) *ImageResponse {
 	res := &ImageResponse{
 		CrName:                 v.CrName,
+		SourceRepository:       v.SourceRepository,
+		SourceRepositoryURL:    v.SourceRepositoryURL,
+		SourceRepositoryRef:    v.SourceRepositoryRef,
+		SourceRepositoryCommit: v.SourceRepositoryCommit,
+		SourceRepositoryPath:   v.SourceRepositoryPath,
 		Name:                   v.Name,
 		Image:                  v.Image,
 		Description:            v.Description,

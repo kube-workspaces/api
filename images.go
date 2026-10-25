@@ -236,6 +236,11 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 // imageToResult converts an internal Image to the API result type.
 func imageToResult(img *k8s.Image) *images.Image {
 	result := &images.Image{
+		SourceRepository:       nonEmptyStrPtr(img.SourceRepository),
+		SourceRepositoryURL:    nonEmptyStrPtr(img.SourceRepositoryURL),
+		SourceRepositoryRef:    nonEmptyStrPtr(img.SourceRepositoryRef),
+		SourceRepositoryCommit: nonEmptyStrPtr(img.SourceRepositoryCommit),
+		SourceRepositoryPath:   nonEmptyStrPtr(img.SourceRepositoryPath),
 		CrName:                 img.Name,
 		Name:                   img.DisplayName,
 		Image:                  img.Image,
@@ -313,6 +318,13 @@ func imageToResult(img *k8s.Image) *images.Image {
 		}
 	}
 	return result
+}
+
+func nonEmptyStrPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func strPtr(s string) *string {

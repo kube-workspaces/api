@@ -23,6 +23,16 @@ type Image struct {
 type ImageView struct {
 	// Kubernetes resource name (metadata.name)
 	CrName *string
+	// Origin ImageRepository resource name; absent when provenance is not recorded
+	SourceRepository *string
+	// Git URL of the originating image catalog
+	SourceRepositoryURL *string
+	// Git ref used by the originating image catalog
+	SourceRepositoryRef *string
+	// Git commit from which the Image CR was imported
+	SourceRepositoryCommit *string
+	// Image CR file path within the originating image catalog
+	SourceRepositoryPath *string
 	// Display name
 	Name *string
 	// Full image reference
@@ -156,6 +166,11 @@ var (
 	ImageMap = map[string][]string{
 		"default": {
 			"cr_name",
+			"source_repository",
+			"source_repository_url",
+			"source_repository_ref",
+			"source_repository_commit",
+			"source_repository_path",
 			"name",
 			"image",
 			"description",

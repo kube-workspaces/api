@@ -119,6 +119,16 @@ type CreateImagePayload struct {
 type Image struct {
 	// Kubernetes resource name (metadata.name)
 	CrName string
+	// Origin ImageRepository resource name; absent when provenance is not recorded
+	SourceRepository *string
+	// Git URL of the originating image catalog
+	SourceRepositoryURL *string
+	// Git ref used by the originating image catalog
+	SourceRepositoryRef *string
+	// Git commit from which the Image CR was imported
+	SourceRepositoryCommit *string
+	// Image CR file path within the originating image catalog
+	SourceRepositoryPath *string
 	// Display name
 	Name string
 	// Full image reference
@@ -302,6 +312,11 @@ func NewViewedImage(res *Image, view string) *imagesviews.Image {
 // newImage converts projected type Image to service type Image.
 func newImage(vres *imagesviews.ImageView) *Image {
 	res := &Image{
+		SourceRepository:       vres.SourceRepository,
+		SourceRepositoryURL:    vres.SourceRepositoryURL,
+		SourceRepositoryRef:    vres.SourceRepositoryRef,
+		SourceRepositoryCommit: vres.SourceRepositoryCommit,
+		SourceRepositoryPath:   vres.SourceRepositoryPath,
 		Description:            vres.Description,
 		Category:               vres.Category,
 		DefaultPath:            vres.DefaultPath,
@@ -392,6 +407,11 @@ func newImage(vres *imagesviews.ImageView) *Image {
 func newImageView(res *Image) *imagesviews.ImageView {
 	vres := &imagesviews.ImageView{
 		CrName:                 &res.CrName,
+		SourceRepository:       res.SourceRepository,
+		SourceRepositoryURL:    res.SourceRepositoryURL,
+		SourceRepositoryRef:    res.SourceRepositoryRef,
+		SourceRepositoryCommit: res.SourceRepositoryCommit,
+		SourceRepositoryPath:   res.SourceRepositoryPath,
 		Name:                   &res.Name,
 		Image:                  &res.Image,
 		Description:            res.Description,

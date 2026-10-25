@@ -183,6 +183,11 @@ func DecodeCreateResponse(decoder func(*http.Response) goahttp.Decoder, restoreB
 func unmarshalImageResponseToImagesImage(v *ImageResponse) *images.Image {
 	res := &images.Image{
 		CrName:                 *v.CrName,
+		SourceRepository:       v.SourceRepository,
+		SourceRepositoryURL:    v.SourceRepositoryURL,
+		SourceRepositoryRef:    v.SourceRepositoryRef,
+		SourceRepositoryCommit: v.SourceRepositoryCommit,
+		SourceRepositoryPath:   v.SourceRepositoryPath,
 		Name:                   *v.Name,
 		Image:                  *v.Image,
 		Description:            v.Description,

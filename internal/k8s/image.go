@@ -19,34 +19,39 @@ var imageGVR = schema.GroupVersionResource{
 
 // Image represents a parsed Image CR.
 type Image struct {
-	Name                  string
-	DisplayName           string
-	Description           string
-	Category              string
-	Tags                  []string
-	Image                 string
-	DefaultPort           int32
-	DefaultPath           string
-	Icon                  string
-	DefaultArgs           []string
-	DefaultEnv            []ImageEnvVar
-	DefaultCredentials    *ImageCredentials
-	Privileged            bool
-	HomepageURL           string
-	SourceURL             string
-	ImageHomepageURL      string
-	DefaultUser           string
-	DefaultPassword       string
-	DefaultCloudInit      bool
-	DefaultUserData       string
-	DefaultHomedir        string
-	DefaultShell          string
-	Links                 []ImageLink
-	ProxyConfig           *ImageProxyConfig
-	DefaultUID            *int64
-	DefaultSharedMemory   bool
-	DefaultInitContainers []ImageInitContainer
-	AdditionalPorts       []ImagePort
+	SourceRepository       string
+	SourceRepositoryURL    string
+	SourceRepositoryRef    string
+	SourceRepositoryCommit string
+	SourceRepositoryPath   string
+	Name                   string
+	DisplayName            string
+	Description            string
+	Category               string
+	Tags                   []string
+	Image                  string
+	DefaultPort            int32
+	DefaultPath            string
+	Icon                   string
+	DefaultArgs            []string
+	DefaultEnv             []ImageEnvVar
+	DefaultCredentials     *ImageCredentials
+	Privileged             bool
+	HomepageURL            string
+	SourceURL              string
+	ImageHomepageURL       string
+	DefaultUser            string
+	DefaultPassword        string
+	DefaultCloudInit       bool
+	DefaultUserData        string
+	DefaultHomedir         string
+	DefaultShell           string
+	Links                  []ImageLink
+	ProxyConfig            *ImageProxyConfig
+	DefaultUID             *int64
+	DefaultSharedMemory    bool
+	DefaultInitContainers  []ImageInitContainer
+	AdditionalPorts        []ImagePort
 	// DefaultImagePullPolicy is the pull policy applied to workspace containers
 	// created from this image. Empty leaves the container field unset so
 	// Kubernetes applies its own default.
@@ -230,13 +235,18 @@ func parseImage(obj *unstructured.Unstructured) (*Image, error) {
 	}
 
 	img := &Image{
-		Name:        obj.GetName(),
-		DisplayName: strField(spec, "displayName"),
-		Description: strField(spec, "description"),
-		Category:    strField(spec, "category"),
-		Image:       strField(spec, "image"),
-		DefaultPath: strField(spec, "defaultPath"),
-		Icon:        strField(spec, "icon"),
+		SourceRepository:       obj.GetLabels()["kubeworkspaces.io/image-repository"],
+		SourceRepositoryURL:    obj.GetAnnotations()["kubeworkspaces.io/source-url"],
+		SourceRepositoryRef:    obj.GetAnnotations()["kubeworkspaces.io/source-ref"],
+		SourceRepositoryCommit: obj.GetAnnotations()["kubeworkspaces.io/source-commit"],
+		SourceRepositoryPath:   obj.GetAnnotations()["kubeworkspaces.io/source-path"],
+		Name:                   obj.GetName(),
+		DisplayName:            strField(spec, "displayName"),
+		Description:            strField(spec, "description"),
+		Category:               strField(spec, "category"),
+		Image:                  strField(spec, "image"),
+		DefaultPath:            strField(spec, "defaultPath"),
+		Icon:                   strField(spec, "icon"),
 	}
 
 	// Parse tags
