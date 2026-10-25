@@ -65,6 +65,10 @@ type startStack struct {
 }
 
 func newStartStack(t *testing.T, permissions []string, policy map[string]interface{}, stub *stubQGA, options ...ExecutionsOption) *startStack {
+	return newScopedStartStack(t, "team", "vm", permissions, policy, stub, options...)
+}
+
+func newScopedStartStack(t *testing.T, namespace, workspace string, permissions []string, policy map[string]interface{}, stub *stubQGA, options ...ExecutionsOption) *startStack {
 	t.Helper()
 	ctx := context.Background()
 	key := "start-test-signing-key-32-bytes"
@@ -73,7 +77,7 @@ func newStartStack(t *testing.T, permissions []string, policy map[string]interfa
 		permissionValues[i] = permission
 	}
 	grants := []interface{}{map[string]interface{}{
-		"namespace": "team", "workspaces": []interface{}{"vm"},
+		"namespace": namespace, "workspaces": []interface{}{workspace},
 		"permissions": permissionValues,
 	}}
 	user := &unstructured.Unstructured{Object: map[string]interface{}{
@@ -81,7 +85,7 @@ func newStartStack(t *testing.T, permissions []string, policy map[string]interfa
 		"metadata": map[string]interface{}{"name": "operator", "uid": "operator-uid"},
 		"spec": map[string]interface{}{
 			"email": "operator@example.com", "role": "viewer",
-			"namespaceAccess": []interface{}{map[string]interface{}{"namespace": "team", "role": "viewer"}},
+			"namespaceAccess": []interface{}{map[string]interface{}{"namespace": namespace, "role": "viewer"}},
 			"executionGrants": grants,
 		},
 	}}

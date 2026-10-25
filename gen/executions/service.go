@@ -21,8 +21,8 @@ type Service interface {
 	List(context.Context, *ListPayload) (res []*ExecutionRecord, err error)
 	// Get an execution record and its last known outcome
 	Get(context.Context, *GetPayload) (res *ExecutionRecord, err error)
-	// Execute one bounded SYSTEM command in an eligible running Windows VM and
-	// return its recorded outcome synchronously
+	// Execute one bounded root (Linux) or SYSTEM (Windows) command in an eligible
+	// running agent-equipped VM and return its recorded outcome synchronously
 	Start(context.Context, *StartPayload) (res *ExecutionCommand, err error)
 	// Verify recording integrity and audit protected playback access
 	Manifest(context.Context, *ManifestPayload) (res *ExecutionRecordingManifest, err error)

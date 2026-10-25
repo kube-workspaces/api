@@ -286,8 +286,14 @@ func (b *Bridge) Run(ctx context.Context, target Target, executionID string, env
 	if len(envelope) == 0 || len(envelope) > MaxEnvelopeBytes || len(keysJSON) == 0 || len(keysJSON) > maxKeysFileBytes {
 		return nil, fmt.Errorf("%w: staged content is empty or oversized", ErrTransport)
 	}
+	runner, dataDir, keysFile := runnerPath, dataDirPath, keysFilePath
 	envelopePath := dataDirPath + `\qga-request-` + executionID + `.json`
-	if err := b.stageFile(ctx, target, keysFilePath, keysJSON); err != nil {
+	if target.Linux {
+		runner, dataDir = "/usr/local/bin/kw-agent", "/var/lib/workspace-agent"
+		keysFile = dataDir + "/management-grant-keys.json"
+		envelopePath = dataDir + "/qga-request-" + executionID + ".json"
+	}
+	if err := b.stageFile(ctx, target, keysFile, keysJSON); err != nil {
 		return nil, err
 	}
 	// QGA has no guest-file-delete RPC. Truncate and close through supported
@@ -304,8 +310,8 @@ func (b *Bridge) Run(ctx context.Context, target Target, executionID string, env
 	}
 	var started guestExecStart
 	start := map[string]any{
-		"path":           runnerPath,
-		"arg":            []string{"management-exec", "--request-file", envelopePath, "--data-dir", dataDirPath},
+		"path":           runner,
+		"arg":            []string{"management-exec", "--request-file", envelopePath, "--data-dir", dataDir},
 		"capture-output": true,
 	}
 	if err := b.qga(ctx, target, "guest-exec", start, &started); err != nil {

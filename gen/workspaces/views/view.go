@@ -56,6 +56,9 @@ type WorkspaceView struct {
 	// Resolved guest profile; windows11-amd64-v1 uses display-only native
 	// provisioning
 	VMProfile *string
+	// Configured elevated command identity hint, not live runner readiness;
+	// admission verifies policy, ownership and installed runner
+	ExecutionIdentity *string
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool
 	// Resolved GPU contract; absent means software rendering, not guest
@@ -150,6 +153,7 @@ var (
 			"volume_mounts",
 			"remote_desktop",
 			"vm_profile",
+			"execution_identity",
 			"provisioned",
 			"vm_gpu_profile",
 		},
@@ -209,6 +213,11 @@ func ValidateWorkspaceView(result *WorkspaceView) (err error) {
 	if result.RemoteDesktop != nil {
 		if err2 := ValidateImageRemoteDesktopView(result.RemoteDesktop); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if result.ExecutionIdentity != nil {
+		if !(*result.ExecutionIdentity == "root" || *result.ExecutionIdentity == "SYSTEM") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.execution_identity", *result.ExecutionIdentity, []any{"root", "SYSTEM"}))
 		}
 	}
 	if result.VMGpuProfile != nil {

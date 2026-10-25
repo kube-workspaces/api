@@ -1,7 +1,7 @@
 // Package qga implements the server side of the approved QGA pod-exec pilot
 // transport (`qga-pod-exec/v1`): a Kubernetes-authenticated pod exec into the
 // current KubeVirt virt-launcher, driving the fixed installed runner through
-// the QEMU guest agent. It is an explicit opt-in backend for the Windows
+// the QEMU guest agent. It is an explicit opt-in backend for bounded VM
 // command-only pilot and is never a fallback from a failed mTLS management
 // connection; the dedicated mTLS management transport remains the follow-up.
 //

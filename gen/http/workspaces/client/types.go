@@ -112,6 +112,9 @@ type SetGpuProfileResponseBody struct {
 	// Resolved guest profile; windows11-amd64-v1 uses display-only native
 	// provisioning
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Configured elevated command identity hint, not live runner readiness;
+	// admission verifies policy, ownership and installed runner
+	ExecutionIdentity *string `form:"execution_identity,omitempty" json:"execution_identity,omitempty" xml:"execution_identity,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 	// Resolved GPU contract; absent means software rendering, not guest
@@ -164,6 +167,9 @@ type GetResponseBody struct {
 	// Resolved guest profile; windows11-amd64-v1 uses display-only native
 	// provisioning
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Configured elevated command identity hint, not live runner readiness;
+	// admission verifies policy, ownership and installed runner
+	ExecutionIdentity *string `form:"execution_identity,omitempty" json:"execution_identity,omitempty" xml:"execution_identity,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 	// Resolved GPU contract; absent means software rendering, not guest
@@ -209,6 +215,9 @@ type CreateResponseBody struct {
 	// Resolved guest profile; windows11-amd64-v1 uses display-only native
 	// provisioning
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Configured elevated command identity hint, not live runner readiness;
+	// admission verifies policy, ownership and installed runner
+	ExecutionIdentity *string `form:"execution_identity,omitempty" json:"execution_identity,omitempty" xml:"execution_identity,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 	// Resolved GPU contract; absent means software rendering, not guest
@@ -254,6 +263,9 @@ type StartResponseBody struct {
 	// Resolved guest profile; windows11-amd64-v1 uses display-only native
 	// provisioning
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Configured elevated command identity hint, not live runner readiness;
+	// admission verifies policy, ownership and installed runner
+	ExecutionIdentity *string `form:"execution_identity,omitempty" json:"execution_identity,omitempty" xml:"execution_identity,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 	// Resolved GPU contract; absent means software rendering, not guest
@@ -299,6 +311,9 @@ type StopResponseBody struct {
 	// Resolved guest profile; windows11-amd64-v1 uses display-only native
 	// provisioning
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Configured elevated command identity hint, not live runner readiness;
+	// admission verifies policy, ownership and installed runner
+	ExecutionIdentity *string `form:"execution_identity,omitempty" json:"execution_identity,omitempty" xml:"execution_identity,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 	// Resolved GPU contract; absent means software rendering, not guest
@@ -344,6 +359,9 @@ type ResetResponseBody struct {
 	// Resolved guest profile; windows11-amd64-v1 uses display-only native
 	// provisioning
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Configured elevated command identity hint, not live runner readiness;
+	// admission verifies policy, ownership and installed runner
+	ExecutionIdentity *string `form:"execution_identity,omitempty" json:"execution_identity,omitempty" xml:"execution_identity,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 	// Resolved GPU contract; absent means software rendering, not guest
@@ -389,6 +407,9 @@ type CloneResponseBody struct {
 	// Resolved guest profile; windows11-amd64-v1 uses display-only native
 	// provisioning
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Configured elevated command identity hint, not live runner readiness;
+	// admission verifies policy, ownership and installed runner
+	ExecutionIdentity *string `form:"execution_identity,omitempty" json:"execution_identity,omitempty" xml:"execution_identity,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 	// Resolved GPU contract; absent means software rendering, not guest
@@ -513,6 +534,9 @@ type WorkspaceResponse struct {
 	// Resolved guest profile; windows11-amd64-v1 uses display-only native
 	// provisioning
 	VMProfile *string `form:"vm_profile,omitempty" json:"vm_profile,omitempty" xml:"vm_profile,omitempty"`
+	// Configured elevated command identity hint, not live runner readiness;
+	// admission verifies policy, ownership and installed runner
+	ExecutionIdentity *string `form:"execution_identity,omitempty" json:"execution_identity,omitempty" xml:"execution_identity,omitempty"`
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool `form:"provisioned,omitempty" json:"provisioned,omitempty" xml:"provisioned,omitempty"`
 	// Resolved GPU contract; absent means software rendering, not guest
@@ -778,20 +802,21 @@ func NewGpuProfilesUnavailable(body string) workspaces.Unavailable {
 // endpoint result from a HTTP "OK" response.
 func NewSetGpuProfileWorkspaceOK(body *SetGpuProfileResponseBody) *workspacesviews.WorkspaceView {
 	v := &workspacesviews.WorkspaceView{
-		Name:          body.Name,
-		Namespace:     body.Namespace,
-		Type:          body.Type,
-		Image:         body.Image,
-		Port:          body.Port,
-		CPURequest:    body.CPURequest,
-		MemoryRequest: body.MemoryRequest,
-		CPULimit:      body.CPULimit,
-		MemoryLimit:   body.MemoryLimit,
-		ReadyReplicas: body.ReadyReplicas,
-		Stopped:       body.Stopped,
-		CreatedAt:     body.CreatedAt,
-		VMProfile:     body.VMProfile,
-		Provisioned:   body.Provisioned,
+		Name:              body.Name,
+		Namespace:         body.Namespace,
+		Type:              body.Type,
+		Image:             body.Image,
+		Port:              body.Port,
+		CPURequest:        body.CPURequest,
+		MemoryRequest:     body.MemoryRequest,
+		CPULimit:          body.CPULimit,
+		MemoryLimit:       body.MemoryLimit,
+		ReadyReplicas:     body.ReadyReplicas,
+		Stopped:           body.Stopped,
+		CreatedAt:         body.CreatedAt,
+		VMProfile:         body.VMProfile,
+		ExecutionIdentity: body.ExecutionIdentity,
+		Provisioned:       body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -921,20 +946,21 @@ func NewListWorkspaceOK(body []*WorkspaceResponse) []*workspaces.Workspace {
 // HTTP "OK" response.
 func NewGetWorkspaceOK(body *GetResponseBody) *workspacesviews.WorkspaceView {
 	v := &workspacesviews.WorkspaceView{
-		Name:          body.Name,
-		Namespace:     body.Namespace,
-		Type:          body.Type,
-		Image:         body.Image,
-		Port:          body.Port,
-		CPURequest:    body.CPURequest,
-		MemoryRequest: body.MemoryRequest,
-		CPULimit:      body.CPULimit,
-		MemoryLimit:   body.MemoryLimit,
-		ReadyReplicas: body.ReadyReplicas,
-		Stopped:       body.Stopped,
-		CreatedAt:     body.CreatedAt,
-		VMProfile:     body.VMProfile,
-		Provisioned:   body.Provisioned,
+		Name:              body.Name,
+		Namespace:         body.Namespace,
+		Type:              body.Type,
+		Image:             body.Image,
+		Port:              body.Port,
+		CPURequest:        body.CPURequest,
+		MemoryRequest:     body.MemoryRequest,
+		CPULimit:          body.CPULimit,
+		MemoryLimit:       body.MemoryLimit,
+		ReadyReplicas:     body.ReadyReplicas,
+		Stopped:           body.Stopped,
+		CreatedAt:         body.CreatedAt,
+		VMProfile:         body.VMProfile,
+		ExecutionIdentity: body.ExecutionIdentity,
+		Provisioned:       body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -980,20 +1006,21 @@ func NewGetNotFound(body string) workspaces.NotFound {
 // result from a HTTP "Created" response.
 func NewCreateWorkspaceCreated(body *CreateResponseBody) *workspacesviews.WorkspaceView {
 	v := &workspacesviews.WorkspaceView{
-		Name:          body.Name,
-		Namespace:     body.Namespace,
-		Type:          body.Type,
-		Image:         body.Image,
-		Port:          body.Port,
-		CPURequest:    body.CPURequest,
-		MemoryRequest: body.MemoryRequest,
-		CPULimit:      body.CPULimit,
-		MemoryLimit:   body.MemoryLimit,
-		ReadyReplicas: body.ReadyReplicas,
-		Stopped:       body.Stopped,
-		CreatedAt:     body.CreatedAt,
-		VMProfile:     body.VMProfile,
-		Provisioned:   body.Provisioned,
+		Name:              body.Name,
+		Namespace:         body.Namespace,
+		Type:              body.Type,
+		Image:             body.Image,
+		Port:              body.Port,
+		CPURequest:        body.CPURequest,
+		MemoryRequest:     body.MemoryRequest,
+		CPULimit:          body.CPULimit,
+		MemoryLimit:       body.MemoryLimit,
+		ReadyReplicas:     body.ReadyReplicas,
+		Stopped:           body.Stopped,
+		CreatedAt:         body.CreatedAt,
+		VMProfile:         body.VMProfile,
+		ExecutionIdentity: body.ExecutionIdentity,
+		Provisioned:       body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -1055,20 +1082,21 @@ func NewDeleteNotFound(body string) workspaces.NotFound {
 // from a HTTP "OK" response.
 func NewStartWorkspaceOK(body *StartResponseBody) *workspacesviews.WorkspaceView {
 	v := &workspacesviews.WorkspaceView{
-		Name:          body.Name,
-		Namespace:     body.Namespace,
-		Type:          body.Type,
-		Image:         body.Image,
-		Port:          body.Port,
-		CPURequest:    body.CPURequest,
-		MemoryRequest: body.MemoryRequest,
-		CPULimit:      body.CPULimit,
-		MemoryLimit:   body.MemoryLimit,
-		ReadyReplicas: body.ReadyReplicas,
-		Stopped:       body.Stopped,
-		CreatedAt:     body.CreatedAt,
-		VMProfile:     body.VMProfile,
-		Provisioned:   body.Provisioned,
+		Name:              body.Name,
+		Namespace:         body.Namespace,
+		Type:              body.Type,
+		Image:             body.Image,
+		Port:              body.Port,
+		CPURequest:        body.CPURequest,
+		MemoryRequest:     body.MemoryRequest,
+		CPULimit:          body.CPULimit,
+		MemoryLimit:       body.MemoryLimit,
+		ReadyReplicas:     body.ReadyReplicas,
+		Stopped:           body.Stopped,
+		CreatedAt:         body.CreatedAt,
+		VMProfile:         body.VMProfile,
+		ExecutionIdentity: body.ExecutionIdentity,
+		Provisioned:       body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -1114,20 +1142,21 @@ func NewStartNotFound(body string) workspaces.NotFound {
 // a HTTP "OK" response.
 func NewStopWorkspaceOK(body *StopResponseBody) *workspacesviews.WorkspaceView {
 	v := &workspacesviews.WorkspaceView{
-		Name:          body.Name,
-		Namespace:     body.Namespace,
-		Type:          body.Type,
-		Image:         body.Image,
-		Port:          body.Port,
-		CPURequest:    body.CPURequest,
-		MemoryRequest: body.MemoryRequest,
-		CPULimit:      body.CPULimit,
-		MemoryLimit:   body.MemoryLimit,
-		ReadyReplicas: body.ReadyReplicas,
-		Stopped:       body.Stopped,
-		CreatedAt:     body.CreatedAt,
-		VMProfile:     body.VMProfile,
-		Provisioned:   body.Provisioned,
+		Name:              body.Name,
+		Namespace:         body.Namespace,
+		Type:              body.Type,
+		Image:             body.Image,
+		Port:              body.Port,
+		CPURequest:        body.CPURequest,
+		MemoryRequest:     body.MemoryRequest,
+		CPULimit:          body.CPULimit,
+		MemoryLimit:       body.MemoryLimit,
+		ReadyReplicas:     body.ReadyReplicas,
+		Stopped:           body.Stopped,
+		CreatedAt:         body.CreatedAt,
+		VMProfile:         body.VMProfile,
+		ExecutionIdentity: body.ExecutionIdentity,
+		Provisioned:       body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -1173,20 +1202,21 @@ func NewStopNotFound(body string) workspaces.NotFound {
 // from a HTTP "OK" response.
 func NewResetWorkspaceOK(body *ResetResponseBody) *workspacesviews.WorkspaceView {
 	v := &workspacesviews.WorkspaceView{
-		Name:          body.Name,
-		Namespace:     body.Namespace,
-		Type:          body.Type,
-		Image:         body.Image,
-		Port:          body.Port,
-		CPURequest:    body.CPURequest,
-		MemoryRequest: body.MemoryRequest,
-		CPULimit:      body.CPULimit,
-		MemoryLimit:   body.MemoryLimit,
-		ReadyReplicas: body.ReadyReplicas,
-		Stopped:       body.Stopped,
-		CreatedAt:     body.CreatedAt,
-		VMProfile:     body.VMProfile,
-		Provisioned:   body.Provisioned,
+		Name:              body.Name,
+		Namespace:         body.Namespace,
+		Type:              body.Type,
+		Image:             body.Image,
+		Port:              body.Port,
+		CPURequest:        body.CPURequest,
+		MemoryRequest:     body.MemoryRequest,
+		CPULimit:          body.CPULimit,
+		MemoryLimit:       body.MemoryLimit,
+		ReadyReplicas:     body.ReadyReplicas,
+		Stopped:           body.Stopped,
+		CreatedAt:         body.CreatedAt,
+		VMProfile:         body.VMProfile,
+		ExecutionIdentity: body.ExecutionIdentity,
+		Provisioned:       body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -1239,20 +1269,21 @@ func NewResetNotFound(body string) workspaces.NotFound {
 // result from a HTTP "Created" response.
 func NewCloneWorkspaceCreated(body *CloneResponseBody) *workspacesviews.WorkspaceView {
 	v := &workspacesviews.WorkspaceView{
-		Name:          body.Name,
-		Namespace:     body.Namespace,
-		Type:          body.Type,
-		Image:         body.Image,
-		Port:          body.Port,
-		CPURequest:    body.CPURequest,
-		MemoryRequest: body.MemoryRequest,
-		CPULimit:      body.CPULimit,
-		MemoryLimit:   body.MemoryLimit,
-		ReadyReplicas: body.ReadyReplicas,
-		Stopped:       body.Stopped,
-		CreatedAt:     body.CreatedAt,
-		VMProfile:     body.VMProfile,
-		Provisioned:   body.Provisioned,
+		Name:              body.Name,
+		Namespace:         body.Namespace,
+		Type:              body.Type,
+		Image:             body.Image,
+		Port:              body.Port,
+		CPURequest:        body.CPURequest,
+		MemoryRequest:     body.MemoryRequest,
+		CPULimit:          body.CPULimit,
+		MemoryLimit:       body.MemoryLimit,
+		ReadyReplicas:     body.ReadyReplicas,
+		Stopped:           body.Stopped,
+		CreatedAt:         body.CreatedAt,
+		VMProfile:         body.VMProfile,
+		ExecutionIdentity: body.ExecutionIdentity,
+		Provisioned:       body.Provisioned,
 	}
 	if body.ContainerState != nil {
 		v.ContainerState = unmarshalContainerStateResponseBodyToWorkspacesviewsContainerStateView(body.ContainerState)
@@ -1481,6 +1512,11 @@ func ValidateWorkspaceResponse(body *WorkspaceResponse) (err error) {
 	if body.RemoteDesktop != nil {
 		if err2 := ValidateImageRemoteDesktopResponse(body.RemoteDesktop); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.ExecutionIdentity != nil {
+		if !(*body.ExecutionIdentity == "root" || *body.ExecutionIdentity == "SYSTEM") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.execution_identity", *body.ExecutionIdentity, []any{"root", "SYSTEM"}))
 		}
 	}
 	if body.VMGpuProfile != nil {

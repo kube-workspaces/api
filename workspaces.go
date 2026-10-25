@@ -1278,6 +1278,7 @@ func unstructuredToWorkspace(obj *unstructured.Unstructured, rd *k8s.ImageRemote
 	}
 
 	if windowsWorkspaceProfile(obj) {
+		ws.ExecutionIdentity = strPtr("SYSTEM")
 		ws.VMProfile = strPtr(windowsVMProfile)
 		if value, found, _ := unstructured.NestedMap(obj.Object, "spec", "vmProfile", "gpu"); found {
 			var profile k8s.VMGPUProfile
@@ -1293,6 +1294,9 @@ func unstructuredToWorkspace(obj *unstructured.Unstructured, rd *k8s.ImageRemote
 		if rd != nil && rd.Protocol != "agent" {
 			ws.RemoteDesktop = nil
 		}
+	}
+	if ws.Type == "vm" && ws.VMProfile == nil && obj.GetAnnotations()["kubeworkspaces.io/agent-generation"] != "" {
+		ws.ExecutionIdentity = strPtr("root")
 	}
 	return ws
 }

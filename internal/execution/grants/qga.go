@@ -86,9 +86,8 @@ func (b BindingQGA) validate() error {
 	if (strings.EqualFold(b.OSIdentity, "root") || strings.EqualFold(b.OSIdentity, "SYSTEM") || b.OSIdentity == "0") && !b.Elevated {
 		return ErrInvalid
 	}
-	// SYSTEM is the only elevated OS identity the pilot runner accepts; do
-	// not mint grants that the runner must reject.
-	if !strings.EqualFold(b.OSIdentity, "SYSTEM") {
+	// Only explicit platform identities; the guest also checks its actual OS.
+	if !strings.EqualFold(b.OSIdentity, "SYSTEM") && b.OSIdentity != "root" {
 		return ErrInvalid
 	}
 	return nil

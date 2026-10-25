@@ -95,6 +95,29 @@ func TestResolveReturnsFreshLauncherTarget(t *testing.T) {
 	}
 }
 
+func TestResolveLinuxRequiresControllerBindingAndElevation(t *testing.T) {
+	for _, bound := range []bool{false, true} {
+		for _, elevated := range []bool{false, true} {
+			r := newTestResolver(t, func(ws, vm, _, _ *unstructured.Unstructured) {
+				unstructured.RemoveNestedField(ws.Object, "spec", "vmProfile")
+				ws.SetAnnotations(nil)
+				vm.SetAnnotations(nil)
+				if bound {
+					ws.SetAnnotations(map[string]string{"kubeworkspaces.io/agent-generation": "root-one"})
+				}
+			}, policyStub{enabled: true, elevated: elevated})
+			target, err := r.Resolve(context.Background(), "team", "vm")
+			if !bound || !elevated {
+				if !errors.Is(err, ErrDenied) {
+					t.Fatalf("bound=%v elevated=%v: %v", bound, elevated, err)
+				}
+			} else if err != nil || !target.Linux || target.OSIdentity() != "root" {
+				t.Fatalf("Linux target not resolved: %+v %v", target, err)
+			}
+		}
+	}
+}
+
 func TestResolveDeniesIneligibleTargets(t *testing.T) {
 	annotations := func(object *unstructured.Unstructured, key string) {
 		merged := object.GetAnnotations()

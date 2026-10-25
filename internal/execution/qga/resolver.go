@@ -18,7 +18,7 @@ import (
 )
 
 // Fail-closed resolver outcomes. ErrDenied means the named workspace is not an
-// eligible running, provisioned Windows VM right now; ErrUnavailable means a
+// eligible running, controller-bound agent VM right now; ErrUnavailable means a
 // required read could not be completed.
 var (
 	ErrDenied      = errors.New("QGA target denied")
@@ -54,6 +54,16 @@ type Target struct {
 	PodUID          string
 	Domain          string
 	RevocationEpoch uint64
+	// Linux is set only for controller-bound Linux agent workspaces. The zero
+	// value retains the original Windows target contract.
+	Linux bool
+}
+
+func (t Target) OSIdentity() string {
+	if t.Linux {
+		return "root"
+	}
+	return "SYSTEM"
 }
 
 // Resolver performs uncached, bounded reads through the Kubernetes API and
@@ -77,7 +87,7 @@ func (r *Resolver) eligible(ctx context.Context) error {
 	if err != nil {
 		return ErrUnavailable
 	}
-	// The pilot executes as SYSTEM only, so both the enable and the
+	// The backend executes as root/SYSTEM, so both the enable and the
 	// separately-granted elevation policy flags must be on.
 	if !policy.Enabled || !policy.AllowElevated {
 		return ErrDenied
@@ -93,7 +103,7 @@ func lookupError(err error) error {
 }
 
 // validWorkspace mirrors the enrollment resolver's workspace snapshot checks
-// plus the Windows-only pilot profile/provisioning markers.
+// plus the OS-specific controller binding/provisioning markers.
 func validWorkspace(ws *unstructured.Unstructured, namespace, name string) bool {
 	if ws.GetNamespace() != namespace || ws.GetName() != name || ws.GetUID() == "" || ws.GetResourceVersion() == "" || ws.GetDeletionTimestamp() != nil {
 		return false
@@ -108,8 +118,11 @@ func validWorkspace(ws *unstructured.Unstructured, namespace, name string) bool 
 		}
 	}
 	profile, found, err := unstructured.NestedMap(ws.Object, "spec", "vmProfile")
-	if err != nil || !found {
+	if err != nil {
 		return false
+	}
+	if !found {
+		return ws.GetAnnotations()["kubeworkspaces.io/agent-generation"] != ""
 	}
 	id, _ := profile["id"].(string)
 	generation, _ := profile["generation"].(string)
@@ -140,6 +153,9 @@ func validVM(ws, vm *unstructured.Unstructured) bool {
 		return false
 	}
 	generation, _, _ := unstructured.NestedString(ws.Object, "spec", "vmProfile", "generation")
+	if _, found, err := unstructured.NestedMap(ws.Object, "spec", "vmProfile"); !found && err == nil {
+		return ws.GetAnnotations()["kubeworkspaces.io/agent-generation"] != ""
+	}
 	return generation != "" && vm.GetAnnotations()["kubeworkspaces.io/windows-generation"] == generation
 }
 
@@ -220,6 +236,7 @@ func (r *Resolver) snapshot(ctx context.Context, namespace, name string) (Target
 		return Target{}, err
 	}
 	return Target{
+		Linux:           ws.GetAnnotations()["kubeworkspaces.io/agent-generation"] != "" && !hasVMProfile(ws),
 		Namespace:       namespace,
 		WorkspaceName:   name,
 		WorkspaceUID:    string(ws.GetUID()),
@@ -229,6 +246,11 @@ func (r *Resolver) snapshot(ctx context.Context, namespace, name string) (Target
 		Domain:          namespace + "_" + name,
 		RevocationEpoch: epoch,
 	}, nil
+}
+
+func hasVMProfile(ws *unstructured.Unstructured) bool {
+	_, found, _ := unstructured.NestedMap(ws.Object, "spec", "vmProfile")
+	return found
 }
 
 // identityDigestInput is the exact preimage bound into the grant's

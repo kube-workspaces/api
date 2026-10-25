@@ -881,20 +881,21 @@ func marshalWorkspacesviewsVMGPUProfileViewToVMGPUProfileResponseBody(v *workspa
 // *WorkspaceResponse from a value of type *workspaces.Workspace.
 func marshalWorkspacesWorkspaceToWorkspaceResponse(v *workspaces.Workspace) *WorkspaceResponse {
 	res := &WorkspaceResponse{
-		Name:          v.Name,
-		Namespace:     v.Namespace,
-		Type:          v.Type,
-		Image:         v.Image,
-		Port:          v.Port,
-		CPURequest:    v.CPURequest,
-		MemoryRequest: v.MemoryRequest,
-		CPULimit:      v.CPULimit,
-		MemoryLimit:   v.MemoryLimit,
-		ReadyReplicas: v.ReadyReplicas,
-		Stopped:       v.Stopped,
-		CreatedAt:     v.CreatedAt,
-		VMProfile:     v.VMProfile,
-		Provisioned:   v.Provisioned,
+		Name:              v.Name,
+		Namespace:         v.Namespace,
+		Type:              v.Type,
+		Image:             v.Image,
+		Port:              v.Port,
+		CPURequest:        v.CPURequest,
+		MemoryRequest:     v.MemoryRequest,
+		CPULimit:          v.CPULimit,
+		MemoryLimit:       v.MemoryLimit,
+		ReadyReplicas:     v.ReadyReplicas,
+		Stopped:           v.Stopped,
+		CreatedAt:         v.CreatedAt,
+		VMProfile:         v.VMProfile,
+		ExecutionIdentity: v.ExecutionIdentity,
+		Provisioned:       v.Provisioned,
 	}
 	if v.ContainerState != nil {
 		res.ContainerState = marshalWorkspacesContainerStateToContainerStateResponse(v.ContainerState)

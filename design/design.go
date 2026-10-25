@@ -275,6 +275,7 @@ var WorkspaceResult = ResultType("application/vnd.workspace+json", func() {
 		})
 		Attribute("remote_desktop", ImageRemoteDesktop, "Remote desktop agent configuration (Tier 1)")
 		Attribute("vm_profile", String, "Resolved guest profile; windows11-amd64-v1 uses display-only native provisioning")
+		Attribute("execution_identity", String, "Configured elevated command identity hint, not live runner readiness; admission verifies policy, ownership and installed runner", func() { Enum("root", "SYSTEM") })
 		Attribute("provisioned", Boolean, "Windows native setup and bootstrap removal have completed")
 		Attribute("vm_gpu_profile", VMGPUProfile, "Resolved GPU contract; absent means software rendering, not guest driver/capture/encode status")
 	})

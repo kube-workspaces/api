@@ -282,7 +282,7 @@ func mapGuestResult(result *qga.GuestResult, execErr error) (storage.ExecutionOu
 	}
 }
 
-// Start executes one bounded SYSTEM command through the opt-in pilot transport
+// Start executes one bounded root/SYSTEM command through the opt-in transport
 // and returns its recorded outcome synchronously. Any guest transport loss is
 // a terminal unknown outcome; success is only ever reported from a parsed
 // runner result. After dispatch the run is bounded by the pilot budget rather
@@ -299,7 +299,7 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	if err := validateStartCommand(p); err != nil {
 		return nil, managementError("invalid", err.Error())
 	}
-	// SYSTEM execution needs both the execution grant and the separately
+	// Elevated execution needs both the execution grant and the separately
 	// granted elevation, checked against the exact requested scope.
 	if !auth.HasExecutionPermission(user, p.Namespace, p.WorkspaceName, auth.PermissionExec, time.Now()) ||
 		!auth.HasExecutionPermission(user, p.Namespace, p.WorkspaceName, auth.PermissionElevated, time.Now()) {
@@ -313,7 +313,7 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 		return nil, managementError("unavailable", "execution policy unavailable")
 	}
 	if !policy.Enabled || !policy.AllowElevated {
-		return nil, managementError("forbidden", "SYSTEM execution is disabled by policy")
+		return nil, managementError("forbidden", "elevated execution is disabled by policy")
 	}
 	if s.qga == nil {
 		return nil, managementError("unavailable", "the pilot execution transport is not enabled")
@@ -321,7 +321,7 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	target, err := s.qga.Resolve(ctx, p.Namespace, p.WorkspaceName)
 	if err != nil {
 		if errors.Is(err, qga.ErrDenied) {
-			return nil, managementError("not_found", "not an eligible running Windows VM")
+			return nil, managementError("not_found", "not an eligible running agent-equipped VM")
 		}
 		return nil, managementError("unavailable", "workspace is temporarily unavailable")
 	}
@@ -345,7 +345,7 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 		// management provisioning generation; grant version 1 is the only
 		// version the pilot runner accepts.
 		GrantVersion: "1",
-		OSIdentity:   "SYSTEM",
+		OSIdentity:   target.OSIdentity(),
 		Elevated:     true,
 	})
 	if err != nil {

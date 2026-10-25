@@ -305,6 +305,9 @@ type Workspace struct {
 	// Resolved guest profile; windows11-amd64-v1 uses display-only native
 	// provisioning
 	VMProfile *string
+	// Configured elevated command identity hint, not live runner readiness;
+	// admission verifies policy, ownership and installed runner
+	ExecutionIdentity *string
 	// Windows native setup and bootstrap removal have completed
 	Provisioned *bool
 	// Resolved GPU contract; absent means software rendering, not guest
@@ -491,14 +494,15 @@ func NewViewedWorkspace(res *Workspace, view string) *workspacesviews.Workspace 
 // newWorkspace converts projected type Workspace to service type Workspace.
 func newWorkspace(vres *workspacesviews.WorkspaceView) *Workspace {
 	res := &Workspace{
-		Port:          vres.Port,
-		CPURequest:    vres.CPURequest,
-		MemoryRequest: vres.MemoryRequest,
-		CPULimit:      vres.CPULimit,
-		MemoryLimit:   vres.MemoryLimit,
-		CreatedAt:     vres.CreatedAt,
-		VMProfile:     vres.VMProfile,
-		Provisioned:   vres.Provisioned,
+		Port:              vres.Port,
+		CPURequest:        vres.CPURequest,
+		MemoryRequest:     vres.MemoryRequest,
+		CPULimit:          vres.CPULimit,
+		MemoryLimit:       vres.MemoryLimit,
+		CreatedAt:         vres.CreatedAt,
+		VMProfile:         vres.VMProfile,
+		ExecutionIdentity: vres.ExecutionIdentity,
+		Provisioned:       vres.Provisioned,
 	}
 	if vres.Name != nil {
 		res.Name = *vres.Name
@@ -557,20 +561,21 @@ func newWorkspace(vres *workspacesviews.WorkspaceView) *Workspace {
 // WorkspaceView using the "default" view.
 func newWorkspaceView(res *Workspace) *workspacesviews.WorkspaceView {
 	vres := &workspacesviews.WorkspaceView{
-		Name:          &res.Name,
-		Namespace:     &res.Namespace,
-		Type:          &res.Type,
-		Image:         &res.Image,
-		Port:          res.Port,
-		CPURequest:    res.CPURequest,
-		MemoryRequest: res.MemoryRequest,
-		CPULimit:      res.CPULimit,
-		MemoryLimit:   res.MemoryLimit,
-		ReadyReplicas: &res.ReadyReplicas,
-		Stopped:       &res.Stopped,
-		CreatedAt:     res.CreatedAt,
-		VMProfile:     res.VMProfile,
-		Provisioned:   res.Provisioned,
+		Name:              &res.Name,
+		Namespace:         &res.Namespace,
+		Type:              &res.Type,
+		Image:             &res.Image,
+		Port:              res.Port,
+		CPURequest:        res.CPURequest,
+		MemoryRequest:     res.MemoryRequest,
+		CPULimit:          res.CPULimit,
+		MemoryLimit:       res.MemoryLimit,
+		ReadyReplicas:     &res.ReadyReplicas,
+		Stopped:           &res.Stopped,
+		CreatedAt:         res.CreatedAt,
+		VMProfile:         res.VMProfile,
+		ExecutionIdentity: res.ExecutionIdentity,
+		Provisioned:       res.Provisioned,
 	}
 	if res.ContainerState != nil {
 		vres.ContainerState = transformContainerStateToWorkspacesviewsContainerStateView(res.ContainerState)

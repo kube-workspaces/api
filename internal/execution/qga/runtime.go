@@ -50,7 +50,7 @@ type qgaRequest struct {
 	DeadlineSeconds        int      `json:"deadline_seconds"`
 }
 
-// Command is one bounded SYSTEM command. ExecutionID/RecordingID/ActorUID are
+// Command is one bounded elevated command. ExecutionID/RecordingID/ActorUID are
 // server-minted or authenticated values, never raw client input.
 type Command struct {
 	ActorUID        string
@@ -172,7 +172,7 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 		ExecutionID:            command.ExecutionID,
 		RecordingID:            command.RecordingID,
 		Operation:              "command",
-		OSIdentity:             "SYSTEM",
+		OSIdentity:             target.OSIdentity(),
 		Elevated:               true,
 		PolicyVersion:          policyVersion,
 		RevocationEpoch:        target.RevocationEpoch,
@@ -194,7 +194,7 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 		ExecutionID:            command.ExecutionID,
 		RecordingID:            command.RecordingID,
 		Operation:              "command",
-		OSIdentity:             "SYSTEM",
+		OSIdentity:             target.OSIdentity(),
 		Elevated:               true,
 		PolicyVersion:          policyVersion,
 		RevocationEpoch:        target.RevocationEpoch,

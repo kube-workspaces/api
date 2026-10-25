@@ -165,7 +165,7 @@ var _ = Service("executions", func() {
 		})
 	})
 	Method("start", func() {
-		Description("Execute one bounded SYSTEM command in an eligible running Windows VM and return its recorded outcome synchronously")
+		Description("Execute one bounded root (Linux) or SYSTEM (Windows) command in an eligible running agent-equipped VM and return its recorded outcome synchronously")
 		Payload(func() {
 			Attribute("namespace", String, "Workspace namespace", func() {
 				Pattern("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
