@@ -1454,6 +1454,22 @@ func marshalWorkspacesVMOptionsToVMOptionsRequestBody(v *workspaces.VMOptions) *
 	return res
 }
 
+// marshalWorkspacesWorkspaceContainerInitToWorkspaceContainerInitRequestBody
+// builds a value of type *WorkspaceContainerInitRequestBody from a value of
+// type *workspaces.WorkspaceContainerInit.
+func marshalWorkspacesWorkspaceContainerInitToWorkspaceContainerInitRequestBody(v *workspaces.WorkspaceContainerInit) *WorkspaceContainerInitRequestBody {
+	if v == nil {
+		return nil
+	}
+	res := &WorkspaceContainerInitRequestBody{
+		Mode:           v.Mode,
+		UserData:       v.UserData,
+		UserDataSecret: v.UserDataSecret,
+	}
+
+	return res
+}
+
 // marshalWorkspacesVolumeMountToVolumeMountRequestBody builds a value of type
 // *VolumeMountRequestBody from a value of type *workspaces.VolumeMount.
 func marshalWorkspacesVolumeMountToVolumeMountRequestBody(v *workspaces.VolumeMount) *VolumeMountRequestBody {
@@ -1586,6 +1602,22 @@ func marshalVMOptionsRequestBodyToWorkspacesVMOptions(v *VMOptionsRequestBody) *
 		StorageClassName:        v.StorageClassName,
 		RootDiskSize:            v.RootDiskSize,
 		GpuProfile:              v.GpuProfile,
+	}
+
+	return res
+}
+
+// marshalWorkspaceContainerInitRequestBodyToWorkspacesWorkspaceContainerInit
+// builds a value of type *workspaces.WorkspaceContainerInit from a value of
+// type *WorkspaceContainerInitRequestBody.
+func marshalWorkspaceContainerInitRequestBodyToWorkspacesWorkspaceContainerInit(v *WorkspaceContainerInitRequestBody) *workspaces.WorkspaceContainerInit {
+	if v == nil {
+		return nil
+	}
+	res := &workspaces.WorkspaceContainerInit{
+		Mode:           v.Mode,
+		UserData:       v.UserData,
+		UserDataSecret: v.UserDataSecret,
 	}
 
 	return res

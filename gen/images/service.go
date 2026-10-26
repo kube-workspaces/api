@@ -37,6 +37,11 @@ const ServiceName = "images"
 // MethodKey key.
 var MethodNames = [2]string{"list", "create"}
 
+// Opt-in container initialization; omitted preserves ordinary image startup
+type ContainerInitDefaults struct {
+	Mode string
+}
+
 // CreateImagePayload is the payload type of the images service create method.
 type CreateImagePayload struct {
 	// Display name
@@ -57,6 +62,10 @@ type CreateImagePayload struct {
 	Icon *string
 	// Default command-line args
 	DefaultArgs []string
+	// Explicit container entrypoint at workspace creation
+	DefaultCommand []string
+	// Container/scratch initialization mode
+	DefaultContainerInit *ContainerInitDefaults
 	// Default environment variables
 	DefaultEnv []*ImageEnvVar
 	// Run container in privileged mode
@@ -75,9 +84,7 @@ type CreateImagePayload struct {
 	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
 	// a user/password) to be seeded into the guest at first boot
 	DefaultCloudInit *bool
-	// Reserved user-data for the guest (cloud-init). Empty by default; later used
-	// to seed first-boot configuration when cloud-init is supported. Not yet
-	// consumed
+	// Cloud-config for VM cloud-init or explicitly enabled container initialization
 	DefaultUserData *string
 	// Default home directory for the default user
 	DefaultHomedir *string
@@ -149,6 +156,10 @@ type Image struct {
 	Icon *string
 	// Default command-line args injected at workspace creation
 	DefaultArgs []string
+	// Explicit container entrypoint injected at workspace creation
+	DefaultCommand []string
+	// Container/scratch initialization mode
+	DefaultContainerInit *ContainerInitDefaults
 	// Default environment variables injected at workspace creation
 	DefaultEnv []*ImageEnvVar
 	// UID that the main container runs as (sets runAsUser and fsGroup)
@@ -176,9 +187,7 @@ type Image struct {
 	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
 	// a user/password) to be seeded into the guest at first boot
 	DefaultCloudInit *bool
-	// Reserved user-data for the guest (cloud-init). Empty by default; later used
-	// to seed first-boot configuration when cloud-init is supported. Not yet
-	// consumed
+	// Cloud-config for VM cloud-init or explicitly enabled container initialization
 	DefaultUserData *string
 	// Default home directory for the default user
 	DefaultHomedir *string
@@ -367,6 +376,15 @@ func newImage(vres *imagesviews.ImageView) *Image {
 			res.DefaultArgs[i] = val
 		}
 	}
+	if vres.DefaultCommand != nil {
+		res.DefaultCommand = make([]string, len(vres.DefaultCommand))
+		for i, val := range vres.DefaultCommand {
+			res.DefaultCommand[i] = val
+		}
+	}
+	if vres.DefaultContainerInit != nil {
+		res.DefaultContainerInit = transformImagesviewsContainerInitDefaultsViewToContainerInitDefaults(vres.DefaultContainerInit)
+	}
 	if vres.DefaultEnv != nil {
 		res.DefaultEnv = make([]*ImageEnvVar, len(vres.DefaultEnv))
 		for i, val := range vres.DefaultEnv {
@@ -452,6 +470,15 @@ func newImageView(res *Image) *imagesviews.ImageView {
 		for i, val := range res.DefaultArgs {
 			vres.DefaultArgs[i] = val
 		}
+	}
+	if res.DefaultCommand != nil {
+		vres.DefaultCommand = make([]string, len(res.DefaultCommand))
+		for i, val := range res.DefaultCommand {
+			vres.DefaultCommand[i] = val
+		}
+	}
+	if res.DefaultContainerInit != nil {
+		vres.DefaultContainerInit = transformContainerInitDefaultsToImagesviewsContainerInitDefaultsView(res.DefaultContainerInit)
 	}
 	if res.DefaultEnv != nil {
 		vres.DefaultEnv = make([]*imagesviews.ImageEnvVarView, len(res.DefaultEnv))
@@ -539,6 +566,20 @@ func transformImagesviewsImageProxyConfigViewToImageProxyConfig(v *imagesviews.I
 	}
 	if v.PreservePathPrefix == nil {
 		res.PreservePathPrefix = false
+	}
+
+	return res
+}
+
+// transformImagesviewsContainerInitDefaultsViewToContainerInitDefaults builds
+// a value of type *ContainerInitDefaults from a value of type
+// *imagesviews.ContainerInitDefaultsView.
+func transformImagesviewsContainerInitDefaultsViewToContainerInitDefaults(v *imagesviews.ContainerInitDefaultsView) *ContainerInitDefaults {
+	if v == nil {
+		return nil
+	}
+	res := &ContainerInitDefaults{
+		Mode: *v.Mode,
 	}
 
 	return res
@@ -635,6 +676,20 @@ func transformImageProxyConfigToImagesviewsImageProxyConfigView(v *ImageProxyCon
 			tv := val
 			res.CustomRequestHeaders[tk] = tv
 		}
+	}
+
+	return res
+}
+
+// transformContainerInitDefaultsToImagesviewsContainerInitDefaultsView builds
+// a value of type *imagesviews.ContainerInitDefaultsView from a value of type
+// *ContainerInitDefaults.
+func transformContainerInitDefaultsToImagesviewsContainerInitDefaultsView(v *ContainerInitDefaults) *imagesviews.ContainerInitDefaultsView {
+	if v == nil {
+		return nil
+	}
+	res := &imagesviews.ContainerInitDefaultsView{
+		Mode: &v.Mode,
 	}
 
 	return res

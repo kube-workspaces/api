@@ -36,6 +36,8 @@ type CreateRequestBody struct {
 	Container *WorkspaceContainerRequestBody `form:"container" json:"container" xml:"container"`
 	// Windows private root import settings
 	VMOptions *VMOptionsRequestBody `form:"vm_options,omitempty" json:"vm_options,omitempty" xml:"vm_options,omitempty"`
+	// Container/scratch initialization override
+	ContainerInit *WorkspaceContainerInitRequestBody `form:"container_init,omitempty" json:"container_init,omitempty" xml:"container_init,omitempty"`
 	// Volumes to mount
 	VolumeMounts []*VolumeMountRequestBody `form:"volume_mounts,omitempty" json:"volume_mounts,omitempty" xml:"volume_mounts,omitempty"`
 	// Custom environment variables to inject into the workspace container
@@ -639,6 +641,16 @@ type VMOptionsRequestBody struct {
 	GpuProfile *string `form:"gpu_profile,omitempty" json:"gpu_profile,omitempty" xml:"gpu_profile,omitempty"`
 }
 
+// WorkspaceContainerInitRequestBody is used to define fields on request body
+// types.
+type WorkspaceContainerInitRequestBody struct {
+	Mode string `form:"mode" json:"mode" xml:"mode"`
+	// Inline cloud-config, visible in the Workspace CR
+	UserData *string `form:"user_data,omitempty" json:"user_data,omitempty" xml:"user_data,omitempty"`
+	// Same-namespace independently managed Secret with a user-data key
+	UserDataSecret *string `form:"user_data_secret,omitempty" json:"user_data_secret,omitempty" xml:"user_data_secret,omitempty"`
+}
+
 // VolumeMountRequestBody is used to define fields on request body types.
 type VolumeMountRequestBody struct {
 	// Volume/PVC name
@@ -712,6 +724,9 @@ func NewCreateRequestBody(p *workspaces.CreateWorkspacePayload) *CreateRequestBo
 	}
 	if p.VMOptions != nil {
 		body.VMOptions = marshalWorkspacesVMOptionsToVMOptionsRequestBody(p.VMOptions)
+	}
+	if p.ContainerInit != nil {
+		body.ContainerInit = marshalWorkspacesWorkspaceContainerInitToWorkspaceContainerInitRequestBody(p.ContainerInit)
 	}
 	if p.VolumeMounts != nil {
 		body.VolumeMounts = make([]*VolumeMountRequestBody, len(p.VolumeMounts))
@@ -1583,6 +1598,25 @@ func ValidateVMOptionsRequestBody(body *VMOptionsRequestBody) (err error) {
 	if body.GpuProfile != nil {
 		if utf8.RuneCountInString(*body.GpuProfile) > 63 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gpu_profile", *body.GpuProfile, utf8.RuneCountInString(*body.GpuProfile), 63, false))
+		}
+	}
+	return
+}
+
+// ValidateWorkspaceContainerInitRequestBody runs the validations defined on
+// WorkspaceContainerInitRequestBody
+func ValidateWorkspaceContainerInitRequestBody(body *WorkspaceContainerInitRequestBody) (err error) {
+	if !(body.Mode == "disabled" || body.Mode == "injected" || body.Mode == "baked-in") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.mode", body.Mode, []any{"disabled", "injected", "baked-in"}))
+	}
+	if body.UserData != nil {
+		if utf8.RuneCountInString(*body.UserData) > 262144 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.user_data", *body.UserData, utf8.RuneCountInString(*body.UserData), 262144, false))
+		}
+	}
+	if body.UserDataSecret != nil {
+		if utf8.RuneCountInString(*body.UserDataSecret) > 253 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.user_data_secret", *body.UserDataSecret, utf8.RuneCountInString(*body.UserDataSecret), 253, false))
 		}
 	}
 	return

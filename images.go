@@ -98,6 +98,16 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 	if p.DefaultUserData != nil {
 		spec["defaultUserData"] = *p.DefaultUserData
 	}
+	if p.DefaultContainerInit != nil {
+		spec["defaultContainerInit"] = map[string]interface{}{"mode": p.DefaultContainerInit.Mode}
+	}
+	if len(p.DefaultCommand) > 0 {
+		command := make([]interface{}, len(p.DefaultCommand))
+		for i, value := range p.DefaultCommand {
+			command[i] = value
+		}
+		spec["defaultCommand"] = command
+	}
 	if p.DefaultHomedir != nil {
 		spec["defaultHomedir"] = *p.DefaultHomedir
 	}
@@ -280,6 +290,10 @@ func imageToResult(img *k8s.Image) *images.Image {
 	}
 	if len(img.DefaultArgs) > 0 {
 		result.DefaultArgs = img.DefaultArgs
+	}
+	result.DefaultCommand = img.DefaultCommand
+	if img.DefaultContainerInit != nil {
+		result.DefaultContainerInit = &images.ContainerInitDefaults{Mode: img.DefaultContainerInit.Mode}
 	}
 	if len(img.DefaultEnv) > 0 {
 		result.DefaultEnv = make([]*images.ImageEnvVar, len(img.DefaultEnv))

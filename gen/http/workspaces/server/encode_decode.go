@@ -1081,6 +1081,22 @@ func unmarshalVMOptionsRequestBodyToWorkspacesVMOptions(v *VMOptionsRequestBody)
 	return res
 }
 
+// unmarshalWorkspaceContainerInitRequestBodyToWorkspacesWorkspaceContainerInit
+// builds a value of type *workspaces.WorkspaceContainerInit from a value of
+// type *WorkspaceContainerInitRequestBody.
+func unmarshalWorkspaceContainerInitRequestBodyToWorkspacesWorkspaceContainerInit(v *WorkspaceContainerInitRequestBody) *workspaces.WorkspaceContainerInit {
+	if v == nil {
+		return nil
+	}
+	res := &workspaces.WorkspaceContainerInit{
+		Mode:           *v.Mode,
+		UserData:       v.UserData,
+		UserDataSecret: v.UserDataSecret,
+	}
+
+	return res
+}
+
 // unmarshalVolumeMountRequestBodyToWorkspacesVolumeMount builds a value of
 // type *workspaces.VolumeMount from a value of type *VolumeMountRequestBody.
 func unmarshalVolumeMountRequestBodyToWorkspacesVolumeMount(v *VolumeMountRequestBody) *workspaces.VolumeMount {

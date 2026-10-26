@@ -156,6 +156,15 @@ func marshalImagesImageToImageResponse(v *images.Image) *ImageResponse {
 			res.DefaultArgs[i] = val
 		}
 	}
+	if v.DefaultCommand != nil {
+		res.DefaultCommand = make([]string, len(v.DefaultCommand))
+		for i, val := range v.DefaultCommand {
+			res.DefaultCommand[i] = val
+		}
+	}
+	if v.DefaultContainerInit != nil {
+		res.DefaultContainerInit = marshalImagesContainerInitDefaultsToContainerInitDefaultsResponse(v.DefaultContainerInit)
+	}
 	if v.DefaultEnv != nil {
 		res.DefaultEnv = make([]*ImageEnvVarResponse, len(v.DefaultEnv))
 		for i, val := range v.DefaultEnv {
@@ -253,6 +262,20 @@ func marshalImagesImageProxyConfigToImageProxyConfigResponse(v *images.ImageProx
 	return res
 }
 
+// marshalImagesContainerInitDefaultsToContainerInitDefaultsResponse builds a
+// value of type *ContainerInitDefaultsResponse from a value of type
+// *images.ContainerInitDefaults.
+func marshalImagesContainerInitDefaultsToContainerInitDefaultsResponse(v *images.ContainerInitDefaults) *ContainerInitDefaultsResponse {
+	if v == nil {
+		return nil
+	}
+	res := &ContainerInitDefaultsResponse{
+		Mode: v.Mode,
+	}
+
+	return res
+}
+
 // marshalImagesImageEnvVarToImageEnvVarResponse builds a value of type
 // *ImageEnvVarResponse from a value of type *images.ImageEnvVar.
 func marshalImagesImageEnvVarToImageEnvVarResponse(v *images.ImageEnvVar) *ImageEnvVarResponse {
@@ -312,6 +335,20 @@ func marshalImagesImageRemoteDesktopToImageRemoteDesktopResponse(v *images.Image
 		if res.Path == zero {
 			res.Path = "/"
 		}
+	}
+
+	return res
+}
+
+// unmarshalContainerInitDefaultsRequestBodyToImagesContainerInitDefaults
+// builds a value of type *images.ContainerInitDefaults from a value of type
+// *ContainerInitDefaultsRequestBody.
+func unmarshalContainerInitDefaultsRequestBodyToImagesContainerInitDefaults(v *ContainerInitDefaultsRequestBody) *images.ContainerInitDefaults {
+	if v == nil {
+		return nil
+	}
+	res := &images.ContainerInitDefaults{
+		Mode: *v.Mode,
 	}
 
 	return res
@@ -488,6 +525,20 @@ func marshalImagesviewsImageProxyConfigViewToImageProxyConfigResponseBody(v *ima
 	}
 	if v.PreservePathPrefix == nil {
 		res.PreservePathPrefix = false
+	}
+
+	return res
+}
+
+// marshalImagesviewsContainerInitDefaultsViewToContainerInitDefaultsResponseBody
+// builds a value of type *ContainerInitDefaultsResponseBody from a value of
+// type *imagesviews.ContainerInitDefaultsView.
+func marshalImagesviewsContainerInitDefaultsViewToContainerInitDefaultsResponseBody(v *imagesviews.ContainerInitDefaultsView) *ContainerInitDefaultsResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &ContainerInitDefaultsResponseBody{
+		Mode: *v.Mode,
 	}
 
 	return res

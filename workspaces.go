@@ -220,6 +220,9 @@ func (s *workspacessrvc) Create(ctx context.Context, p *workspaces.CreateWorkspa
 			return nil, workspaces.Invalid(err.Error())
 		}
 	}
+	if err := validateContainerInitWorkspace(ws); err != nil {
+		return nil, workspaces.Invalid(err.Error())
+	}
 
 	// Set action annotations on the CR before creation
 	annotations := ws.GetAnnotations()
@@ -552,6 +555,9 @@ func (s *workspacessrvc) Clone(ctx context.Context, p *workspaces.ClonePayload) 
 			return nil, workspaces.Invalid(err.Error())
 		}
 	}
+	if err := validateContainerInitWorkspace(clone); err != nil {
+		return nil, workspaces.Invalid(err.Error())
+	}
 	created, err := s.client.CreateWorkspace(ctx, clone)
 	if err != nil {
 		if apierrors.IsAlreadyExists(err) {
@@ -610,8 +616,18 @@ func buildWorkspaceCR(p *workspaces.CreateWorkspacePayload, imageClient *k8s.Ima
 	var preservePathPrefix bool
 	var additionalPorts []k8s.ImagePort
 	var imagePullPolicy string
+	var containerInit map[string]interface{}
 	if imageClient != nil {
 		if img, err := imageClient.GetImageByRef(context.Background(), p.Container.Image); err == nil {
+			containerInit = defaultContainerInitSnapshot(img)
+			if len(img.DefaultCommand) > 0 {
+				command := make([]interface{}, len(img.DefaultCommand))
+				for i, value := range img.DefaultCommand {
+					value = strings.ReplaceAll(value, "{{namespace}}", p.Namespace)
+					command[i] = strings.ReplaceAll(value, "{{name}}", p.Name)
+				}
+				container["command"] = command
+			}
 			imagePullPolicy = img.DefaultImagePullPolicy
 			if len(img.DefaultArgs) > 0 {
 				args := make([]interface{}, len(img.DefaultArgs))
@@ -953,6 +969,9 @@ func buildWorkspaceCR(p *workspaces.CreateWorkspacePayload, imageClient *k8s.Ima
 				},
 			},
 		},
+	}
+	if resolved := resolveContainerInitOverride(containerInit, p.ContainerInit); resolved != nil {
+		_ = unstructured.SetNestedMap(ws.Object, resolved, "spec", "containerInit")
 	}
 
 	return ws

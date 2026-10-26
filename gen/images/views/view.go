@@ -53,6 +53,10 @@ type ImageView struct {
 	Icon *string
 	// Default command-line args injected at workspace creation
 	DefaultArgs []string
+	// Explicit container entrypoint injected at workspace creation
+	DefaultCommand []string
+	// Container/scratch initialization mode
+	DefaultContainerInit *ContainerInitDefaultsView
 	// Default environment variables injected at workspace creation
 	DefaultEnv []*ImageEnvVarView
 	// UID that the main container runs as (sets runAsUser and fsGroup)
@@ -80,9 +84,7 @@ type ImageView struct {
 	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
 	// a user/password) to be seeded into the guest at first boot
 	DefaultCloudInit *bool
-	// Reserved user-data for the guest (cloud-init). Empty by default; later used
-	// to seed first-boot configuration when cloud-init is supported. Not yet
-	// consumed
+	// Cloud-config for VM cloud-init or explicitly enabled container initialization
 	DefaultUserData *string
 	// Default home directory for the default user
 	DefaultHomedir *string
@@ -124,6 +126,12 @@ type ImageProxyConfigView struct {
 	// instead of stripping it. Required for apps configured with a base URL
 	// matching the proxy prefix.
 	PreservePathPrefix *bool
+}
+
+// ContainerInitDefaultsView is a type that runs validations on a projected
+// type.
+type ContainerInitDefaultsView struct {
+	Mode *string
 }
 
 // ImageEnvVarView is a type that runs validations on a projected type.
@@ -181,6 +189,8 @@ var (
 			"proxy_config",
 			"icon",
 			"default_args",
+			"default_command",
+			"default_container_init",
 			"default_env",
 			"default_uid",
 			"default_shared_memory",
@@ -234,6 +244,11 @@ func ValidateImageView(result *ImageView) (err error) {
 	if result.DefaultPort == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("default_port", "result"))
 	}
+	if result.DefaultContainerInit != nil {
+		if err2 := ValidateContainerInitDefaultsView(result.DefaultContainerInit); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	for _, e := range result.DefaultEnv {
 		if e != nil {
 			if err2 := ValidateImageEnvVarView(e); err2 != nil {
@@ -260,6 +275,20 @@ func ValidateImageView(result *ImageView) (err error) {
 // ImageProxyConfigView.
 func ValidateImageProxyConfigView(result *ImageProxyConfigView) (err error) {
 
+	return
+}
+
+// ValidateContainerInitDefaultsView runs the validations defined on
+// ContainerInitDefaultsView.
+func ValidateContainerInitDefaultsView(result *ContainerInitDefaultsView) (err error) {
+	if result.Mode == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("mode", "result"))
+	}
+	if result.Mode != nil {
+		if !(*result.Mode == "disabled" || *result.Mode == "injected" || *result.Mode == "baked-in") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.mode", *result.Mode, []any{"disabled", "injected", "baked-in"}))
+		}
+	}
 	return
 }
 

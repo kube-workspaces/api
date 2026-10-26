@@ -109,6 +109,8 @@ type CreateWorkspacePayload struct {
 	Container *WorkspaceContainer
 	// Windows private root import settings
 	VMOptions *VMOptions
+	// Container/scratch initialization override
+	ContainerInit *WorkspaceContainerInit
 	// Volumes to mount
 	VolumeMounts []*VolumeMount
 	// Custom environment variables to inject into the workspace container
@@ -353,6 +355,16 @@ type WorkspaceContainer struct {
 	GpuRequest *string
 	// GPU vendor resource name (e.g. nvidia.com/gpu, amd.com/gpu)
 	GpuVendor string
+}
+
+// Creation-time container initialization override; data defaults to the
+// catalog document
+type WorkspaceContainerInit struct {
+	Mode string
+	// Inline cloud-config, visible in the Workspace CR
+	UserData *string
+	// Same-namespace independently managed Secret with a user-data key
+	UserDataSecret *string
 }
 
 // WorkspaceInitialCredentials is the result type of the workspaces service

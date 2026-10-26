@@ -34,6 +34,10 @@ type CreateRequestBody struct {
 	Icon *string `form:"icon,omitempty" json:"icon,omitempty" xml:"icon,omitempty"`
 	// Default command-line args
 	DefaultArgs []string `form:"default_args,omitempty" json:"default_args,omitempty" xml:"default_args,omitempty"`
+	// Explicit container entrypoint at workspace creation
+	DefaultCommand []string `form:"default_command,omitempty" json:"default_command,omitempty" xml:"default_command,omitempty"`
+	// Container/scratch initialization mode
+	DefaultContainerInit *ContainerInitDefaultsRequestBody `form:"default_container_init,omitempty" json:"default_container_init,omitempty" xml:"default_container_init,omitempty"`
 	// Default environment variables
 	DefaultEnv []*ImageEnvVarRequestBody `form:"default_env,omitempty" json:"default_env,omitempty" xml:"default_env,omitempty"`
 	// Run container in privileged mode
@@ -52,9 +56,7 @@ type CreateRequestBody struct {
 	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
 	// a user/password) to be seeded into the guest at first boot
 	DefaultCloudInit *bool `form:"default_cloud_init,omitempty" json:"default_cloud_init,omitempty" xml:"default_cloud_init,omitempty"`
-	// Reserved user-data for the guest (cloud-init). Empty by default; later used
-	// to seed first-boot configuration when cloud-init is supported. Not yet
-	// consumed
+	// Cloud-config for VM cloud-init or explicitly enabled container initialization
 	DefaultUserData *string `form:"default_user_data,omitempty" json:"default_user_data,omitempty" xml:"default_user_data,omitempty"`
 	// Default home directory for the default user
 	DefaultHomedir *string `form:"default_homedir,omitempty" json:"default_homedir,omitempty" xml:"default_homedir,omitempty"`
@@ -127,6 +129,10 @@ type CreateResponseBody struct {
 	Icon *string `form:"icon,omitempty" json:"icon,omitempty" xml:"icon,omitempty"`
 	// Default command-line args injected at workspace creation
 	DefaultArgs []string `form:"default_args,omitempty" json:"default_args,omitempty" xml:"default_args,omitempty"`
+	// Explicit container entrypoint injected at workspace creation
+	DefaultCommand []string `form:"default_command,omitempty" json:"default_command,omitempty" xml:"default_command,omitempty"`
+	// Container/scratch initialization mode
+	DefaultContainerInit *ContainerInitDefaultsResponseBody `form:"default_container_init,omitempty" json:"default_container_init,omitempty" xml:"default_container_init,omitempty"`
 	// Default environment variables injected at workspace creation
 	DefaultEnv []*ImageEnvVarResponseBody `form:"default_env,omitempty" json:"default_env,omitempty" xml:"default_env,omitempty"`
 	// UID that the main container runs as (sets runAsUser and fsGroup)
@@ -154,9 +160,7 @@ type CreateResponseBody struct {
 	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
 	// a user/password) to be seeded into the guest at first boot
 	DefaultCloudInit *bool `form:"default_cloud_init,omitempty" json:"default_cloud_init,omitempty" xml:"default_cloud_init,omitempty"`
-	// Reserved user-data for the guest (cloud-init). Empty by default; later used
-	// to seed first-boot configuration when cloud-init is supported. Not yet
-	// consumed
+	// Cloud-config for VM cloud-init or explicitly enabled container initialization
 	DefaultUserData *string `form:"default_user_data,omitempty" json:"default_user_data,omitempty" xml:"default_user_data,omitempty"`
 	// Default home directory for the default user
 	DefaultHomedir *string `form:"default_homedir,omitempty" json:"default_homedir,omitempty" xml:"default_homedir,omitempty"`
@@ -213,6 +217,10 @@ type ImageResponse struct {
 	Icon *string `form:"icon,omitempty" json:"icon,omitempty" xml:"icon,omitempty"`
 	// Default command-line args injected at workspace creation
 	DefaultArgs []string `form:"default_args,omitempty" json:"default_args,omitempty" xml:"default_args,omitempty"`
+	// Explicit container entrypoint injected at workspace creation
+	DefaultCommand []string `form:"default_command,omitempty" json:"default_command,omitempty" xml:"default_command,omitempty"`
+	// Container/scratch initialization mode
+	DefaultContainerInit *ContainerInitDefaultsResponse `form:"default_container_init,omitempty" json:"default_container_init,omitempty" xml:"default_container_init,omitempty"`
 	// Default environment variables injected at workspace creation
 	DefaultEnv []*ImageEnvVarResponse `form:"default_env,omitempty" json:"default_env,omitempty" xml:"default_env,omitempty"`
 	// UID that the main container runs as (sets runAsUser and fsGroup)
@@ -240,9 +248,7 @@ type ImageResponse struct {
 	// Set to true when the image has cloud-init baked in, allowing user-data (e.g.
 	// a user/password) to be seeded into the guest at first boot
 	DefaultCloudInit *bool `form:"default_cloud_init,omitempty" json:"default_cloud_init,omitempty" xml:"default_cloud_init,omitempty"`
-	// Reserved user-data for the guest (cloud-init). Empty by default; later used
-	// to seed first-boot configuration when cloud-init is supported. Not yet
-	// consumed
+	// Cloud-config for VM cloud-init or explicitly enabled container initialization
 	DefaultUserData *string `form:"default_user_data,omitempty" json:"default_user_data,omitempty" xml:"default_user_data,omitempty"`
 	// Default home directory for the default user
 	DefaultHomedir *string `form:"default_homedir,omitempty" json:"default_homedir,omitempty" xml:"default_homedir,omitempty"`
@@ -286,6 +292,12 @@ type ImageProxyConfigResponse struct {
 	PreservePathPrefix *bool `form:"preserve_path_prefix,omitempty" json:"preserve_path_prefix,omitempty" xml:"preserve_path_prefix,omitempty"`
 }
 
+// ContainerInitDefaultsResponse is used to define fields on response body
+// types.
+type ContainerInitDefaultsResponse struct {
+	Mode *string `form:"mode,omitempty" json:"mode,omitempty" xml:"mode,omitempty"`
+}
+
 // ImageEnvVarResponse is used to define fields on response body types.
 type ImageEnvVarResponse struct {
 	// Name of the environment variable
@@ -319,6 +331,12 @@ type ImageRemoteDesktopResponse struct {
 	Port *int `form:"port,omitempty" json:"port,omitempty" xml:"port,omitempty"`
 	// Path relative to the agent's base URL
 	Path *string `form:"path,omitempty" json:"path,omitempty" xml:"path,omitempty"`
+}
+
+// ContainerInitDefaultsRequestBody is used to define fields on request body
+// types.
+type ContainerInitDefaultsRequestBody struct {
+	Mode string `form:"mode" json:"mode" xml:"mode"`
 }
 
 // ImageEnvVarRequestBody is used to define fields on request body types.
@@ -398,6 +416,12 @@ type ImageProxyConfigResponseBody struct {
 	PreservePathPrefix *bool `form:"preserve_path_prefix,omitempty" json:"preserve_path_prefix,omitempty" xml:"preserve_path_prefix,omitempty"`
 }
 
+// ContainerInitDefaultsResponseBody is used to define fields on response body
+// types.
+type ContainerInitDefaultsResponseBody struct {
+	Mode *string `form:"mode,omitempty" json:"mode,omitempty" xml:"mode,omitempty"`
+}
+
 // ImageEnvVarResponseBody is used to define fields on response body types.
 type ImageEnvVarResponseBody struct {
 	// Name of the environment variable
@@ -475,6 +499,15 @@ func NewCreateRequestBody(p *images.CreateImagePayload) *CreateRequestBody {
 		for i, val := range p.DefaultArgs {
 			body.DefaultArgs[i] = val
 		}
+	}
+	if p.DefaultCommand != nil {
+		body.DefaultCommand = make([]string, len(p.DefaultCommand))
+		for i, val := range p.DefaultCommand {
+			body.DefaultCommand[i] = val
+		}
+	}
+	if p.DefaultContainerInit != nil {
+		body.DefaultContainerInit = marshalImagesContainerInitDefaultsToContainerInitDefaultsRequestBody(p.DefaultContainerInit)
 	}
 	if p.DefaultEnv != nil {
 		body.DefaultEnv = make([]*ImageEnvVarRequestBody, len(p.DefaultEnv))
@@ -586,6 +619,15 @@ func NewCreateImageCreated(body *CreateResponseBody) *imagesviews.ImageView {
 			v.DefaultArgs[i] = val
 		}
 	}
+	if body.DefaultCommand != nil {
+		v.DefaultCommand = make([]string, len(body.DefaultCommand))
+		for i, val := range body.DefaultCommand {
+			v.DefaultCommand[i] = val
+		}
+	}
+	if body.DefaultContainerInit != nil {
+		v.DefaultContainerInit = unmarshalContainerInitDefaultsResponseBodyToImagesviewsContainerInitDefaultsView(body.DefaultContainerInit)
+	}
 	if body.DefaultEnv != nil {
 		v.DefaultEnv = make([]*imagesviews.ImageEnvVarView, len(body.DefaultEnv))
 		for i, val := range body.DefaultEnv {
@@ -651,6 +693,11 @@ func ValidateImageResponse(body *ImageResponse) (err error) {
 	if body.DefaultPort == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("default_port", "body"))
 	}
+	if body.DefaultContainerInit != nil {
+		if err2 := ValidateContainerInitDefaultsResponse(body.DefaultContainerInit); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	for _, e := range body.DefaultEnv {
 		if e != nil {
 			if err2 := ValidateImageEnvVarResponse(e); err2 != nil {
@@ -668,6 +715,20 @@ func ValidateImageResponse(body *ImageResponse) (err error) {
 	if body.RemoteDesktop != nil {
 		if err2 := ValidateImageRemoteDesktopResponse(body.RemoteDesktop); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
+// ValidateContainerInitDefaultsResponse runs the validations defined on
+// ContainerInitDefaultsResponse
+func ValidateContainerInitDefaultsResponse(body *ContainerInitDefaultsResponse) (err error) {
+	if body.Mode == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("mode", "body"))
+	}
+	if body.Mode != nil {
+		if !(*body.Mode == "disabled" || *body.Mode == "injected" || *body.Mode == "baked-in") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.mode", *body.Mode, []any{"disabled", "injected", "baked-in"}))
 		}
 	}
 	return
@@ -713,11 +774,34 @@ func ValidateImageRemoteDesktopResponse(body *ImageRemoteDesktopResponse) (err e
 	return
 }
 
+// ValidateContainerInitDefaultsRequestBody runs the validations defined on
+// ContainerInitDefaultsRequestBody
+func ValidateContainerInitDefaultsRequestBody(body *ContainerInitDefaultsRequestBody) (err error) {
+	if !(body.Mode == "disabled" || body.Mode == "injected" || body.Mode == "baked-in") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.mode", body.Mode, []any{"disabled", "injected", "baked-in"}))
+	}
+	return
+}
+
 // ValidateImageRemoteDesktopRequestBody runs the validations defined on
 // ImageRemoteDesktopRequestBody
 func ValidateImageRemoteDesktopRequestBody(body *ImageRemoteDesktopRequestBody) (err error) {
 	if !(body.Protocol == "selkies" || body.Protocol == "agent") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.protocol", body.Protocol, []any{"selkies", "agent"}))
+	}
+	return
+}
+
+// ValidateContainerInitDefaultsResponseBody runs the validations defined on
+// ContainerInitDefaultsResponseBody
+func ValidateContainerInitDefaultsResponseBody(body *ContainerInitDefaultsResponseBody) (err error) {
+	if body.Mode == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("mode", "body"))
+	}
+	if body.Mode != nil {
+		if !(*body.Mode == "disabled" || *body.Mode == "injected" || *body.Mode == "baked-in") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.mode", *body.Mode, []any{"disabled", "injected", "baked-in"}))
+		}
 	}
 	return
 }

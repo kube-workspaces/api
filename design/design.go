@@ -142,6 +142,20 @@ var WorkspaceInitialCredentials = Type("WorkspaceInitialCredentials", func() {
 	Required("username", "password", "cache_control")
 })
 
+var ContainerInitDefaults = Type("ContainerInitDefaults", func() {
+	Description("Opt-in container initialization; omitted preserves ordinary image startup")
+	Attribute("mode", String, func() { Enum("disabled", "injected", "baked-in") })
+	Required("mode")
+})
+
+var WorkspaceContainerInit = Type("WorkspaceContainerInit", func() {
+	Description("Creation-time container initialization override; data defaults to the catalog document")
+	Attribute("mode", String, func() { Enum("disabled", "injected", "baked-in") })
+	Attribute("user_data", String, "Inline cloud-config, visible in the Workspace CR", func() { MaxLength(262144) })
+	Attribute("user_data_secret", String, "Same-namespace independently managed Secret with a user-data key", func() { MaxLength(253) })
+	Required("mode")
+})
+
 var CreateWorkspacePayload = Type("CreateWorkspacePayload", func() {
 	Description("Payload for creating a new workspace")
 	Attribute("name", String, "Workspace name", func() {
@@ -160,6 +174,7 @@ var CreateWorkspacePayload = Type("CreateWorkspacePayload", func() {
 	})
 	Attribute("container", WorkspaceContainer, "Main container spec")
 	Attribute("vm_options", VMOptions, "Windows private root import settings")
+	Attribute("container_init", WorkspaceContainerInit, "Container/scratch initialization override")
 	Attribute("volume_mounts", ArrayOf(VolumeMount), "Volumes to mount", func() {
 		Example([]map[string]interface{}{{"name": "my-workspace-data", "mount_path": "/home/coder"}})
 	})
@@ -380,6 +395,8 @@ var CreateImagePayload = Type("CreateImagePayload", func() {
 	Attribute("default_args", ArrayOf(String), "Default command-line args", func() {
 		Example([]string{"--bind-addr", "0.0.0.0:8080"})
 	})
+	Attribute("default_command", ArrayOf(String), "Explicit container entrypoint at workspace creation")
+	Attribute("default_container_init", ContainerInitDefaults, "Container/scratch initialization mode")
 	Attribute("default_env", ArrayOf(ImageEnvVar), "Default environment variables", func() {
 		Example([]map[string]interface{}{{"name": "PASSWORD", "value": "changeme"}})
 	})
@@ -405,7 +422,7 @@ var CreateImagePayload = Type("CreateImagePayload", func() {
 	Attribute("default_cloud_init", Boolean, "Set to true when the image has cloud-init baked in, allowing user-data (e.g. a user/password) to be seeded into the guest at first boot", func() {
 		Example(false)
 	})
-	Attribute("default_user_data", String, "Reserved user-data for the guest (cloud-init). Empty by default; later used to seed first-boot configuration when cloud-init is supported. Not yet consumed", func() {
+	Attribute("default_user_data", String, "Cloud-config for VM cloud-init or explicitly enabled container initialization", func() {
 		Example("")
 	})
 	Attribute("default_homedir", String, "Default home directory for the default user", func() {
@@ -552,6 +569,8 @@ var ImageResult = ResultType("application/vnd.image+json", func() {
 		Attribute("default_args", ArrayOf(String), "Default command-line args injected at workspace creation", func() {
 			Example([]string{"--bind-addr", "0.0.0.0:8080"})
 		})
+		Attribute("default_command", ArrayOf(String), "Explicit container entrypoint injected at workspace creation")
+		Attribute("default_container_init", ContainerInitDefaults, "Container/scratch initialization mode")
 		Attribute("default_env", ArrayOf(ImageEnvVar), "Default environment variables injected at workspace creation", func() {
 			Example([]map[string]interface{}{{"name": "PASSWORD", "value": "changeme"}})
 		})
@@ -585,7 +604,7 @@ var ImageResult = ResultType("application/vnd.image+json", func() {
 		Attribute("default_cloud_init", Boolean, "Set to true when the image has cloud-init baked in, allowing user-data (e.g. a user/password) to be seeded into the guest at first boot", func() {
 			Example(false)
 		})
-		Attribute("default_user_data", String, "Reserved user-data for the guest (cloud-init). Empty by default; later used to seed first-boot configuration when cloud-init is supported. Not yet consumed", func() {
+		Attribute("default_user_data", String, "Cloud-config for VM cloud-init or explicitly enabled container initialization", func() {
 			Example("")
 		})
 		Attribute("default_homedir", String, "Default home directory for the default user", func() {
