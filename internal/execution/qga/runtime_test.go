@@ -1,8 +1,10 @@
 package qga
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
+	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -173,7 +175,7 @@ func TestExecuteIssuesVerifiableGrantOverQGA(t *testing.T) {
 	}
 }
 
-func TestExecuteRejectsScriptsBeforeResolvingOrStaging(t *testing.T) {
+func TestExecuteRejectsConflictingScriptFramingBeforeResolvingOrStaging(t *testing.T) {
 	fake := newFakeExec(successRunnerResult())
 	runtime, resolver, _ := testRuntime(t, fake)
 	result, err := runtime.Execute(context.Background(), testTarget(), Command{
@@ -186,6 +188,123 @@ func TestExecuteRejectsScriptsBeforeResolvingOrStaging(t *testing.T) {
 	}
 	if resolver.invoked || len(fake.calls) != 0 {
 		t.Fatal("unsupported script resolved a guest or staged bytes")
+	}
+}
+
+func TestScriptPreflightAndSignedV2Dispatch(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	fake.capabilities = []byte(`{"version":1,"script_request_version":2,"interpreter_policy":"linux-shebang-v1"}`)
+	runtime, resolver, signer := testRuntime(t, fake)
+	resolver.target.Linux = true
+	cwd := "/tmp"
+	command := Command{ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", DeadlineSeconds: 20, Cwd: &cwd,
+		Script: &Script{Body: "#!/bin/sh\nprintf 'hello\\n'\n", Name: "run.sh", InterpreterPolicy: LinuxScriptPolicy}}
+	if err := runtime.PreflightScript(context.Background(), resolver.target, command); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.files) != 0 {
+		t.Fatal("preflight staged guest content")
+	}
+	result, err := runtime.Execute(context.Background(), resolver.target, command)
+	if err != nil || result.Outcome != "completed" {
+		t.Fatalf("script failed: %+v %v", result, err)
+	}
+	var envelope struct {
+		Grant   string          `json:"grant"`
+		Request json.RawMessage `json:"request"`
+	}
+	if err := json.Unmarshal(fake.capturedFile("/var/lib/workspace-agent/qga-request-exec_1.json"), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	var request qgaRequest
+	if err := json.Unmarshal(envelope.Request, &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.Version != 2 || request.Operation != "script" || request.Script == nil || *request.Script != *command.Script || request.Executable != "" || len(request.Args) != 0 || request.OSIdentity != "root" {
+		t.Fatalf("script framing drift: %+v", request)
+	}
+	binding := grants.BindingQGA{ActorUID: request.ActorUID, Namespace: request.Namespace, WorkspaceName: request.WorkspaceName,
+		WorkspaceUID: request.WorkspaceUID, ProvisioningGeneration: request.ProvisioningGeneration, ExecutionID: request.ExecutionID,
+		RecordingID: request.RecordingID, Operation: request.Operation, OSIdentity: request.OSIdentity, Elevated: true, PolicyVersion: request.PolicyVersion,
+		RevocationEpoch: request.RevocationEpoch, Challenge: request.Challenge, Transport: grants.TransportQGAPodExec,
+		TransportTargetSHA256: request.TransportTargetSHA256, RequestSHA256: grants.Digest(envelope.Request)}
+	public := signer.PublicKey()
+	verifier, _ := grants.NewVerifier(map[string]ed25519.PublicKey{grants.KeyID(public): public}, 4)
+	if _, err := verifier.ConsumeQGA(envelope.Grant, binding, runtime.now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifier.ConsumeQGA(envelope.Grant, binding, runtime.now()); !errors.Is(err, grants.ErrReplay) {
+		t.Fatal("script replay accepted")
+	}
+	for _, mutate := range []func(*qgaRequest){
+		func(r *qgaRequest) { r.Script.Body += "id\n" }, func(r *qgaRequest) { r.Script.Name = "other.sh" },
+		func(r *qgaRequest) { r.Cwd = nil }, func(r *qgaRequest) { r.Script.InterpreterPolicy = "other" },
+	} {
+		var changed qgaRequest
+		_ = json.Unmarshal(envelope.Request, &changed)
+		mutate(&changed)
+		raw, _ := json.Marshal(changed)
+		changedBinding := binding
+		changedBinding.RequestSHA256 = grants.Digest(raw)
+		v, _ := grants.NewVerifier(map[string]ed25519.PublicKey{grants.KeyID(public): public}, 4)
+		if _, err := v.ConsumeQGA(envelope.Grant, changedBinding, runtime.now()); !errors.Is(err, grants.ErrBinding) {
+			t.Fatalf("tampered script accepted: %v", err)
+		}
+	}
+}
+
+func TestScriptPreflightRejectsEscapedEnvelopeBeforeGuestProbe(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	runtime, resolver, _ := testRuntime(t, fake)
+	resolver.target.Linux = true
+	cmd := Command{ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", DeadlineSeconds: 20,
+		Script: &Script{Body: "#!/bin/sh\n" + strings.Repeat("\t", MaxScriptBytes-10), InterpreterPolicy: LinuxScriptPolicy}}
+	if err := runtime.PreflightScript(context.Background(), resolver.target, cmd); !errors.Is(err, ErrRequestTooLarge) {
+		t.Fatal(err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("oversized script reached guest")
+	}
+}
+
+func TestScriptPreflightDeniesMissingOrIncompatibleGuestCapabilities(t *testing.T) {
+	for _, caps := range []string{"", `{"version":1,"script_request_version":0,"interpreter_policy":""}`, `{"version":1,"script_request_version":2,"interpreter_policy":"linux-shebang-v1"} {}`} {
+		fake := newFakeExec(successRunnerResult())
+		fake.capabilities = []byte(caps)
+		runtime, resolver, _ := testRuntime(t, fake)
+		resolver.target.Linux = true
+		cmd := Command{ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", DeadlineSeconds: 20,
+			Script: &Script{Body: "#!/bin/sh\nid\n", InterpreterPolicy: LinuxScriptPolicy}}
+		if err := runtime.PreflightScript(context.Background(), resolver.target, cmd); !errors.Is(err, ErrUnsupportedScripts) {
+			t.Fatal(err)
+		}
+		if len(fake.files) != 0 {
+			t.Fatal("unsupported guest received script content")
+		}
+	}
+}
+
+//go:embed testdata/linux-script-v2.json
+var scriptInteropFixture []byte
+
+func TestScriptInteropFixture(t *testing.T) {
+	runtime, resolver, signer := testRuntime(t, newFakeExec(nil))
+	resolver.target.Linux = true
+	request := runtime.request(resolver.target, Command{ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", DeadlineSeconds: 20,
+		Script: &Script{Body: "#!/bin/sh\nprintf 'hello\\n'\n", Name: "run.sh", InterpreterPolicy: LinuxScriptPolicy}}, strings.Repeat("A", 43))
+	raw, _ := json.Marshal(request)
+	binding := grants.BindingQGA{ActorUID: request.ActorUID, Namespace: request.Namespace, WorkspaceName: request.WorkspaceName,
+		WorkspaceUID: request.WorkspaceUID, ProvisioningGeneration: request.ProvisioningGeneration, ExecutionID: request.ExecutionID,
+		RecordingID: request.RecordingID, Operation: request.Operation, OSIdentity: request.OSIdentity, Elevated: true, PolicyVersion: request.PolicyVersion,
+		RevocationEpoch: request.RevocationEpoch, Challenge: request.Challenge, Transport: grants.TransportQGAPodExec,
+		TransportTargetSHA256: request.TransportTargetSHA256, RequestSHA256: grants.Digest(raw)}
+	header, _ := json.Marshal(map[string]string{"alg": "EdDSA", "typ": "kw-management-grant+qga", "kid": grants.KeyID(signer.PublicKey())})
+	claims, _ := json.Marshal(grants.ClaimsQGA{Version: 1, Issuer: grants.QGAIssuer, Audience: grants.QGAAudience, ID: request.Challenge, IssuedAt: 1800000000, ExpiresAt: 1800000030, Binding: binding})
+	input := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(claims)
+	token := input + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(ed25519.NewKeyFromSeed(make([]byte, 32)), []byte(input)))
+	fixture, _ := json.Marshal(map[string]any{"request": json.RawMessage(raw), "token": token, "public_key": base64.RawURLEncoding.EncodeToString(signer.PublicKey()), "now": 1800000000})
+	if !bytes.Equal(bytes.TrimSpace(scriptInteropFixture), fixture) {
+		t.Fatal("Go-issued Linux script fixture drift")
 	}
 }
 

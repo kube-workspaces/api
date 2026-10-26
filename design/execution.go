@@ -7,16 +7,17 @@ import (
 // Execution management types
 
 var ExecutionScriptPayload = Type("ExecutionScriptPayload", func() {
-	Description("Inline script to write to a temp file and execute via shebang")
-	Attribute("body", String, "Script content", func() {
+	Description("Bounded Linux root script, staged by a guest supporting request v2; fixed absolute sh/bash/python3 shebang required")
+	Attribute("body", String, "Script content (at most 64 KiB UTF-8; encoded envelope has a separate limit)", func() {
 		MinLength(1)
 		MaxLength(65536)
 	})
-	Attribute("name", String, "Optional filename hint (e.g. run.sh, script.ps1)", func() {
+	Attribute("name", String, "Optional recorded basename hint (never a guest path; dot and dot-dot are rejected)", func() {
+		MinLength(1)
 		MaxLength(128)
-		Pattern("^[^/\\\\]+$")
+		Pattern("^[A-Za-z0-9._-]+$")
 	})
-	Attribute("cwd", String, "Optional working directory for the script", func() {
+	Attribute("cwd", String, "Optional working directory; cannot also supply top-level cwd", func() {
 		MaxLength(1024)
 	})
 	Required("body")
@@ -181,7 +182,7 @@ var _ = Service("executions", func() {
 		})
 	})
 	Method("start", func() {
-		Description("Execute one bounded root (Linux) or SYSTEM (Windows) command or script in an eligible running agent-equipped VM and return its recorded outcome synchronously")
+		Description("Execute a bounded root (Linux) or SYSTEM (Windows) command, or a Linux root script on a v2-capable guest, and return its recorded outcome synchronously")
 		Payload(func() {
 			Attribute("namespace", String, "Workspace namespace", func() {
 				Pattern("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")

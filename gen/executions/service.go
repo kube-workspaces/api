@@ -21,9 +21,8 @@ type Service interface {
 	List(context.Context, *ListPayload) (res []*ExecutionRecord, err error)
 	// Get an execution record and its last known outcome
 	Get(context.Context, *GetPayload) (res *ExecutionRecord, err error)
-	// Execute one bounded root (Linux) or SYSTEM (Windows) command or script in an
-	// eligible running agent-equipped VM and return its recorded outcome
-	// synchronously
+	// Execute a bounded root (Linux) or SYSTEM (Windows) command, or a Linux root
+	// script on a v2-capable guest, and return its recorded outcome synchronously
 	Start(context.Context, *StartPayload) (res *ExecutionCommand, err error)
 	// Verify recording integrity and audit protected playback access
 	Manifest(context.Context, *ManifestPayload) (res *ExecutionRecordingManifest, err error)
@@ -139,13 +138,15 @@ type ExecutionRecordingManifest struct {
 	Verified       bool
 }
 
-// Inline script to write to a temp file and execute via shebang
+// Bounded Linux root script, staged by a guest supporting request v2; fixed
+// absolute sh/bash/python3 shebang required
 type ExecutionScriptPayload struct {
-	// Script content
+	// Script content (at most 64 KiB UTF-8; encoded envelope has a separate limit)
 	Body string
-	// Optional filename hint (e.g. run.sh, script.ps1)
+	// Optional recorded basename hint (never a guest path; dot and dot-dot are
+	// rejected)
 	Name *string
-	// Optional working directory for the script
+	// Optional working directory; cannot also supply top-level cwd
 	Cwd *string
 }
 

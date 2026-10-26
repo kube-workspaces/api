@@ -182,11 +182,12 @@ type ExecutionRecordResponse struct {
 // ExecutionScriptPayloadRequestBody is used to define fields on request body
 // types.
 type ExecutionScriptPayloadRequestBody struct {
-	// Script content
+	// Script content (at most 64 KiB UTF-8; encoded envelope has a separate limit)
 	Body *string `form:"body,omitempty" json:"body,omitempty" xml:"body,omitempty"`
-	// Optional filename hint (e.g. run.sh, script.ps1)
+	// Optional recorded basename hint (never a guest path; dot and dot-dot are
+	// rejected)
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// Optional working directory for the script
+	// Optional working directory; cannot also supply top-level cwd
 	Cwd *string `form:"cwd,omitempty" json:"cwd,omitempty" xml:"cwd,omitempty"`
 }
 
@@ -435,7 +436,12 @@ func ValidateExecutionScriptPayloadRequestBody(body *ExecutionScriptPayloadReque
 		}
 	}
 	if body.Name != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.name", *body.Name, "^[^/\\\\]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.name", *body.Name, "^[A-Za-z0-9._-]+$"))
+	}
+	if body.Name != nil {
+		if utf8.RuneCountInString(*body.Name) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", *body.Name, utf8.RuneCountInString(*body.Name), 1, true))
+		}
 	}
 	if body.Name != nil {
 		if utf8.RuneCountInString(*body.Name) > 128 {

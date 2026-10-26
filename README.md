@@ -95,9 +95,48 @@ cannot write execution grants. Ordinary editor/viewer roles imply no grants.
 Execution admission/renewal must use a user-bound credential and fresh current
 User data. `PlatformConfig.spec.vmExecution.enabled` and `allowElevated` are
 separate opt-in policy gates, read fresh by the execution policy provider. These
-foundations do not yet expose guest process execution: authenticated transport,
-full recording in the selected storage mode and runner lifecycle are additional
-mandatory admission requirements.
+checks are applied alongside the explicitly enabled QGA backend, mandatory full
+recording in the selected storage mode and guest-side signed-grant enforcement.
+
+### Bounded Linux scripts
+
+`POST /v1/executions/start` supports Linux root scripts on a matching guest runner:
+
+```json
+{
+  "namespace": "team-a",
+  "workspace_name": "linux-vm",
+  "deadline_seconds": 20,
+  "script": {
+    "body": "#!/bin/sh\nprintf 'hello\\n'\n",
+    "name": "maintenance.sh",
+    "cwd": "/tmp"
+  }
+}
+```
+
+Scripts are mutually exclusive with `executable`/`args`. Supply cwd at only one
+level (top-level or script), and use a basename hint containing only ASCII
+alphanumeric/`.`/`_`/`-`, excluding `.` and `..`. The UTF-8 body limit is 64 KiB.
+First lines must be exactly `#!/bin/sh`, `#!/bin/bash`, `#!/usr/bin/bash` or
+`#!/usr/bin/python3`, without arguments, BOM or CRLF. Windows Script mode and
+interactive stdin/PTY are not supported by this contract.
+
+Before admission the API validates the script and its encoded envelope budget,
+then invokes only the fixed installed runner's `management-exec --capabilities`
+probe through the current owned launcher's authenticated QGA path. Old/missing
+or incompatible runners fail before script admission, staging or grant issuance.
+The probe reports protocol support, not privilege/cgroup/storage readiness.
+
+The encoded-envelope limit is independently 96 KiB. Preflight reserves the full
+16 KiB grant-token bound, so heavily escaped JSON bodies can be rejected below
+the raw-body limit. No executable script is staged by the API: the signed v2
+request carries the script, and the guest verifies it before creating a private
+temporary file. The complete script/name/interpreter policy and cwd are committed
+to protected recording before dispatch; metadata identifies `operation=script`
+without exposing its body. Deadline, 16 KiB combined output, process-tree cleanup,
+recording-loss and transport-unknown behavior match bounded commands. Requests
+are never automatically rerun.
 
 ### Execution storage configuration
 
@@ -124,9 +163,9 @@ recordings and 8760h for metadata, independently configurable with
 must cover recording retention). Credentials and recording keys are redacted from
 ordinary configuration formatting/errors.
 
-This is configuration validation, not implemented database migrations, recording
-writes or storage readiness. Execution must remain unavailable until those
-stores, recording admission and authenticated guest enforcement are integrated.
+Store initialization, migrations, encrypted recording admission and replay are
+wired into startup and execution. Unready storage denies admission; persistent
+mode never silently falls back to ephemeral storage.
 Deployment profiles and Secret setup are documented in
 [VM execution storage](https://github.com/kube-workspaces/deploy/blob/main/docs/vm-execution-storage.md).
 

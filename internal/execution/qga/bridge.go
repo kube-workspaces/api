@@ -268,11 +268,13 @@ type guestExecStart struct {
 // guestExecStatus is the QGA guest-exec-status reply; only meaningful fields
 // appear once the process has exited.
 type guestExecStatus struct {
-	Exited   bool   `json:"exited"`
-	ExitCode int    `json:"exitcode"`
-	OutData  string `json:"out-data"`
-	ErrData  string `json:"err-data"`
-	Signal   int    `json:"signal"`
+	Exited       bool   `json:"exited"`
+	ExitCode     int    `json:"exitcode"`
+	OutData      string `json:"out-data"`
+	ErrData      string `json:"err-data"`
+	Signal       int    `json:"signal"`
+	OutTruncated bool   `json:"out-truncated"`
+	ErrTruncated bool   `json:"err-truncated"`
 }
 
 // Run stages the pinned keys and the signed envelope, invokes the fixed

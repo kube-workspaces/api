@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/kube-workspaces/api/internal/execution/grants"
 	"k8s.io/client-go/dynamic"
@@ -46,6 +47,7 @@ type qgaRequest struct {
 	RevocationEpoch        uint64   `json:"revocation_epoch"`
 	Executable             string   `json:"executable"`
 	Args                   []string `json:"args"`
+	Script                 *Script  `json:"script,omitempty"`
 	Cwd                    *string  `json:"cwd"`
 	DeadlineSeconds        int      `json:"deadline_seconds"`
 }
@@ -66,8 +68,63 @@ type Command struct {
 // Script describes an inline script to be written to a temp file and executed
 // via shebang.
 type Script struct {
-	Body string
-	Name string
+	Body              string `json:"body"`
+	Name              string `json:"name,omitempty"`
+	InterpreterPolicy string `json:"interpreter_policy"`
+}
+
+const LinuxScriptPolicy = "linux-shebang-v1"
+const MaxScriptBytes = 64 * 1024
+
+// ValidateScript mirrors the independent guest's v2 body and interpreter rules.
+func ValidateScript(script *Script) error {
+	if script == nil || !utf8.ValidString(script.Body) || script.Body == "" || len(script.Body) > MaxScriptBytes || strings.ContainsRune(script.Body, 0) || script.InterpreterPolicy != LinuxScriptPolicy {
+		return fmt.Errorf("%w: script body or interpreter policy is unsupported", ErrDenied)
+	}
+	shebang, _, _ := strings.Cut(script.Body, "\n")
+	switch shebang {
+	case "#!/bin/sh", "#!/bin/bash", "#!/usr/bin/bash", "#!/usr/bin/python3":
+	default:
+		return fmt.Errorf("%w: unsupported Linux script shebang", ErrDenied)
+	}
+	if len(script.Name) > 128 || script.Name == "." || script.Name == ".." {
+		return fmt.Errorf("%w: invalid script basename hint", ErrDenied)
+	}
+	for _, c := range script.Name {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || strings.ContainsRune("._-", c)) {
+			return fmt.Errorf("%w: invalid script basename hint", ErrDenied)
+		}
+	}
+	return nil
+}
+
+// PreflightScript runs before recording admission. Reserve the verifier's full
+// 16 KiB token bound so no subsequently issued grant can overflow the envelope.
+// The read-only fixed guest probe never stages content or starts a user script.
+func (r *Runtime) PreflightScript(ctx context.Context, target Target, command Command) error {
+	if err := validateCommand(command); err != nil {
+		return err
+	}
+	if !target.Linux || command.Script == nil {
+		return ErrUnsupportedScripts
+	}
+	current, err := r.resolver.Resolve(ctx, target.Namespace, target.WorkspaceName)
+	if err != nil {
+		return err
+	}
+	if current != target {
+		return ErrDenied
+	}
+	request := r.request(target, command, strings.Repeat("A", 43))
+	raw, err := json.Marshal(request)
+	if err != nil {
+		return ErrDenied
+	}
+	envelope, err := json.Marshal(map[string]any{"grant": strings.Repeat("A", 16*1024), "request": json.RawMessage(raw)})
+	if err != nil || len(envelope) > MaxEnvelopeBytes {
+		return ErrRequestTooLarge
+	}
+	return r.bridge.CheckScripts(ctx, target)
 }
 
 // TargetResolver resolves the fresh launcher target for one workspace.
@@ -163,6 +220,38 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 	if err != nil {
 		return nil, fmt.Errorf("%w: cannot mint a challenge", ErrTransport)
 	}
+	request := r.request(target, command, challenge)
+	raw, err := json.Marshal(&request)
+	if err != nil {
+		return nil, fmt.Errorf("%w: cannot frame the request", ErrTransport)
+	}
+	if command.Script != nil && !target.Linux {
+		return nil, ErrUnsupportedScripts
+	}
+	binding := grants.BindingQGA{
+		ActorUID: command.ActorUID, Namespace: target.Namespace, WorkspaceName: target.WorkspaceName,
+		WorkspaceUID: target.WorkspaceUID, ProvisioningGeneration: target.VMUID,
+		ExecutionID: command.ExecutionID, RecordingID: command.RecordingID,
+		Operation: request.Operation, OSIdentity: target.OSIdentity(), Elevated: true,
+		PolicyVersion: policyVersion, RevocationEpoch: target.RevocationEpoch,
+		Challenge: challenge, Transport: grants.TransportQGAPodExec,
+		TransportTargetSHA256: request.TransportTargetSHA256, RequestSHA256: grants.Digest(raw),
+	}
+	token, err := r.signer.IssueQGA(binding, r.now(), grants.QGAMaxLifetime)
+	if err != nil {
+		return nil, fmt.Errorf("%w: cannot issue the grant", ErrTransport)
+	}
+	envelope, err := json.Marshal(map[string]any{"grant": token, "request": json.RawMessage(raw)})
+	if err != nil {
+		return nil, fmt.Errorf("%w: cannot frame the envelope", ErrTransport)
+	}
+	if len(envelope) > MaxEnvelopeBytes {
+		return nil, ErrRequestTooLarge
+	}
+	return r.bridge.Run(ctx, target, command.ExecutionID, envelope, r.keysJSON, command.DeadlineSeconds)
+}
+
+func (r *Runtime) request(target Target, command Command, challenge string) qgaRequest {
 	args := command.Args
 	if args == nil {
 		// The guest deserializes a JSON array, never null.
@@ -190,52 +279,26 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 		RevocationEpoch:        target.RevocationEpoch,
 		Executable:             command.Executable,
 		Args:                   args,
+		Script:                 command.Script,
 		Cwd:                    command.Cwd,
 		DeadlineSeconds:        command.DeadlineSeconds,
 	}
-	raw, err := json.Marshal(&request)
-	if err != nil {
-		return nil, fmt.Errorf("%w: cannot frame the request", ErrTransport)
+	if command.Script != nil {
+		request.Version = 2
 	}
-	binding := grants.BindingQGA{
-		ActorUID:               command.ActorUID,
-		Namespace:              target.Namespace,
-		WorkspaceName:          target.WorkspaceName,
-		WorkspaceUID:           target.WorkspaceUID,
-		ProvisioningGeneration: target.VMUID,
-		ExecutionID:            command.ExecutionID,
-		RecordingID:            command.RecordingID,
-		Operation:              "command",
-		OSIdentity:             target.OSIdentity(),
-		Elevated:               true,
-		PolicyVersion:          policyVersion,
-		RevocationEpoch:        target.RevocationEpoch,
-		Challenge:              challenge,
-		Transport:              grants.TransportQGAPodExec,
-		TransportTargetSHA256:  grants.Digest([]byte(target.identity())),
-		RequestSHA256:          grants.Digest(raw),
-	}
-	token, err := r.signer.IssueQGA(binding, r.now(), grants.QGAMaxLifetime)
-	if err != nil {
-		return nil, fmt.Errorf("%w: cannot issue the grant", ErrTransport)
-	}
-	envelope, err := json.Marshal(map[string]any{"grant": token, "request": json.RawMessage(raw)})
-	if err != nil {
-		return nil, fmt.Errorf("%w: cannot frame the envelope", ErrTransport)
-	}
-	if len(envelope) > MaxEnvelopeBytes {
-		return nil, ErrRequestTooLarge
-	}
-	return r.bridge.Run(ctx, target, command.ExecutionID, envelope, r.keysJSON, command.DeadlineSeconds)
+	return request
 }
 
 // validateCommand mirrors the guest's structural pilot bounds so an
 // out-of-bounds command is rejected before anything is staged.
 func validateCommand(command Command) error {
 	if command.Script != nil {
-		// Fail closed even if a caller bypasses the public API validation. No
-		// script bytes or script operation exist in the current guest contract.
-		return fmt.Errorf("%w: scripts are not supported by the command-only QGA pilot", ErrDenied)
+		if command.Executable != "" || len(command.Args) != 0 {
+			return fmt.Errorf("%w: script conflicts with executable or args", ErrDenied)
+		}
+		if err := ValidateScript(command.Script); err != nil {
+			return err
+		}
 	}
 	if !validExecutionID(command.ExecutionID) || command.ActorUID == "" || command.RecordingID == "" {
 		return fmt.Errorf("%w: command identity fields are missing or malformed", ErrTransport)
@@ -245,8 +308,8 @@ func validateCommand(command Command) error {
 			return fmt.Errorf("%w: command identity fields are missing or malformed", ErrTransport)
 		}
 	}
-	if command.Executable == "" || len(command.Executable) > MaxExecutableBytes ||
-		strings.TrimSpace(command.Executable) != command.Executable || strings.IndexFunc(command.Executable, unicode.IsControl) >= 0 {
+	if command.Script == nil && (command.Executable == "" || len(command.Executable) > MaxExecutableBytes ||
+		strings.TrimSpace(command.Executable) != command.Executable || strings.IndexFunc(command.Executable, unicode.IsControl) >= 0) {
 		return fmt.Errorf("%w: executable is missing or out of bounds", ErrTransport)
 	}
 	if len(command.Args) > MaxArgs {

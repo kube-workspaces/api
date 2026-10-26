@@ -51,6 +51,10 @@ type qgaExecutor interface {
 	Execute(ctx context.Context, target qga.Target, command qga.Command) (*qga.GuestResult, error)
 }
 
+type scriptPreflighter interface {
+	PreflightScript(context.Context, qga.Target, qga.Command) error
+}
+
 // ExecutionsOption configures optional executions-service dependencies.
 type ExecutionsOption func(*executionssrvc)
 
@@ -181,23 +185,25 @@ func validateStartCommand(p *executions.StartPayload) error {
 		if p.Executable != nil || p.Args != nil {
 			return errors.New("script is mutually exclusive with executable and args")
 		}
-		if p.Script.Body == "" {
-			return errors.New("script body is required")
-		}
-		if len(p.Script.Body) > 65536 {
-			return errors.New("script body is too large")
-		}
-		if strings.IndexFunc(p.Script.Body, func(r rune) bool { return r == 0 }) >= 0 {
-			return errors.New("script body contains null bytes")
-		}
+		script := &qga.Script{Body: p.Script.Body, InterpreterPolicy: qga.LinuxScriptPolicy}
 		if p.Script.Name != nil {
-			name := *p.Script.Name
-			if len(name) > 128 || strings.ContainsAny(name, "/\\") || strings.IndexFunc(name, unicode.IsControl) >= 0 {
-				return errors.New("script name is out of bounds")
+			if *p.Script.Name == "" {
+				return errors.New("script name cannot be empty")
 			}
+			script.Name = *p.Script.Name
 		}
-		if p.Cwd != nil {
-			cwd := *p.Cwd
+		if err := qga.ValidateScript(script); err != nil {
+			return err
+		}
+		if p.Cwd != nil && p.Script.Cwd != nil {
+			return errors.New("cwd must be supplied at only one level")
+		}
+		cwdValue := p.Cwd
+		if p.Script.Cwd != nil {
+			cwdValue = p.Script.Cwd
+		}
+		if cwdValue != nil {
+			cwd := *cwdValue
 			if cwd == "" || len(cwd) > qga.MaxCwdBytes || strings.TrimSpace(cwd) != cwd || strings.IndexFunc(cwd, unicode.IsControl) >= 0 {
 				return errors.New("cwd is out of bounds")
 			}
@@ -239,14 +245,15 @@ func validateStartCommand(p *executions.StartPayload) error {
 // recordingStart is the committed first recording chunk: the durable record of
 // exactly what was requested, before any guest process exists.
 type recordingStart struct {
-	ProvisioningGeneration string   `json:"provisioning_generation"`
-	RevocationEpoch        uint64   `json:"revocation_epoch"`
-	Type                   string   `json:"type"`
-	Time                   string   `json:"time"`
-	Executable             string   `json:"executable"`
-	Args                   []string `json:"args"`
-	Cwd                    *string  `json:"cwd"`
-	DeadlineSeconds        int      `json:"deadline_seconds"`
+	ProvisioningGeneration string      `json:"provisioning_generation"`
+	RevocationEpoch        uint64      `json:"revocation_epoch"`
+	Type                   string      `json:"type"`
+	Time                   string      `json:"time"`
+	Executable             string      `json:"executable"`
+	Args                   []string    `json:"args"`
+	Script                 *qga.Script `json:"script,omitempty"`
+	Cwd                    *string     `json:"cwd"`
+	DeadlineSeconds        int         `json:"deadline_seconds"`
 }
 
 // recordingResult is the committed second recording chunk: the authoritative
@@ -283,6 +290,9 @@ func mapGuestResult(result *qga.GuestResult, execErr error) (storage.ExecutionOu
 	}
 	if errors.Is(execErr, qga.ErrRequestTooLarge) {
 		return storage.ExecutionOutcome{State: storage.StateFailed, Termination: "request-too-large"}, "failed", execErr.Error()
+	}
+	if errors.Is(execErr, qga.ErrUnsupportedScripts) {
+		return storage.ExecutionOutcome{State: storage.StateFailed, Termination: "not-dispatched"}, "failed", execErr.Error()
 	}
 	if execErr != nil || result == nil {
 		const lost = "transport lost; do not rerun"
@@ -335,12 +345,6 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	if err := validateStartCommand(p); err != nil {
 		return nil, managementError("invalid", err.Error())
 	}
-	if p.Script != nil {
-		// The DTO is reserved for a future script-capable transport. The current
-		// QGA grant/guest contract only admits executable+argv commands; reject
-		// before target resolution, admission and recording creation.
-		return nil, managementError("invalid", "script execution is not supported by the command-only QGA pilot")
-	}
 	// Elevated execution needs both the execution grant and the separately
 	// granted elevation, checked against the exact requested scope.
 	if !auth.HasExecutionPermission(user, p.Namespace, p.WorkspaceName, auth.PermissionExec, time.Now()) ||
@@ -375,17 +379,43 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	if err != nil {
 		return nil, managementError("unavailable", "cannot mint execution identifiers")
 	}
+	cmd := qga.Command{ActorUID: user.UID, ExecutionID: executionID, RecordingID: recordingID,
+		DeadlineSeconds: p.DeadlineSeconds, Cwd: p.Cwd, Args: []string{}}
+	operation := storage.OperationCommand
+	if p.Script != nil {
+		operation = storage.OperationScript
+		cmd.Script = &qga.Script{Body: p.Script.Body, InterpreterPolicy: qga.LinuxScriptPolicy}
+		if p.Script.Name != nil {
+			cmd.Script.Name = *p.Script.Name
+		}
+		if p.Script.Cwd != nil {
+			cmd.Cwd = p.Script.Cwd
+		}
+		preflight, ok := s.qga.(scriptPreflighter)
+		if !ok || !target.Linux {
+			return nil, managementError("invalid", "Linux script execution is not supported by this transport or guest")
+		}
+		if err := preflight.PreflightScript(ctx, target, cmd); err != nil {
+			if errors.Is(err, qga.ErrUnsupportedScripts) || errors.Is(err, qga.ErrRequestTooLarge) || errors.Is(err, qga.ErrDenied) {
+				return nil, managementError("invalid", err.Error())
+			}
+			return nil, managementError("unavailable", "script preflight unavailable; script was not dispatched")
+		}
+	} else {
+		cmd.Executable = *p.Executable
+		cmd.Args = p.Args
+	}
 	session, err := s.execSvc.Admit(ctx, execution.AdmissionRequest{
 		ExecutionID:   executionID,
 		RecordingID:   recordingID,
 		ActorID:       user.UID,
-		Operation:     storage.OperationCommand,
+		Operation:     operation,
 		Namespace:     p.Namespace,
 		WorkspaceName: p.WorkspaceName,
 		WorkspaceUID:  target.WorkspaceUID,
 		// The QGA transport binds the controller-owned VM UID as the
-		// management provisioning generation; grant version 1 is the only
-		// version the pilot runner accepts.
+		// management provisioning generation. Grant version stays 1; the
+		// digest-bound request version is 1 for commands and 2 for scripts.
 		GrantVersion: "1",
 		OSIdentity:   target.OSIdentity(),
 		Elevated:     true,
@@ -420,6 +450,7 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 		Time:                   time.Now().UTC().Format(time.RFC3339),
 		Executable:             execName,
 		Args:                   execArgs,
+		Script:                 cmd.Script,
 		Cwd:                    cwd,
 		DeadlineSeconds:        p.DeadlineSeconds,
 	})
@@ -442,34 +473,6 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	runCtx, cancelRun := s.runContext(ctx, p.DeadlineSeconds)
 	defer cancelRun()
 	log.Printf(runCtx, "executions.start execution=%s namespace=%s workspace=%s", executionID, p.Namespace, p.WorkspaceName)
-	cmd := qga.Command{
-		ActorUID:        user.UID,
-		ExecutionID:     executionID,
-		RecordingID:     recordingID,
-		Executable:      "",
-		Args:            []string{},
-		DeadlineSeconds: p.DeadlineSeconds,
-	}
-	if p.Script != nil {
-		name := ""
-		if p.Script.Name != nil {
-			name = *p.Script.Name
-		}
-		cwd := p.Cwd
-		if p.Script.Cwd != nil {
-			cwd = p.Script.Cwd
-		}
-		cmd.Script = &qga.Script{Body: p.Script.Body, Name: name}
-		cmd.Cwd = cwd
-	} else {
-		if p.Executable != nil {
-			cmd.Executable = *p.Executable
-		}
-		if p.Args != nil {
-			cmd.Args = p.Args
-		}
-		cmd.Cwd = p.Cwd
-	}
 	result, execErr := s.qga.Execute(runCtx, target, cmd)
 	// Finalization gets its own caller-independent budget: even an expired run
 	// budget must not turn a known outcome into a recording gap.

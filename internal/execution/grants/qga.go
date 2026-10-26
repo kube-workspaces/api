@@ -68,9 +68,9 @@ func (b BindingQGA) validate() error {
 			return ErrInvalid
 		}
 	}
-	// The pilot transport admits bounded commands only; scripts and shells
-	// arrive with later transports.
-	if b.Operation != "command" {
+	// Inline scripts use request v2 and the Linux root interpreter policy.
+	// Shells and ordinary identities remain outside this bounded transport.
+	if b.Operation != "command" && !(b.Operation == "script" && b.OSIdentity == "root") {
 		return ErrInvalid
 	}
 	if b.Transport != TransportQGAPodExec {

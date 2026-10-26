@@ -28,15 +28,24 @@ import (
 
 // stubQGA scripts the pilot transport behind the start endpoint.
 type stubQGA struct {
-	target     qga.Target
-	result     *qga.GuestResult
-	execErr    error
-	resolveErr error
-	commands   []qga.Command
-	resolved   [][2]string
+	target       qga.Target
+	result       *qga.GuestResult
+	execErr      error
+	resolveErr   error
+	commands     []qga.Command
+	resolved     [][2]string
+	preflightErr error
+	preflight    func(qga.Command) error
 	// execute overrides the scripted reply so a test can observe or disturb
 	// the context the start path hands to the transport.
 	execute func(ctx context.Context, target qga.Target, command qga.Command) (*qga.GuestResult, error)
+}
+
+func (s *stubQGA) PreflightScript(_ context.Context, _ qga.Target, cmd qga.Command) error {
+	if s.preflight != nil {
+		return s.preflight(cmd)
+	}
+	return s.preflightErr
 }
 
 func (s *stubQGA) Resolve(_ context.Context, namespace, name string) (qga.Target, error) {
@@ -160,10 +169,10 @@ func TestStartRejectsUnsupportedScriptsBeforeAdmission(t *testing.T) {
 	stub := &stubQGA{target: eligibleTarget()}
 	stack := newStartStack(t, []string{string(auth.PermissionExec), string(auth.PermissionElevated)}, enabledElevatedPolicy(), stub)
 	w := stack.post(`{"namespace":"team","workspace_name":"vm","script":{"body":"#!/bin/sh\nid\n"}}`, "operator-uid")
-	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "command-only QGA pilot") {
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "not supported") {
 		t.Fatalf("unsupported script must fail explicitly: %d %s", w.Code, w.Body.String())
 	}
-	if len(stub.resolved) != 0 || len(stub.commands) != 0 {
+	if len(stub.resolved) != 1 || len(stub.commands) != 0 {
 		t.Fatal("unsupported script reached the guest transport")
 	}
 	records, err := stack.store.Metadata().List(context.Background(), storage.Filter{})
@@ -172,6 +181,123 @@ func TestStartRejectsUnsupportedScriptsBeforeAdmission(t *testing.T) {
 	}
 	if len(records) != 0 {
 		t.Fatal("unsupported script created an admitted execution/recording")
+	}
+}
+
+func TestStartScriptAdmissionAndProtectedRecording(t *testing.T) {
+	target := eligibleTarget()
+	target.Linux = true
+	code := 0
+	stub := &stubQGA{target: target, result: &qga.GuestResult{Outcome: "completed", ExitCode: &code, Stdout: []byte("script output\n")}}
+	stack := newStartStack(t, []string{string(auth.PermissionExec), string(auth.PermissionElevated)}, enabledElevatedPolicy(), stub)
+	body := "#!/bin/sh\nprintf 'script output\\n'\n"
+	stub.preflight = func(cmd qga.Command) error {
+		records, err := stack.store.Metadata().List(context.Background(), storage.Filter{})
+		if err != nil || len(records) != 0 {
+			t.Fatal("preflight must precede admission")
+		}
+		if cmd.Script == nil || cmd.Script.Body != body || cmd.Script.InterpreterPolicy != qga.LinuxScriptPolicy {
+			t.Fatal("preflight lost script")
+		}
+		return nil
+	}
+	stub.execute = func(ctx context.Context, _ qga.Target, cmd qga.Command) (*qga.GuestResult, error) {
+		rec, _, err := stack.store.Metadata().Get(ctx, cmd.ExecutionID)
+		if err != nil || rec.Operation != storage.OperationScript || rec.OSIdentity != "root" {
+			t.Fatalf("script metadata: %+v %v", rec, err)
+		}
+		metadata, _ := json.Marshal(rec)
+		if strings.Contains(string(metadata), "printf") {
+			t.Fatal("script leaked into metadata")
+		}
+		return stub.result, nil
+	}
+	payload, _ := json.Marshal(map[string]any{"namespace": "team", "workspace_name": "vm", "script": map[string]any{"body": body, "name": "run.sh", "cwd": "/tmp"}})
+	w := stack.post(string(payload), "operator-uid")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"state":"succeeded"`) || len(stub.commands) != 1 {
+		t.Fatalf("script failed: %d %s", w.Code, w.Body.String())
+	}
+	reader, err := stack.store.Recording().Open(context.Background(), stub.commands[0].RecordingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if err := reader.Verify(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	chunk, err := reader.ReadChunk(context.Background(), 0)
+	var recorded recordingStart
+	if err != nil || json.Unmarshal(chunk, &recorded) != nil || recorded.Script == nil || recorded.Script.Body != body || recorded.Script.Name != "run.sh" || recorded.Cwd == nil || *recorded.Cwd != "/tmp" {
+		t.Fatalf("script must be fully recorded: %s %v", chunk, err)
+	}
+}
+
+func TestStartScriptPreflightFailuresDoNotAdmitOrExecute(t *testing.T) {
+	for _, failure := range []error{qga.ErrUnsupportedScripts, qga.ErrRequestTooLarge, qga.ErrDenied, qga.ErrUnavailable} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			target := eligibleTarget()
+			target.Linux = true
+			stub := &stubQGA{target: target, preflightErr: failure}
+			stack := newStartStack(t, []string{string(auth.PermissionExec), string(auth.PermissionElevated)}, enabledElevatedPolicy(), stub)
+			w := stack.post(`{"namespace":"team","workspace_name":"vm","script":{"body":"#!/bin/sh\nid\n"}}`, "operator-uid")
+			want := http.StatusBadRequest
+			if errors.Is(failure, qga.ErrUnavailable) {
+				want = http.StatusServiceUnavailable
+			}
+			if w.Code != want || len(stub.commands) != 0 {
+				t.Fatalf("unexpected dispatch: %d %s", w.Code, w.Body.String())
+			}
+			records, err := stack.store.Metadata().List(context.Background(), storage.Filter{})
+			if err != nil || len(records) != 0 {
+				t.Fatal("failed preflight admitted metadata")
+			}
+		})
+	}
+}
+
+type unavailableExecutionStore struct{ storage.Store }
+
+func (unavailableExecutionStore) Ready(context.Context) error { return storage.ErrNotReady }
+
+func TestStartScriptCannotExecuteWithUnavailableRecordingStorage(t *testing.T) {
+	target := eligibleTarget()
+	target.Linux = true
+	stub := &stubQGA{target: target}
+	stack := newStartStack(t, []string{string(auth.PermissionExec), string(auth.PermissionElevated)}, enabledElevatedPolicy(), stub,
+		func(s *executionssrvc) { s.execSvc = execution.NewService(unavailableExecutionStore{}) })
+	w := stack.post(`{"namespace":"team","workspace_name":"vm","script":{"body":"#!/bin/sh\nid\n"}}`, "operator-uid")
+	if w.Code != http.StatusServiceUnavailable || len(stub.commands) != 0 {
+		t.Fatalf("script ran without recording storage: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestStartScriptValidationAndAuthorization(t *testing.T) {
+	for name, test := range map[string]struct {
+		body     string
+		elevated bool
+		status   int
+	}{
+		"conflicting-cwd":     {`"cwd":"/tmp","script":{"body":"#!/bin/sh\nid\n","cwd":"/"}`, true, 400},
+		"invalid-nested-cwd":  {`"script":{"body":"#!/bin/sh\nid\n","cwd":" "}`, true, 400},
+		"conflicting-command": {`"executable":"id","script":{"body":"#!/bin/sh\nid\n"}`, true, 400},
+		"unsupported-shebang": {`"script":{"body":"#!/usr/bin/env sh\nid\n"}`, true, 400},
+		"invalid-name":        {`"script":{"body":"#!/bin/sh\nid\n","name":".."}`, true, 400},
+		"no-elevation":        {`"script":{"body":"#!/bin/sh\nid\n"}`, false, 403},
+	} {
+		t.Run(name, func(t *testing.T) {
+			target := eligibleTarget()
+			target.Linux = true
+			stub := &stubQGA{target: target}
+			permissions := []string{string(auth.PermissionExec)}
+			if test.elevated {
+				permissions = append(permissions, string(auth.PermissionElevated))
+			}
+			stack := newStartStack(t, permissions, enabledElevatedPolicy(), stub)
+			w := stack.post(`{"namespace":"team","workspace_name":"vm",`+test.body+`}`, "operator-uid")
+			if w.Code != test.status || len(stub.resolved) != 0 || len(stub.commands) != 0 {
+				t.Fatalf("invalid script reached target: %d %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
 

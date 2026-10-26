@@ -34,6 +34,8 @@ type fakeExec struct {
 	onGuestExec        func()
 	statusOverride     func(calls int) ([]byte, []byte, error)
 	shortEnvelopeWrite bool
+	capabilities       []byte
+	probing            bool
 }
 
 func newFakeExec(result []byte) *fakeExec {
@@ -113,8 +115,13 @@ func (f *fakeExec) run(ctx context.Context, namespace, pod, container string, co
 			Arg           []string `json:"arg"`
 			CaptureOutput bool     `json:"capture-output"`
 		}
-		if err := json.Unmarshal(request.Arguments, &args); err != nil || args.Path != runnerPath || !args.CaptureOutput || len(args.Arg) == 0 || args.Arg[0] != "management-exec" {
+		if err := json.Unmarshal(request.Arguments, &args); err != nil || (args.Path != runnerPath && args.Path != "/usr/local/bin/kw-agent") || !args.CaptureOutput || len(args.Arg) == 0 || args.Arg[0] != "management-exec" {
 			return nil, nil, fmt.Errorf("unexpected guest-exec arguments")
+		}
+		f.probing = len(args.Arg) == 2 && args.Arg[1] == "--capabilities"
+		f.statusCalls = 0
+		if f.probing {
+			return reply(map[string]any{"pid": f.pid})
 		}
 		if f.onGuestExec != nil {
 			f.onGuestExec()
@@ -128,9 +135,13 @@ func (f *fakeExec) run(ctx context.Context, namespace, pod, container string, co
 		if f.statusCalls == 1 {
 			return reply(map[string]any{"exited": false})
 		}
+		result := f.result
+		if f.probing {
+			result = f.capabilities
+		}
 		return reply(map[string]any{
 			"exited": true, "exitcode": 0,
-			"out-data": base64.StdEncoding.EncodeToString(f.result),
+			"out-data": base64.StdEncoding.EncodeToString(result),
 			"err-data": "", "signal": 0,
 		})
 	}
