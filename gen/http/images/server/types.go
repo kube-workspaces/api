@@ -300,6 +300,10 @@ type ImageProxyConfigResponse struct {
 // types.
 type ContainerInitDefaultsResponse struct {
 	Mode string `form:"mode" json:"mode" xml:"mode"`
+	// Explicit account for default-user and SSH key resolution
+	DefaultUser *string `form:"default_user,omitempty" json:"default_user,omitempty" xml:"default_user,omitempty"`
+	// Non-root application identity after injected provisioning
+	RunAsUser *string `form:"run_as_user,omitempty" json:"run_as_user,omitempty" xml:"run_as_user,omitempty"`
 }
 
 // ImageEnvVarResponse is used to define fields on response body types.
@@ -362,6 +366,10 @@ type ImageProxyConfigResponseBody struct {
 // types.
 type ContainerInitDefaultsResponseBody struct {
 	Mode string `form:"mode" json:"mode" xml:"mode"`
+	// Explicit account for default-user and SSH key resolution
+	DefaultUser *string `form:"default_user,omitempty" json:"default_user,omitempty" xml:"default_user,omitempty"`
+	// Non-root application identity after injected provisioning
+	RunAsUser *string `form:"run_as_user,omitempty" json:"run_as_user,omitempty" xml:"run_as_user,omitempty"`
 }
 
 // ImageEnvVarResponseBody is used to define fields on response body types.
@@ -404,6 +412,10 @@ type ImageRemoteDesktopResponseBody struct {
 // types.
 type ContainerInitDefaultsRequestBody struct {
 	Mode *string `form:"mode,omitempty" json:"mode,omitempty" xml:"mode,omitempty"`
+	// Explicit account for default-user and SSH key resolution
+	DefaultUser *string `form:"default_user,omitempty" json:"default_user,omitempty" xml:"default_user,omitempty"`
+	// Non-root application identity after injected provisioning
+	RunAsUser *string `form:"run_as_user,omitempty" json:"run_as_user,omitempty" xml:"run_as_user,omitempty"`
 }
 
 // ImageEnvVarRequestBody is used to define fields on request body types.
@@ -723,6 +735,12 @@ func ValidateContainerInitDefaultsRequestBody(body *ContainerInitDefaultsRequest
 		if !(*body.Mode == "disabled" || *body.Mode == "injected" || *body.Mode == "baked-in") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.mode", *body.Mode, []any{"disabled", "injected", "baked-in"}))
 		}
+	}
+	if body.DefaultUser != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.default_user", *body.DefaultUser, "^[a-z_][a-z0-9_-]{0,31}$"))
+	}
+	if body.RunAsUser != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.run_as_user", *body.RunAsUser, "^[a-z_][a-z0-9_-]{0,31}$"))
 	}
 	return
 }

@@ -1090,6 +1090,8 @@ func unmarshalWorkspaceContainerInitRequestBodyToWorkspacesWorkspaceContainerIni
 	}
 	res := &workspaces.WorkspaceContainerInit{
 		Mode:           *v.Mode,
+		DefaultUser:    v.DefaultUser,
+		RunAsUser:      v.RunAsUser,
 		UserData:       v.UserData,
 		UserDataSecret: v.UserDataSecret,
 	}

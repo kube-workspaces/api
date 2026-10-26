@@ -1463,6 +1463,8 @@ func marshalWorkspacesWorkspaceContainerInitToWorkspaceContainerInitRequestBody(
 	}
 	res := &WorkspaceContainerInitRequestBody{
 		Mode:           v.Mode,
+		DefaultUser:    v.DefaultUser,
+		RunAsUser:      v.RunAsUser,
 		UserData:       v.UserData,
 		UserDataSecret: v.UserDataSecret,
 	}
@@ -1616,6 +1618,8 @@ func marshalWorkspaceContainerInitRequestBodyToWorkspacesWorkspaceContainerInit(
 	}
 	res := &workspaces.WorkspaceContainerInit{
 		Mode:           v.Mode,
+		DefaultUser:    v.DefaultUser,
+		RunAsUser:      v.RunAsUser,
 		UserData:       v.UserData,
 		UserDataSecret: v.UserDataSecret,
 	}

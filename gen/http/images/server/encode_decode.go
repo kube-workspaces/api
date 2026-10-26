@@ -270,7 +270,9 @@ func marshalImagesContainerInitDefaultsToContainerInitDefaultsResponse(v *images
 		return nil
 	}
 	res := &ContainerInitDefaultsResponse{
-		Mode: v.Mode,
+		Mode:        v.Mode,
+		DefaultUser: v.DefaultUser,
+		RunAsUser:   v.RunAsUser,
 	}
 
 	return res
@@ -348,7 +350,9 @@ func unmarshalContainerInitDefaultsRequestBodyToImagesContainerInitDefaults(v *C
 		return nil
 	}
 	res := &images.ContainerInitDefaults{
-		Mode: *v.Mode,
+		Mode:        *v.Mode,
+		DefaultUser: v.DefaultUser,
+		RunAsUser:   v.RunAsUser,
 	}
 
 	return res
@@ -538,7 +542,9 @@ func marshalImagesviewsContainerInitDefaultsViewToContainerInitDefaultsResponseB
 		return nil
 	}
 	res := &ContainerInitDefaultsResponseBody{
-		Mode: *v.Mode,
+		Mode:        *v.Mode,
+		DefaultUser: v.DefaultUser,
+		RunAsUser:   v.RunAsUser,
 	}
 
 	return res

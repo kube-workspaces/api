@@ -72,7 +72,9 @@ type Image struct {
 
 // ImageContainerInit is an opt-in initialization mode for container/scratch.
 type ImageContainerInit struct {
-	Mode string
+	Mode        string
+	DefaultUser string
+	RunAsUser   string
 }
 
 // ImageRemoteDesktop describes an in-guest remote desktop agent.
@@ -291,7 +293,7 @@ func parseImage(obj *unstructured.Unstructured) (*Image, error) {
 		}
 	}
 	if init, ok := spec["defaultContainerInit"].(map[string]interface{}); ok {
-		img.DefaultContainerInit = &ImageContainerInit{Mode: strField(init, "mode")}
+		img.DefaultContainerInit = &ImageContainerInit{Mode: strField(init, "mode"), DefaultUser: strField(init, "defaultUser"), RunAsUser: strField(init, "runAsUser")}
 	}
 
 	if envs, ok := spec["defaultEnv"].([]interface{}); ok {

@@ -113,3 +113,25 @@ func TestContainerInitVMRejectsExplicitConfiguration(t *testing.T) {
 		t.Fatal("VM accepted container initialization configuration")
 	}
 }
+
+func TestContainerInitIdentitySnapshotAndClear(t *testing.T) {
+	defaults := defaultContainerInitSnapshot(&k8s.Image{DefaultContainerInit: &k8s.ImageContainerInit{Mode: "injected", DefaultUser: "developer", RunAsUser: "app"}, DefaultUserData: "#cloud-config\nruncmd: []\n"})
+	if defaults["defaultUser"] != "developer" || defaults["runAsUser"] != "app" {
+		t.Fatal("identity defaults not snapshotted")
+	}
+	empty := ""
+	cleared := resolveContainerInitOverride(defaults, &workspaces.WorkspaceContainerInit{Mode: "injected", RunAsUser: &empty})
+	if cleared["runAsUser"] != nil || cleared["defaultUser"] != "developer" || defaults["runAsUser"] != "app" {
+		t.Fatal("explicit clear mutated defaults or retained privilege drop")
+	}
+	for _, cfg := range []map[string]interface{}{
+		{"mode": "injected", "userData": "#cloud-config\n", "runAsUser": "root"},
+		{"mode": "injected", "userData": "#cloud-config\n", "defaultUser": "--option"},
+		{"mode": "baked-in", "userData": "#cloud-config\n", "runAsUser": "app"},
+	} {
+		ws := &unstructured.Unstructured{Object: map[string]interface{}{"spec": map[string]interface{}{"type": "container", "containerInit": cfg}}}
+		if err := validateContainerInitWorkspace(ws); err == nil {
+			t.Fatal("invalid identity request accepted")
+		}
+	}
+}

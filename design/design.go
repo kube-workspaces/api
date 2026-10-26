@@ -145,12 +145,16 @@ var WorkspaceInitialCredentials = Type("WorkspaceInitialCredentials", func() {
 var ContainerInitDefaults = Type("ContainerInitDefaults", func() {
 	Description("Opt-in container initialization; omitted preserves ordinary image startup")
 	Attribute("mode", String, func() { Enum("disabled", "injected", "baked-in") })
+	Attribute("default_user", String, "Explicit account for default-user and SSH key resolution", func() { Pattern(`^[a-z_][a-z0-9_-]{0,31}$`) })
+	Attribute("run_as_user", String, "Non-root application identity after injected provisioning", func() { Pattern(`^[a-z_][a-z0-9_-]{0,31}$`) })
 	Required("mode")
 })
 
 var WorkspaceContainerInit = Type("WorkspaceContainerInit", func() {
 	Description("Creation-time container initialization override; data defaults to the catalog document")
 	Attribute("mode", String, func() { Enum("disabled", "injected", "baked-in") })
+	Attribute("default_user", String, "Explicit account for default-user and SSH key resolution; empty clears inherited value", func() { Pattern(`^([a-z_][a-z0-9_-]{0,31})?$`) })
+	Attribute("run_as_user", String, "Non-root application identity after injected provisioning; empty clears inherited value", func() { Pattern(`^([a-z_][a-z0-9_-]{0,31})?$`) })
 	Attribute("user_data", String, "Inline cloud-config, visible in the Workspace CR", func() { MaxLength(262144) })
 	Attribute("user_data_secret", String, "Same-namespace independently managed Secret with a user-data key", func() { MaxLength(253) })
 	Required("mode")

@@ -2,6 +2,7 @@ package kubeworkspaces
 
 import (
 	"fmt"
+	"regexp"
 
 	"github.com/kube-workspaces/api/gen/workspaces"
 	"github.com/kube-workspaces/api/internal/k8s"
@@ -9,11 +10,22 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
+var containerInitAccountName = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
 func defaultContainerInitSnapshot(img *k8s.Image) map[string]interface{} {
 	if img.DefaultContainerInit == nil {
 		return nil
 	}
 	config := map[string]interface{}{"mode": img.DefaultContainerInit.Mode}
+	if img.DefaultContainerInit.Mode == "disabled" {
+		return config
+	}
+	if img.DefaultContainerInit.DefaultUser != "" {
+		config["defaultUser"] = img.DefaultContainerInit.DefaultUser
+	}
+	if img.DefaultContainerInit.RunAsUser != "" {
+		config["runAsUser"] = img.DefaultContainerInit.RunAsUser
+	}
 	if img.DefaultContainerInit.Mode != "disabled" && img.DefaultUserData != "" {
 		config["userData"] = img.DefaultUserData
 	}
@@ -29,8 +41,21 @@ func resolveContainerInitOverride(defaults map[string]interface{}, override *wor
 		return config
 	}
 	if defaults != nil {
+		for _, key := range []string{"defaultUser", "runAsUser"} {
+			if value, ok := defaults[key]; ok {
+				config[key] = value
+			}
+		}
 		if data, ok := defaults["userData"]; ok {
 			config["userData"] = data
+		}
+	}
+	for key, value := range map[string]*string{"defaultUser": override.DefaultUser, "runAsUser": override.RunAsUser} {
+		if value != nil {
+			delete(config, key)
+			if *value != "" {
+				config[key] = *value
+			}
 		}
 	}
 	if override.UserDataSecret != nil {
@@ -63,6 +88,20 @@ func validateContainerInitWorkspace(ws *unstructured.Unstructured) error {
 	}
 	if mode != "injected" && mode != "baked-in" {
 		return fmt.Errorf("container_init mode must be disabled, injected or baked-in")
+	}
+	for _, key := range []string{"defaultUser", "runAsUser"} {
+		if value, ok := cfg[key]; ok {
+			name, ok := value.(string)
+			if !ok || !containerInitAccountName.MatchString(name) {
+				return fmt.Errorf("container_init identity must be a valid account name")
+			}
+			if mode != "injected" {
+				return fmt.Errorf("container_init identity options require injected mode")
+			}
+		}
+	}
+	if runAs, _ := cfg["runAsUser"].(string); runAs != "" && (mode != "injected" || runAs == "root") {
+		return fmt.Errorf("container_init run_as_user requires injected mode and a non-root account")
 	}
 	data, hasData := cfg["userData"].(string)
 	ref, hasRef := cfg["userDataSecretRef"].(map[string]interface{})

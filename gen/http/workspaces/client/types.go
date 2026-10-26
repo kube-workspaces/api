@@ -645,6 +645,12 @@ type VMOptionsRequestBody struct {
 // types.
 type WorkspaceContainerInitRequestBody struct {
 	Mode string `form:"mode" json:"mode" xml:"mode"`
+	// Explicit account for default-user and SSH key resolution; empty clears
+	// inherited value
+	DefaultUser *string `form:"default_user,omitempty" json:"default_user,omitempty" xml:"default_user,omitempty"`
+	// Non-root application identity after injected provisioning; empty clears
+	// inherited value
+	RunAsUser *string `form:"run_as_user,omitempty" json:"run_as_user,omitempty" xml:"run_as_user,omitempty"`
 	// Inline cloud-config, visible in the Workspace CR
 	UserData *string `form:"user_data,omitempty" json:"user_data,omitempty" xml:"user_data,omitempty"`
 	// Same-namespace independently managed Secret with a user-data key
@@ -1608,6 +1614,12 @@ func ValidateVMOptionsRequestBody(body *VMOptionsRequestBody) (err error) {
 func ValidateWorkspaceContainerInitRequestBody(body *WorkspaceContainerInitRequestBody) (err error) {
 	if !(body.Mode == "disabled" || body.Mode == "injected" || body.Mode == "baked-in") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.mode", body.Mode, []any{"disabled", "injected", "baked-in"}))
+	}
+	if body.DefaultUser != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.default_user", *body.DefaultUser, "^([a-z_][a-z0-9_-]{0,31})?$"))
+	}
+	if body.RunAsUser != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.run_as_user", *body.RunAsUser, "^([a-z_][a-z0-9_-]{0,31})?$"))
 	}
 	if body.UserData != nil {
 		if utf8.RuneCountInString(*body.UserData) > 262144 {

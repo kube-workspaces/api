@@ -40,6 +40,10 @@ var MethodNames = [2]string{"list", "create"}
 // Opt-in container initialization; omitted preserves ordinary image startup
 type ContainerInitDefaults struct {
 	Mode string
+	// Explicit account for default-user and SSH key resolution
+	DefaultUser *string
+	// Non-root application identity after injected provisioning
+	RunAsUser *string
 }
 
 // CreateImagePayload is the payload type of the images service create method.
@@ -579,7 +583,9 @@ func transformImagesviewsContainerInitDefaultsViewToContainerInitDefaults(v *ima
 		return nil
 	}
 	res := &ContainerInitDefaults{
-		Mode: *v.Mode,
+		Mode:        *v.Mode,
+		DefaultUser: v.DefaultUser,
+		RunAsUser:   v.RunAsUser,
 	}
 
 	return res
@@ -689,7 +695,9 @@ func transformContainerInitDefaultsToImagesviewsContainerInitDefaultsView(v *Con
 		return nil
 	}
 	res := &imagesviews.ContainerInitDefaultsView{
-		Mode: &v.Mode,
+		Mode:        &v.Mode,
+		DefaultUser: v.DefaultUser,
+		RunAsUser:   v.RunAsUser,
 	}
 
 	return res

@@ -132,6 +132,10 @@ type ImageProxyConfigView struct {
 // type.
 type ContainerInitDefaultsView struct {
 	Mode *string
+	// Explicit account for default-user and SSH key resolution
+	DefaultUser *string
+	// Non-root application identity after injected provisioning
+	RunAsUser *string
 }
 
 // ImageEnvVarView is a type that runs validations on a projected type.
@@ -288,6 +292,12 @@ func ValidateContainerInitDefaultsView(result *ContainerInitDefaultsView) (err e
 		if !(*result.Mode == "disabled" || *result.Mode == "injected" || *result.Mode == "baked-in") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("result.mode", *result.Mode, []any{"disabled", "injected", "baked-in"}))
 		}
+	}
+	if result.DefaultUser != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("result.default_user", *result.DefaultUser, "^[a-z_][a-z0-9_-]{0,31}$"))
+	}
+	if result.RunAsUser != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("result.run_as_user", *result.RunAsUser, "^[a-z_][a-z0-9_-]{0,31}$"))
 	}
 	return
 }

@@ -100,6 +100,13 @@ func (s *imagessrvc) Create(ctx context.Context, p *images.CreateImagePayload) (
 	}
 	if p.DefaultContainerInit != nil {
 		spec["defaultContainerInit"] = map[string]interface{}{"mode": p.DefaultContainerInit.Mode}
+		init := spec["defaultContainerInit"].(map[string]interface{})
+		if p.DefaultContainerInit.DefaultUser != nil {
+			init["defaultUser"] = *p.DefaultContainerInit.DefaultUser
+		}
+		if p.DefaultContainerInit.RunAsUser != nil {
+			init["runAsUser"] = *p.DefaultContainerInit.RunAsUser
+		}
 	}
 	if len(p.DefaultCommand) > 0 {
 		command := make([]interface{}, len(p.DefaultCommand))
@@ -294,6 +301,12 @@ func imageToResult(img *k8s.Image) *images.Image {
 	result.DefaultCommand = img.DefaultCommand
 	if img.DefaultContainerInit != nil {
 		result.DefaultContainerInit = &images.ContainerInitDefaults{Mode: img.DefaultContainerInit.Mode}
+		if img.DefaultContainerInit.DefaultUser != "" {
+			result.DefaultContainerInit.DefaultUser = &img.DefaultContainerInit.DefaultUser
+		}
+		if img.DefaultContainerInit.RunAsUser != "" {
+			result.DefaultContainerInit.RunAsUser = &img.DefaultContainerInit.RunAsUser
+		}
 	}
 	if len(img.DefaultEnv) > 0 {
 		result.DefaultEnv = make([]*images.ImageEnvVar, len(img.DefaultEnv))

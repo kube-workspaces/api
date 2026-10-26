@@ -361,6 +361,12 @@ type WorkspaceContainer struct {
 // catalog document
 type WorkspaceContainerInit struct {
 	Mode string
+	// Explicit account for default-user and SSH key resolution; empty clears
+	// inherited value
+	DefaultUser *string
+	// Non-root application identity after injected provisioning; empty clears
+	// inherited value
+	RunAsUser *string
 	// Inline cloud-config, visible in the Workspace CR
 	UserData *string
 	// Same-namespace independently managed Secret with a user-data key
