@@ -15,23 +15,25 @@ import (
 
 // Client is the "executions" service client.
 type Client struct {
-	StatusEndpoint   goa.Endpoint
-	ListEndpoint     goa.Endpoint
-	GetEndpoint      goa.Endpoint
-	StartEndpoint    goa.Endpoint
-	ManifestEndpoint goa.Endpoint
-	ChunkEndpoint    goa.Endpoint
+	StatusEndpoint       goa.Endpoint
+	ListEndpoint         goa.Endpoint
+	CapabilitiesEndpoint goa.Endpoint
+	GetEndpoint          goa.Endpoint
+	StartEndpoint        goa.Endpoint
+	ManifestEndpoint     goa.Endpoint
+	ChunkEndpoint        goa.Endpoint
 }
 
 // NewClient initializes a "executions" service client given the endpoints.
-func NewClient(status, list, get, start, manifest, chunk goa.Endpoint) *Client {
+func NewClient(status, list, capabilities, get, start, manifest, chunk goa.Endpoint) *Client {
 	return &Client{
-		StatusEndpoint:   status,
-		ListEndpoint:     list,
-		GetEndpoint:      get,
-		StartEndpoint:    start,
-		ManifestEndpoint: manifest,
-		ChunkEndpoint:    chunk,
+		StatusEndpoint:       status,
+		ListEndpoint:         list,
+		CapabilitiesEndpoint: capabilities,
+		GetEndpoint:          get,
+		StartEndpoint:        start,
+		ManifestEndpoint:     manifest,
+		ChunkEndpoint:        chunk,
 	}
 }
 
@@ -67,6 +69,23 @@ func (c *Client) List(ctx context.Context, p *ListPayload) (res []*ExecutionReco
 		return
 	}
 	return ires.([]*ExecutionRecord), nil
+}
+
+// Capabilities calls the "capabilities" endpoint of the "executions" service.
+// Capabilities may return the following errors:
+//   - "unauthorized" (type Unauthorized)
+//   - "forbidden" (type Forbidden)
+//   - "unavailable" (type Unavailable)
+//   - "invalid" (type Invalid)
+//   - "not_found" (type NotFound)
+//   - error: internal error
+func (c *Client) Capabilities(ctx context.Context, p *CapabilitiesPayload) (res *ExecutionCapabilities, err error) {
+	var ires any
+	ires, err = c.CapabilitiesEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ExecutionCapabilities), nil
 }
 
 // Get calls the "get" endpoint of the "executions" service.

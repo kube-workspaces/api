@@ -52,6 +52,21 @@ type StatusResponseBody struct {
 	IssuerReady *bool `form:"issuer_ready,omitempty" json:"issuer_ready,omitempty" xml:"issuer_ready,omitempty"`
 }
 
+// CapabilitiesResponseBody is the type of the "executions" service
+// "capabilities" endpoint HTTP response body.
+type CapabilitiesResponseBody struct {
+	Namespace            *string `form:"namespace,omitempty" json:"namespace,omitempty" xml:"namespace,omitempty"`
+	WorkspaceName        *string `form:"workspace_name,omitempty" json:"workspace_name,omitempty" xml:"workspace_name,omitempty"`
+	WorkspaceUID         *string `form:"workspace_uid,omitempty" json:"workspace_uid,omitempty" xml:"workspace_uid,omitempty"`
+	OsIdentity           *string `form:"os_identity,omitempty" json:"os_identity,omitempty" xml:"os_identity,omitempty"`
+	ScriptSupported      *bool   `form:"script_supported,omitempty" json:"script_supported,omitempty" xml:"script_supported,omitempty"`
+	ScriptRequestVersion *int    `form:"script_request_version,omitempty" json:"script_request_version,omitempty" xml:"script_request_version,omitempty"`
+	InterpreterPolicy    *string `form:"interpreter_policy,omitempty" json:"interpreter_policy,omitempty" xml:"interpreter_policy,omitempty"`
+	MaxScriptBytes       *int    `form:"max_script_bytes,omitempty" json:"max_script_bytes,omitempty" xml:"max_script_bytes,omitempty"`
+	// Why script support is unavailable; empty when advertised
+	Reason *string `form:"reason,omitempty" json:"reason,omitempty" xml:"reason,omitempty"`
+}
+
 // GetResponseBody is the type of the "executions" service "get" endpoint HTTP
 // response body.
 type GetResponseBody struct {
@@ -321,6 +336,64 @@ func NewListUnavailable(body string) executions.Unavailable {
 	return v
 }
 
+// NewCapabilitiesExecutionCapabilitiesOK builds a "executions" service
+// "capabilities" endpoint result from a HTTP "OK" response.
+func NewCapabilitiesExecutionCapabilitiesOK(body *CapabilitiesResponseBody) *executions.ExecutionCapabilities {
+	v := &executions.ExecutionCapabilities{
+		Namespace:            *body.Namespace,
+		WorkspaceName:        *body.WorkspaceName,
+		WorkspaceUID:         *body.WorkspaceUID,
+		OsIdentity:           *body.OsIdentity,
+		ScriptSupported:      *body.ScriptSupported,
+		ScriptRequestVersion: *body.ScriptRequestVersion,
+		InterpreterPolicy:    *body.InterpreterPolicy,
+		MaxScriptBytes:       *body.MaxScriptBytes,
+		Reason:               *body.Reason,
+	}
+
+	return v
+}
+
+// NewCapabilitiesForbidden builds a executions service capabilities endpoint
+// forbidden error.
+func NewCapabilitiesForbidden(body string) executions.Forbidden {
+	v := executions.Forbidden(body)
+
+	return v
+}
+
+// NewCapabilitiesInvalid builds a executions service capabilities endpoint
+// invalid error.
+func NewCapabilitiesInvalid(body string) executions.Invalid {
+	v := executions.Invalid(body)
+
+	return v
+}
+
+// NewCapabilitiesNotFound builds a executions service capabilities endpoint
+// not_found error.
+func NewCapabilitiesNotFound(body string) executions.NotFound {
+	v := executions.NotFound(body)
+
+	return v
+}
+
+// NewCapabilitiesUnauthorized builds a executions service capabilities
+// endpoint unauthorized error.
+func NewCapabilitiesUnauthorized(body string) executions.Unauthorized {
+	v := executions.Unauthorized(body)
+
+	return v
+}
+
+// NewCapabilitiesUnavailable builds a executions service capabilities endpoint
+// unavailable error.
+func NewCapabilitiesUnavailable(body string) executions.Unavailable {
+	v := executions.Unavailable(body)
+
+	return v
+}
+
 // NewGetExecutionRecordOK builds a "executions" service "get" endpoint result
 // from a HTTP "OK" response.
 func NewGetExecutionRecordOK(body *GetResponseBody) *executionsviews.ExecutionRecordView {
@@ -549,6 +622,44 @@ func NewChunkUnavailable(body string) executions.Unavailable {
 	v := executions.Unavailable(body)
 
 	return v
+}
+
+// ValidateCapabilitiesResponseBody runs the validations defined on
+// CapabilitiesResponseBody
+func ValidateCapabilitiesResponseBody(body *CapabilitiesResponseBody) (err error) {
+	if body.Namespace == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("namespace", "body"))
+	}
+	if body.WorkspaceName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("workspace_name", "body"))
+	}
+	if body.WorkspaceUID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("workspace_uid", "body"))
+	}
+	if body.OsIdentity == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("os_identity", "body"))
+	}
+	if body.ScriptSupported == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("script_supported", "body"))
+	}
+	if body.ScriptRequestVersion == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("script_request_version", "body"))
+	}
+	if body.InterpreterPolicy == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("interpreter_policy", "body"))
+	}
+	if body.MaxScriptBytes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("max_script_bytes", "body"))
+	}
+	if body.Reason == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("reason", "body"))
+	}
+	if body.OsIdentity != nil {
+		if !(*body.OsIdentity == "root" || *body.OsIdentity == "SYSTEM") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.os_identity", *body.OsIdentity, []any{"root", "SYSTEM"}))
+		}
+	}
+	return
 }
 
 // ValidateManifestResponseBody runs the validations defined on

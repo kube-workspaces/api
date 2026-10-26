@@ -87,6 +87,20 @@ var ExecutionRecordingChunk = Type("ExecutionRecordingChunk", func() {
 	Required("index", "data")
 })
 
+var ExecutionCapabilities = Type("ExecutionCapabilities", func() {
+	Description("Fresh scoped script protocol discovery; a hint only, never execution authority or proof of guest readiness")
+	Attribute("namespace", String, func() { Example("team-a") })
+	Attribute("workspace_name", String, func() { Example("linux-vm") })
+	Attribute("workspace_uid", String, func() { Example("workspace-uid") })
+	Attribute("os_identity", String, func() { Enum("root", "SYSTEM"); Example("root") })
+	Attribute("script_supported", Boolean, func() { Example(false) })
+	Attribute("script_request_version", Int, func() { Example(0) })
+	Attribute("interpreter_policy", String, func() { Example("") })
+	Attribute("max_script_bytes", Int, func() { Example(0) })
+	Attribute("reason", String, "Why script support is unavailable; empty when advertised", func() { Example("Guest does not advertise compatible script support.") })
+	Required("namespace", "workspace_name", "workspace_uid", "os_identity", "script_supported", "script_request_version", "interpreter_policy", "max_script_bytes", "reason")
+})
+
 var ExecutionRecordingManifest = Type("ExecutionRecordingManifest", func() {
 	Attribute("recording_id", String)
 	Attribute("chunks", UInt64)
@@ -165,6 +179,21 @@ var _ = Service("executions", func() {
 			Param("actor_id")
 			Param("since")
 			Param("limit")
+			Response(StatusOK)
+		})
+	})
+	Method("capabilities", func() {
+		Description("Probe script support for one current workspace after scoped exec/elevation, policy and storage checks; creates no execution or recording")
+		Payload(func() {
+			Attribute("namespace", String, func() { Pattern("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"); MaxLength(63); Example("team-a") })
+			Attribute("workspace_name", String, func() { Pattern("^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"); MaxLength(253); Example("linux-vm") })
+			Required("namespace", "workspace_name")
+		})
+		Result(ExecutionCapabilities)
+		HTTP(func() {
+			GET("/v1/executions/capabilities")
+			Param("namespace")
+			Param("workspace_name")
 			Response(StatusOK)
 		})
 	})

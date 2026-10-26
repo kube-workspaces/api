@@ -280,6 +280,134 @@ func DecodeListResponse(decoder func(*http.Response) goahttp.Decoder, restoreBod
 	}
 }
 
+// BuildCapabilitiesRequest instantiates a HTTP request object with method and
+// path set to call the "executions" service "capabilities" endpoint
+func (c *Client) BuildCapabilitiesRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: CapabilitiesExecutionsPath()}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("executions", "capabilities", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeCapabilitiesRequest returns an encoder for requests sent to the
+// executions capabilities server.
+func EncodeCapabilitiesRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*executions.CapabilitiesPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("executions", "capabilities", "*executions.CapabilitiesPayload", v)
+		}
+		values := req.URL.Query()
+		values.Add("namespace", p.Namespace)
+		values.Add("workspace_name", p.WorkspaceName)
+		req.URL.RawQuery = values.Encode()
+		return nil
+	}
+}
+
+// DecodeCapabilitiesResponse returns a decoder for responses returned by the
+// executions capabilities endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+// DecodeCapabilitiesResponse may return the following errors:
+//   - "forbidden" (type executions.Forbidden): http.StatusForbidden
+//   - "invalid" (type executions.Invalid): http.StatusBadRequest
+//   - "not_found" (type executions.NotFound): http.StatusNotFound
+//   - "unauthorized" (type executions.Unauthorized): http.StatusUnauthorized
+//   - "unavailable" (type executions.Unavailable): http.StatusServiceUnavailable
+//   - error: internal error
+func DecodeCapabilitiesResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body CapabilitiesResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "capabilities", err)
+			}
+			err = ValidateCapabilitiesResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("executions", "capabilities", err)
+			}
+			res := NewCapabilitiesExecutionCapabilitiesOK(&body)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "capabilities", err)
+			}
+			return nil, NewCapabilitiesForbidden(body)
+		case http.StatusBadRequest:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "capabilities", err)
+			}
+			return nil, NewCapabilitiesInvalid(body)
+		case http.StatusNotFound:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "capabilities", err)
+			}
+			return nil, NewCapabilitiesNotFound(body)
+		case http.StatusUnauthorized:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "capabilities", err)
+			}
+			return nil, NewCapabilitiesUnauthorized(body)
+		case http.StatusServiceUnavailable:
+			var (
+				body string
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("executions", "capabilities", err)
+			}
+			return nil, NewCapabilitiesUnavailable(body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("executions", "capabilities", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildGetRequest instantiates a HTTP request object with method and path set
 // to call the "executions" service "get" endpoint
 func (c *Client) BuildGetRequest(ctx context.Context, v any) (*http.Request, error) {

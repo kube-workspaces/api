@@ -23,6 +23,10 @@ type Client struct {
 	// List Doer is the HTTP client used to make requests to the list endpoint.
 	ListDoer goahttp.Doer
 
+	// Capabilities Doer is the HTTP client used to make requests to the
+	// capabilities endpoint.
+	CapabilitiesDoer goahttp.Doer
+
 	// Get Doer is the HTTP client used to make requests to the get endpoint.
 	GetDoer goahttp.Doer
 
@@ -58,6 +62,7 @@ func NewClient(
 	return &Client{
 		StatusDoer:          doer,
 		ListDoer:            doer,
+		CapabilitiesDoer:    doer,
 		GetDoer:             doer,
 		StartDoer:           doer,
 		ManifestDoer:        doer,
@@ -108,6 +113,30 @@ func (c *Client) List() goa.Endpoint {
 		resp, err := c.ListDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("executions", "list", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// Capabilities returns an endpoint that makes HTTP requests to the executions
+// service capabilities server.
+func (c *Client) Capabilities() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeCapabilitiesRequest(c.encoder)
+		decodeResponse = DecodeCapabilitiesResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildCapabilitiesRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.CapabilitiesDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("executions", "capabilities", err)
 		}
 		return decodeResponse(resp)
 	}

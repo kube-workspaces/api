@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"unicode/utf8"
 
 	executions "github.com/kube-workspaces/api/gen/executions"
 	executionsviews "github.com/kube-workspaces/api/gen/executions/views"
@@ -163,6 +164,110 @@ func DecodeListRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.De
 // EncodeListError returns an encoder for errors returned by the list
 // executions endpoint.
 func EncodeListError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "forbidden":
+			var res executions.Forbidden
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		case "invalid":
+			var res executions.Invalid
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		case "not_found":
+			var res executions.NotFound
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "unauthorized":
+			var res executions.Unauthorized
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusUnauthorized)
+			return enc.Encode(body)
+		case "unavailable":
+			var res executions.Unavailable
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			body := res
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeCapabilitiesResponse returns an encoder for responses returned by the
+// executions capabilities endpoint.
+func EncodeCapabilitiesResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*executions.ExecutionCapabilities)
+		enc := encoder(ctx, w)
+		body := NewCapabilitiesResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeCapabilitiesRequest returns a decoder for requests sent to the
+// executions capabilities endpoint.
+func DecodeCapabilitiesRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*executions.CapabilitiesPayload, error) {
+	return func(r *http.Request) (*executions.CapabilitiesPayload, error) {
+		var payload *executions.CapabilitiesPayload
+		var (
+			namespace     string
+			workspaceName string
+			err           error
+		)
+		qp := r.URL.Query()
+		namespace = qp.Get("namespace")
+		if namespace == "" {
+			err = goa.MergeErrors(err, goa.MissingFieldError("namespace", "query string"))
+		}
+		err = goa.MergeErrors(err, goa.ValidatePattern("namespace", namespace, "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"))
+		if utf8.RuneCountInString(namespace) > 63 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("namespace", namespace, utf8.RuneCountInString(namespace), 63, false))
+		}
+		workspaceName = qp.Get("workspace_name")
+		if workspaceName == "" {
+			err = goa.MergeErrors(err, goa.MissingFieldError("workspace_name", "query string"))
+		}
+		err = goa.MergeErrors(err, goa.ValidatePattern("workspace_name", workspaceName, "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"))
+		if utf8.RuneCountInString(workspaceName) > 253 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("workspace_name", workspaceName, utf8.RuneCountInString(workspaceName), 253, false))
+		}
+		if err != nil {
+			return payload, err
+		}
+		payload = NewCapabilitiesPayload(namespace, workspaceName)
+
+		return payload, nil
+	}
+}
+
+// EncodeCapabilitiesError returns an encoder for errors returned by the
+// capabilities executions endpoint.
+func EncodeCapabilitiesError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
 	encodeError := goahttp.ErrorEncoder(encoder, formatter)
 	return func(ctx context.Context, w http.ResponseWriter, v error) error {
 		var en goa.GoaErrorNamer

@@ -28,14 +28,16 @@ import (
 
 // stubQGA scripts the pilot transport behind the start endpoint.
 type stubQGA struct {
-	target       qga.Target
-	result       *qga.GuestResult
-	execErr      error
-	resolveErr   error
-	commands     []qga.Command
-	resolved     [][2]string
-	preflightErr error
-	preflight    func(qga.Command) error
+	target        qga.Target
+	result        *qga.GuestResult
+	execErr       error
+	resolveErr    error
+	commands      []qga.Command
+	resolved      [][2]string
+	preflightErr  error
+	supportErr    error
+	supportChecks int
+	preflight     func(qga.Command) error
 	// execute overrides the scripted reply so a test can observe or disturb
 	// the context the start path hands to the transport.
 	execute func(ctx context.Context, target qga.Target, command qga.Command) (*qga.GuestResult, error)
@@ -46,6 +48,11 @@ func (s *stubQGA) PreflightScript(_ context.Context, _ qga.Target, cmd qga.Comma
 		return s.preflight(cmd)
 	}
 	return s.preflightErr
+}
+
+func (s *stubQGA) CheckScriptSupport(context.Context, qga.Target) error {
+	s.supportChecks++
+	return s.supportErr
 }
 
 func (s *stubQGA) Resolve(_ context.Context, namespace, name string) (qga.Target, error) {
@@ -68,6 +75,7 @@ type startStack struct {
 	stub  *stubQGA
 	store storage.Store
 	post  func(body string, credential string) *httptest.ResponseRecorder
+	get   func(path string, authenticated bool) *httptest.ResponseRecorder
 	// postCtx runs one start request on a caller-owned context so a test can
 	// disconnect mid-flight.
 	postCtx func(ctx context.Context, body string) *httptest.ResponseRecorder
@@ -151,6 +159,15 @@ func newScopedStartStack(t *testing.T, namespace, workspace string, permissions 
 		store:   store,
 		post:    func(body, _ string) *httptest.ResponseRecorder { return startOn(context.Background(), body) },
 		postCtx: startOn,
+		get: func(path string, authenticated bool) *httptest.ResponseRecorder {
+			r := httptest.NewRequest(http.MethodGet, path, nil)
+			if authenticated {
+				r.Header.Set("Authorization", "Bearer "+token)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, r)
+			return w
+		},
 	}
 }
 

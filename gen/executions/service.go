@@ -19,6 +19,9 @@ type Service interface {
 	Status(context.Context) (res *ExecutionStatus, err error)
 	// List execution records visible to the actor
 	List(context.Context, *ListPayload) (res []*ExecutionRecord, err error)
+	// Probe script support for one current workspace after scoped exec/elevation,
+	// policy and storage checks; creates no execution or recording
+	Capabilities(context.Context, *CapabilitiesPayload) (res *ExecutionCapabilities, err error)
 	// Get an execution record and its last known outcome
 	Get(context.Context, *GetPayload) (res *ExecutionRecord, err error)
 	// Execute a bounded root (Linux) or SYSTEM (Windows) command, or a Linux root
@@ -44,12 +47,34 @@ const ServiceName = "executions"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [6]string{"status", "list", "get", "start", "manifest", "chunk"}
+var MethodNames = [7]string{"status", "list", "capabilities", "get", "start", "manifest", "chunk"}
+
+// CapabilitiesPayload is the payload type of the executions service
+// capabilities method.
+type CapabilitiesPayload struct {
+	Namespace     string
+	WorkspaceName string
+}
 
 // ChunkPayload is the payload type of the executions service chunk method.
 type ChunkPayload struct {
 	ExecutionID string
 	Index       uint64
+}
+
+// ExecutionCapabilities is the result type of the executions service
+// capabilities method.
+type ExecutionCapabilities struct {
+	Namespace            string
+	WorkspaceName        string
+	WorkspaceUID         string
+	OsIdentity           string
+	ScriptSupported      bool
+	ScriptRequestVersion int
+	InterpreterPolicy    string
+	MaxScriptBytes       int
+	// Why script support is unavailable; empty when advertised
+	Reason string
 }
 
 // ExecutionCommand is the result type of the executions service start method.

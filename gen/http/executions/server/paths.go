@@ -21,6 +21,11 @@ func ListExecutionsPath() string {
 	return "/v1/executions"
 }
 
+// CapabilitiesExecutionsPath returns the URL path to the executions service capabilities HTTP endpoint.
+func CapabilitiesExecutionsPath() string {
+	return "/v1/executions/capabilities"
+}
+
 // GetExecutionsPath returns the URL path to the executions service get HTTP endpoint.
 func GetExecutionsPath(executionID string) string {
 	return fmt.Sprintf("/v1/executions/%v", executionID)

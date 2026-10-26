@@ -122,6 +122,19 @@ First lines must be exactly `#!/bin/sh`, `#!/bin/bash`, `#!/usr/bin/bash` or
 `#!/usr/bin/python3`, without arguments, BOM or CRLF. Windows Script mode and
 interactive stdin/PTY are not supported by this contract.
 
+Clients can discover support with
+`GET /v1/executions/capabilities?namespace=team-a&workspace_name=linux-vm`.
+This requires the same current user-bound identity, scoped execution/elevation,
+enabled policy, ready recording store and eligible running target as start.
+The result binds namespace/name/Workspace UID and reports `os_identity`,
+`script_supported`, `script_request_version`, `interpreter_policy`,
+`max_script_bytes` and an unavailable `reason`. Compatible Linux runners advertise
+version 2, `linux-shebang-v1` and 65536 bytes. Old/incompatible runners report
+unsupported; policy/auth/storage/target failures return the corresponding HTTP
+error. Discovery creates no execution, recording or grant. Clients must treat it
+as a hint: every script submission independently repeats preflight and guest
+grant verification.
+
 Before admission the API validates the script and its encoded envelope budget,
 then invokes only the fixed installed runner's `management-exec --capabilities`
 probe through the current owned launcher's authenticated QGA path. Old/missing

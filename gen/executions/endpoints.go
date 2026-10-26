@@ -15,23 +15,25 @@ import (
 
 // Endpoints wraps the "executions" service endpoints.
 type Endpoints struct {
-	Status   goa.Endpoint
-	List     goa.Endpoint
-	Get      goa.Endpoint
-	Start    goa.Endpoint
-	Manifest goa.Endpoint
-	Chunk    goa.Endpoint
+	Status       goa.Endpoint
+	List         goa.Endpoint
+	Capabilities goa.Endpoint
+	Get          goa.Endpoint
+	Start        goa.Endpoint
+	Manifest     goa.Endpoint
+	Chunk        goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "executions" service with endpoints.
 func NewEndpoints(s Service) *Endpoints {
 	return &Endpoints{
-		Status:   NewStatusEndpoint(s),
-		List:     NewListEndpoint(s),
-		Get:      NewGetEndpoint(s),
-		Start:    NewStartEndpoint(s),
-		Manifest: NewManifestEndpoint(s),
-		Chunk:    NewChunkEndpoint(s),
+		Status:       NewStatusEndpoint(s),
+		List:         NewListEndpoint(s),
+		Capabilities: NewCapabilitiesEndpoint(s),
+		Get:          NewGetEndpoint(s),
+		Start:        NewStartEndpoint(s),
+		Manifest:     NewManifestEndpoint(s),
+		Chunk:        NewChunkEndpoint(s),
 	}
 }
 
@@ -39,6 +41,7 @@ func NewEndpoints(s Service) *Endpoints {
 func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Status = m(e.Status)
 	e.List = m(e.List)
+	e.Capabilities = m(e.Capabilities)
 	e.Get = m(e.Get)
 	e.Start = m(e.Start)
 	e.Manifest = m(e.Manifest)
@@ -64,6 +67,15 @@ func NewListEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*ListPayload)
 		return s.List(ctx, p)
+	}
+}
+
+// NewCapabilitiesEndpoint returns an endpoint function that calls the method
+// "capabilities" of service "executions".
+func NewCapabilitiesEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*CapabilitiesPayload)
+		return s.Capabilities(ctx, p)
 	}
 }
 

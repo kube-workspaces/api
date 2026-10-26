@@ -18,13 +18,14 @@ import (
 
 // Server lists the executions service endpoint HTTP handlers.
 type Server struct {
-	Mounts   []*MountPoint
-	Status   http.Handler
-	List     http.Handler
-	Get      http.Handler
-	Start    http.Handler
-	Manifest http.Handler
-	Chunk    http.Handler
+	Mounts       []*MountPoint
+	Status       http.Handler
+	List         http.Handler
+	Capabilities http.Handler
+	Get          http.Handler
+	Start        http.Handler
+	Manifest     http.Handler
+	Chunk        http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -56,17 +57,19 @@ func New(
 		Mounts: []*MountPoint{
 			{"Status", "GET", "/v1/executions/status"},
 			{"List", "GET", "/v1/executions"},
+			{"Capabilities", "GET", "/v1/executions/capabilities"},
 			{"Get", "GET", "/v1/executions/{execution_id}"},
 			{"Start", "POST", "/v1/executions/start"},
 			{"Manifest", "GET", "/v1/executions/{execution_id}/recording"},
 			{"Chunk", "GET", "/v1/executions/{execution_id}/recording/chunks/{index}"},
 		},
-		Status:   NewStatusHandler(e.Status, mux, decoder, encoder, errhandler, formatter),
-		List:     NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
-		Get:      NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
-		Start:    NewStartHandler(e.Start, mux, decoder, encoder, errhandler, formatter),
-		Manifest: NewManifestHandler(e.Manifest, mux, decoder, encoder, errhandler, formatter),
-		Chunk:    NewChunkHandler(e.Chunk, mux, decoder, encoder, errhandler, formatter),
+		Status:       NewStatusHandler(e.Status, mux, decoder, encoder, errhandler, formatter),
+		List:         NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
+		Capabilities: NewCapabilitiesHandler(e.Capabilities, mux, decoder, encoder, errhandler, formatter),
+		Get:          NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
+		Start:        NewStartHandler(e.Start, mux, decoder, encoder, errhandler, formatter),
+		Manifest:     NewManifestHandler(e.Manifest, mux, decoder, encoder, errhandler, formatter),
+		Chunk:        NewChunkHandler(e.Chunk, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -77,6 +80,7 @@ func (s *Server) Service() string { return "executions" }
 func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Status = m(s.Status)
 	s.List = m(s.List)
+	s.Capabilities = m(s.Capabilities)
 	s.Get = m(s.Get)
 	s.Start = m(s.Start)
 	s.Manifest = m(s.Manifest)
@@ -90,6 +94,7 @@ func (s *Server) MethodNames() []string { return executions.MethodNames[:] }
 func Mount(mux goahttp.Muxer, h *Server) {
 	MountStatusHandler(mux, h.Status)
 	MountListHandler(mux, h.List)
+	MountCapabilitiesHandler(mux, h.Capabilities)
 	MountGetHandler(mux, h.Get)
 	MountStartHandler(mux, h.Start)
 	MountManifestHandler(mux, h.Manifest)
@@ -177,6 +182,59 @@ func NewListHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "list")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "executions")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountCapabilitiesHandler configures the mux to serve the "executions"
+// service "capabilities" endpoint.
+func MountCapabilitiesHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/v1/executions/capabilities", f)
+}
+
+// NewCapabilitiesHandler creates a HTTP handler which loads the HTTP request
+// and calls the "executions" service "capabilities" endpoint.
+func NewCapabilitiesHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeCapabilitiesRequest(mux, decoder)
+		encodeResponse = EncodeCapabilitiesResponse(encoder)
+		encodeError    = EncodeCapabilitiesError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "capabilities")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "executions")
 		payload, err := decodeRequest(r)
 		if err != nil {

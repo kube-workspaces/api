@@ -108,13 +108,6 @@ func (r *Runtime) PreflightScript(ctx context.Context, target Target, command Co
 	if !target.Linux || command.Script == nil {
 		return ErrUnsupportedScripts
 	}
-	current, err := r.resolver.Resolve(ctx, target.Namespace, target.WorkspaceName)
-	if err != nil {
-		return err
-	}
-	if current != target {
-		return ErrDenied
-	}
 	request := r.request(target, command, strings.Repeat("A", 43))
 	raw, err := json.Marshal(request)
 	if err != nil {
@@ -123,6 +116,19 @@ func (r *Runtime) PreflightScript(ctx context.Context, target Target, command Co
 	envelope, err := json.Marshal(map[string]any{"grant": strings.Repeat("A", 16*1024), "request": json.RawMessage(raw)})
 	if err != nil || len(envelope) > MaxEnvelopeBytes {
 		return ErrRequestTooLarge
+	}
+	return r.CheckScriptSupport(ctx, target)
+}
+
+// CheckScriptSupport binds a read-only support probe to the fresh owned target.
+// Discovery is never cached or substituted for start-path grant verification.
+func (r *Runtime) CheckScriptSupport(ctx context.Context, target Target) error {
+	current, err := r.resolver.Resolve(ctx, target.Namespace, target.WorkspaceName)
+	if err != nil {
+		return err
+	}
+	if current != target {
+		return ErrDenied
 	}
 	return r.bridge.CheckScripts(ctx, target)
 }

@@ -79,6 +79,39 @@ func BuildListPayload(executionsListNamespace string, executionsListWorkspaceNam
 	return v, nil
 }
 
+// BuildCapabilitiesPayload builds the payload for the executions capabilities
+// endpoint from CLI flags.
+func BuildCapabilitiesPayload(executionsCapabilitiesNamespace string, executionsCapabilitiesWorkspaceName string) (*executions.CapabilitiesPayload, error) {
+	var err error
+	var namespace string
+	{
+		namespace = executionsCapabilitiesNamespace
+		err = goa.MergeErrors(err, goa.ValidatePattern("namespace", namespace, "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"))
+		if utf8.RuneCountInString(namespace) > 63 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("namespace", namespace, utf8.RuneCountInString(namespace), 63, false))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	var workspaceName string
+	{
+		workspaceName = executionsCapabilitiesWorkspaceName
+		err = goa.MergeErrors(err, goa.ValidatePattern("workspace_name", workspaceName, "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"))
+		if utf8.RuneCountInString(workspaceName) > 253 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("workspace_name", workspaceName, utf8.RuneCountInString(workspaceName), 253, false))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &executions.CapabilitiesPayload{}
+	v.Namespace = namespace
+	v.WorkspaceName = workspaceName
+
+	return v, nil
+}
+
 // BuildGetPayload builds the payload for the executions get endpoint from CLI
 // flags.
 func BuildGetPayload(executionsGetExecutionID string) (*executions.GetPayload, error) {
@@ -100,7 +133,7 @@ func BuildStartPayload(executionsStartBody string) (*executions.StartPayload, er
 	{
 		err = json.Unmarshal([]byte(executionsStartBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"args\": [\n         \"Et omnis vero et nostrum aspernatur consequuntur.\",\n         \"Velit quam non possimus cumque hic ab.\",\n         \"Illum ad laborum qui facere vero occaecati.\"\n      ],\n      \"cwd\": \"C:\\\\Temp\",\n      \"deadline_seconds\": 14,\n      \"executable\": \"C:\\\\Windows\\\\System32\\\\cmd.exe\",\n      \"namespace\": \"team-a\",\n      \"script\": {\n         \"body\": \"nr\",\n         \"cwd\": \"tio\",\n         \"name\": \"qqs\"\n      },\n      \"workspace_name\": \"vm-1\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"args\": [\n         \"Cupiditate molestiae.\",\n         \"Et sit sunt magni quisquam sunt.\",\n         \"Sit occaecati eveniet ea omnis at neque.\"\n      ],\n      \"cwd\": \"C:\\\\Temp\",\n      \"deadline_seconds\": 16,\n      \"executable\": \"C:\\\\Windows\\\\System32\\\\cmd.exe\",\n      \"namespace\": \"team-a\",\n      \"script\": {\n         \"body\": \"bo\",\n         \"cwd\": \"wfa\",\n         \"name\": \"pfs\"\n      },\n      \"workspace_name\": \"vm-1\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.namespace", body.Namespace, "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"))
 		if utf8.RuneCountInString(body.Namespace) > 63 {

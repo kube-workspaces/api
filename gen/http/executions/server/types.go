@@ -56,6 +56,21 @@ type StatusResponseBody struct {
 // HTTP response body.
 type ListResponseBody []*ExecutionRecordResponse
 
+// CapabilitiesResponseBody is the type of the "executions" service
+// "capabilities" endpoint HTTP response body.
+type CapabilitiesResponseBody struct {
+	Namespace            string `form:"namespace" json:"namespace" xml:"namespace"`
+	WorkspaceName        string `form:"workspace_name" json:"workspace_name" xml:"workspace_name"`
+	WorkspaceUID         string `form:"workspace_uid" json:"workspace_uid" xml:"workspace_uid"`
+	OsIdentity           string `form:"os_identity" json:"os_identity" xml:"os_identity"`
+	ScriptSupported      bool   `form:"script_supported" json:"script_supported" xml:"script_supported"`
+	ScriptRequestVersion int    `form:"script_request_version" json:"script_request_version" xml:"script_request_version"`
+	InterpreterPolicy    string `form:"interpreter_policy" json:"interpreter_policy" xml:"interpreter_policy"`
+	MaxScriptBytes       int    `form:"max_script_bytes" json:"max_script_bytes" xml:"max_script_bytes"`
+	// Why script support is unavailable; empty when advertised
+	Reason string `form:"reason" json:"reason" xml:"reason"`
+}
+
 // GetResponseBody is the type of the "executions" service "get" endpoint HTTP
 // response body.
 type GetResponseBody struct {
@@ -219,6 +234,23 @@ func NewListResponseBody(res []*executions.ExecutionRecord) ListResponseBody {
 	return body
 }
 
+// NewCapabilitiesResponseBody builds the HTTP response body from the result of
+// the "capabilities" endpoint of the "executions" service.
+func NewCapabilitiesResponseBody(res *executions.ExecutionCapabilities) *CapabilitiesResponseBody {
+	body := &CapabilitiesResponseBody{
+		Namespace:            res.Namespace,
+		WorkspaceName:        res.WorkspaceName,
+		WorkspaceUID:         res.WorkspaceUID,
+		OsIdentity:           res.OsIdentity,
+		ScriptSupported:      res.ScriptSupported,
+		ScriptRequestVersion: res.ScriptRequestVersion,
+		InterpreterPolicy:    res.InterpreterPolicy,
+		MaxScriptBytes:       res.MaxScriptBytes,
+		Reason:               res.Reason,
+	}
+	return body
+}
+
 // NewGetResponseBody builds the HTTP response body from the result of the
 // "get" endpoint of the "executions" service.
 func NewGetResponseBody(res *executionsviews.ExecutionRecordView) *GetResponseBody {
@@ -303,6 +335,16 @@ func NewListPayload(namespace *string, workspaceName *string, actorID *string, s
 	v.ActorID = actorID
 	v.Since = since
 	v.Limit = limit
+
+	return v
+}
+
+// NewCapabilitiesPayload builds a executions service capabilities endpoint
+// payload.
+func NewCapabilitiesPayload(namespace string, workspaceName string) *executions.CapabilitiesPayload {
+	v := &executions.CapabilitiesPayload{}
+	v.Namespace = namespace
+	v.WorkspaceName = workspaceName
 
 	return v
 }
