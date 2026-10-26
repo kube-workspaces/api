@@ -173,6 +173,22 @@ func TestExecuteIssuesVerifiableGrantOverQGA(t *testing.T) {
 	}
 }
 
+func TestExecuteRejectsScriptsBeforeResolvingOrStaging(t *testing.T) {
+	fake := newFakeExec(successRunnerResult())
+	runtime, resolver, _ := testRuntime(t, fake)
+	result, err := runtime.Execute(context.Background(), testTarget(), Command{
+		ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1",
+		Executable: "ignored", Args: []string{}, DeadlineSeconds: 20,
+		Script: &Script{Body: "#!/bin/sh\nid\n"},
+	})
+	if !errors.Is(err, ErrDenied) || result != nil {
+		t.Fatalf("unsupported script must be denied deterministically: result=%+v err=%v", result, err)
+	}
+	if resolver.invoked || len(fake.calls) != 0 {
+		t.Fatal("unsupported script resolved a guest or staged bytes")
+	}
+}
+
 func TestExecuteFencesRevocationSinceAdmissionBeforeGuestStaging(t *testing.T) {
 	fake := newFakeExec(successRunnerResult())
 	runtime, resolver, _ := testRuntime(t, fake)

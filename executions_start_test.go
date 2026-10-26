@@ -156,6 +156,25 @@ func enabledElevatedPolicy() map[string]interface{} {
 	return map[string]interface{}{"enabled": true, "allowElevated": true}
 }
 
+func TestStartRejectsUnsupportedScriptsBeforeAdmission(t *testing.T) {
+	stub := &stubQGA{target: eligibleTarget()}
+	stack := newStartStack(t, []string{string(auth.PermissionExec), string(auth.PermissionElevated)}, enabledElevatedPolicy(), stub)
+	w := stack.post(`{"namespace":"team","workspace_name":"vm","script":{"body":"#!/bin/sh\nid\n"}}`, "operator-uid")
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "command-only QGA pilot") {
+		t.Fatalf("unsupported script must fail explicitly: %d %s", w.Code, w.Body.String())
+	}
+	if len(stub.resolved) != 0 || len(stub.commands) != 0 {
+		t.Fatal("unsupported script reached the guest transport")
+	}
+	records, err := stack.store.Metadata().List(context.Background(), storage.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 0 {
+		t.Fatal("unsupported script created an admitted execution/recording")
+	}
+}
+
 func TestStartExecutesRecordsAndReturnsOutcome(t *testing.T) {
 	code := 0
 	stub := &stubQGA{

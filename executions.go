@@ -335,6 +335,12 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	if err := validateStartCommand(p); err != nil {
 		return nil, managementError("invalid", err.Error())
 	}
+	if p.Script != nil {
+		// The DTO is reserved for a future script-capable transport. The current
+		// QGA grant/guest contract only admits executable+argv commands; reject
+		// before target resolution, admission and recording creation.
+		return nil, managementError("invalid", "script execution is not supported by the command-only QGA pilot")
+	}
 	// Elevated execution needs both the execution grant and the separately
 	// granted elevation, checked against the exact requested scope.
 	if !auth.HasExecutionPermission(user, p.Namespace, p.WorkspaceName, auth.PermissionExec, time.Now()) ||

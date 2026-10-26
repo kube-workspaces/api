@@ -232,6 +232,11 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 // validateCommand mirrors the guest's structural pilot bounds so an
 // out-of-bounds command is rejected before anything is staged.
 func validateCommand(command Command) error {
+	if command.Script != nil {
+		// Fail closed even if a caller bypasses the public API validation. No
+		// script bytes or script operation exist in the current guest contract.
+		return fmt.Errorf("%w: scripts are not supported by the command-only QGA pilot", ErrDenied)
+	}
 	if !validExecutionID(command.ExecutionID) || command.ActorUID == "" || command.RecordingID == "" {
 		return fmt.Errorf("%w: command identity fields are missing or malformed", ErrTransport)
 	}
