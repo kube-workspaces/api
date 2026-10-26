@@ -288,6 +288,39 @@ func TestStartScriptCannotExecuteWithUnavailableRecordingStorage(t *testing.T) {
 	}
 }
 
+func TestStartWindowsScriptRecordsSystemIdentityAndFullInput(t *testing.T) {
+	code := 7
+	stub := &stubQGA{target: eligibleTarget(), result: &qga.GuestResult{Outcome: "completed", ExitCode: &code, Stdout: []byte("hello")}}
+	stack := newStartStack(t, []string{string(auth.PermissionExec), string(auth.PermissionElevated)}, enabledElevatedPolicy(), stub)
+	body := "#!powershell\r\nWrite-Output 'héllo'\r\nexit 7\r\n"
+	payload, _ := json.Marshal(map[string]any{"namespace": "team", "workspace_name": "vm", "script": map[string]any{"body": body, "name": "test.ps1"}})
+	w := stack.post(string(payload), "operator-uid")
+	if w.Code != 200 || len(stub.commands) != 1 {
+		t.Fatalf("Windows script rejected: %d %s", w.Code, w.Body.String())
+	}
+	cmd := stub.commands[0]
+	if cmd.Script == nil || cmd.Script.Body != body || cmd.Script.InterpreterPolicy != qga.WindowsScriptPolicy || cmd.Executable != "" || len(cmd.Args) != 0 {
+		t.Fatalf("wrong Windows payload: %+v", cmd)
+	}
+	rec, outcome, err := stack.store.Metadata().Get(context.Background(), cmd.ExecutionID)
+	if err != nil || rec.Operation != storage.OperationScript || rec.OSIdentity != "SYSTEM" || outcome.State != storage.StateFailed {
+		t.Fatalf("wrong Windows metadata: %+v %+v %v", rec, outcome, err)
+	}
+	reader, err := stack.store.Recording().Open(context.Background(), cmd.RecordingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if err := reader.Verify(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	chunk, err := reader.ReadChunk(context.Background(), 0)
+	var start recordingStart
+	if err != nil || json.Unmarshal(chunk, &start) != nil || start.Script == nil || *start.Script != *cmd.Script {
+		t.Fatalf("incomplete Windows recording: %s %v", chunk, err)
+	}
+}
+
 func TestStartScriptValidationAndAuthorization(t *testing.T) {
 	for name, test := range map[string]struct {
 		body     string

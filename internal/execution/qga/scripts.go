@@ -10,19 +10,20 @@ import (
 	"time"
 )
 
-var ErrUnsupportedScripts = errors.New("installed guest does not support Linux script request v2")
+var ErrUnsupportedScripts = errors.New("installed guest does not support this script request v2 policy")
 
 // CheckScripts probes only the fixed installed binary over authenticated QGA.
 // It sends no tenant input and creates no execution grant or staged file.
 func (b *Bridge) CheckScripts(ctx context.Context, target Target) error {
-	if !target.Linux {
-		return ErrUnsupportedScripts
-	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var started guestExecStart
+	runner := runnerPath
+	if target.Linux {
+		runner = "/usr/local/bin/kw-agent"
+	}
 	if err := b.qga(ctx, target, "guest-exec", map[string]any{
-		"path": "/usr/local/bin/kw-agent", "arg": []string{"management-exec", "--capabilities"}, "capture-output": true,
+		"path": runner, "arg": []string{"management-exec", "--capabilities"}, "capture-output": true,
 	}, &started); err != nil || started.PID <= 0 {
 		return ErrUnsupportedScripts
 	}
@@ -53,7 +54,7 @@ func (b *Bridge) CheckScripts(ctx context.Context, target Target) error {
 		}
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		decoder.DisallowUnknownFields()
-		if decoder.Decode(&caps) != nil || caps.Version != 1 || caps.ScriptRequestVersion != 2 || caps.InterpreterPolicy != LinuxScriptPolicy {
+		if decoder.Decode(&caps) != nil || caps.Version != 1 || caps.ScriptRequestVersion != 2 || caps.InterpreterPolicy != ScriptPolicy(target) {
 			return ErrUnsupportedScripts
 		}
 		if decoder.Decode(new(any)) != io.EOF {

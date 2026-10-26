@@ -1673,7 +1673,7 @@ func executionsUsage() {
 	fmt.Fprintln(os.Stderr, `    list: List execution records visible to the actor`)
 	fmt.Fprintln(os.Stderr, `    capabilities: Probe script support for one current workspace after scoped exec/elevation, policy and storage checks; creates no execution or recording`)
 	fmt.Fprintln(os.Stderr, `    get: Get an execution record and its last known outcome`)
-	fmt.Fprintln(os.Stderr, `    start: Execute a bounded root (Linux) or SYSTEM (Windows) command, or a Linux root script on a v2-capable guest, and return its recorded outcome synchronously`)
+	fmt.Fprintln(os.Stderr, `    start: Execute a bounded root (Linux) or SYSTEM (Windows) command or OS-policy-bound script on a compatible guest and return its recorded outcome synchronously`)
 	fmt.Fprintln(os.Stderr, `    manifest: Verify recording integrity and audit protected playback access`)
 	fmt.Fprintln(os.Stderr, `    chunk: Read a verified recording chunk with fresh scoped recording-read permission`)
 	fmt.Fprintln(os.Stderr)
@@ -1768,7 +1768,7 @@ func executionsStartUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Execute a bounded root (Linux) or SYSTEM (Windows) command, or a Linux root script on a v2-capable guest, and return its recorded outcome synchronously`)
+	fmt.Fprintln(os.Stderr, `Execute a bounded root (Linux) or SYSTEM (Windows) command or OS-policy-bound script on a compatible guest and return its recorded outcome synchronously`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)

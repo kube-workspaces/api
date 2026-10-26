@@ -24,8 +24,9 @@ type Service interface {
 	Capabilities(context.Context, *CapabilitiesPayload) (res *ExecutionCapabilities, err error)
 	// Get an execution record and its last known outcome
 	Get(context.Context, *GetPayload) (res *ExecutionRecord, err error)
-	// Execute a bounded root (Linux) or SYSTEM (Windows) command, or a Linux root
-	// script on a v2-capable guest, and return its recorded outcome synchronously
+	// Execute a bounded root (Linux) or SYSTEM (Windows) command or
+	// OS-policy-bound script on a compatible guest and return its recorded outcome
+	// synchronously
 	Start(context.Context, *StartPayload) (res *ExecutionCommand, err error)
 	// Verify recording integrity and audit protected playback access
 	Manifest(context.Context, *ManifestPayload) (res *ExecutionRecordingManifest, err error)
@@ -163,8 +164,8 @@ type ExecutionRecordingManifest struct {
 	Verified       bool
 }
 
-// Bounded Linux root script, staged by a guest supporting request v2; fixed
-// absolute sh/bash/python3 shebang required
+// Bounded root/SYSTEM script staged by a request-v2 guest: Linux fixed
+// absolute sh/bash/python3 shebang, or Windows #!powershell marker
 type ExecutionScriptPayload struct {
 	// Script content (at most 64 KiB UTF-8; encoded envelope has a separate limit)
 	Body string

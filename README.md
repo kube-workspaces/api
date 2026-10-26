@@ -98,9 +98,9 @@ separate opt-in policy gates, read fresh by the execution policy provider. These
 checks are applied alongside the explicitly enabled QGA backend, mandatory full
 recording in the selected storage mode and guest-side signed-grant enforcement.
 
-### Bounded Linux scripts
+### Bounded Linux and Windows scripts
 
-`POST /v1/executions/start` supports Linux root scripts on a matching guest runner:
+`POST /v1/executions/start` supports root/SYSTEM scripts on a matching guest runner:
 
 ```json
 {
@@ -119,8 +119,13 @@ Scripts are mutually exclusive with `executable`/`args`. Supply cwd at only one
 level (top-level or script), and use a basename hint containing only ASCII
 alphanumeric/`.`/`_`/`-`, excluding `.` and `..`. The UTF-8 body limit is 64 KiB.
 First lines must be exactly `#!/bin/sh`, `#!/bin/bash`, `#!/usr/bin/bash` or
-`#!/usr/bin/python3`, without arguments, BOM or CRLF. Windows Script mode and
-interactive stdin/PTY are not supported by this contract.
+`#!/usr/bin/python3`, without arguments, BOM or CRLF. For Windows, use exactly
+`#!powershell` (LF or CRLF), followed by PowerShell code, and an optional `run.ps1`
+hint. The Windows policy maps this marker to the fixed installed Windows
+PowerShell executable with `-NoLogo -NoProfile -NonInteractive -ExecutionPolicy
+Bypass -File` and a SYSTEM-only staged `.ps1`. No `pwsh`, PATH lookup, interpreter
+arguments or ordinary-user-to-SYSTEM fallback. Interactive stdin/PTY remain
+unsupported.
 
 Clients can discover support with
 `GET /v1/executions/capabilities?namespace=team-a&workspace_name=linux-vm`.
@@ -128,8 +133,8 @@ This requires the same current user-bound identity, scoped execution/elevation,
 enabled policy, ready recording store and eligible running target as start.
 The result binds namespace/name/Workspace UID and reports `os_identity`,
 `script_supported`, `script_request_version`, `interpreter_policy`,
-`max_script_bytes` and an unavailable `reason`. Compatible Linux runners advertise
-version 2, `linux-shebang-v1` and 65536 bytes. Old/incompatible runners report
+`max_script_bytes` and an unavailable `reason`. Compatible runners advertise
+version 2, `linux-shebang-v1` (root) or `windows-powershell-v1` (SYSTEM), and 65536 bytes. Old/incompatible runners report
 unsupported; policy/auth/storage/target failures return the corresponding HTTP
 error. Discovery creates no execution, recording or grant. Clients must treat it
 as a hint: every script submission independently repeats preflight and guest
@@ -145,7 +150,9 @@ The encoded-envelope limit is independently 96 KiB. Preflight reserves the full
 16 KiB grant-token bound, so heavily escaped JSON bodies can be rejected below
 the raw-body limit. No executable script is staged by the API: the signed v2
 request carries the script, and the guest verifies it before creating a private
-temporary file. The complete script/name/interpreter policy and cwd are committed
+temporary file. Windows staging adds the policy-defined UTF-8 BOM so Windows
+PowerShell 5.1 can read non-ASCII source; protected recording retains the original
+submitted text. The complete script/name/interpreter policy and cwd are committed
 to protected recording before dispatch; metadata identifies `operation=script`
 without exposing its body. Deadline, 16 KiB combined output, process-tree cleanup,
 recording-loss and transport-unknown behavior match bounded commands. Requests

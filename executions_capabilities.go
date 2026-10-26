@@ -55,7 +55,7 @@ func (s *executionssrvc) Capabilities(ctx context.Context, p *executions.Capabil
 		OsIdentity: target.OSIdentity(), Reason: "Guest does not advertise compatible script support.",
 	}
 	checker, ok := s.qga.(scriptSupportChecker)
-	if !target.Linux || !ok {
+	if !ok {
 		return result, nil
 	}
 	if err := checker.CheckScriptSupport(ctx, target); err != nil {
@@ -69,7 +69,7 @@ func (s *executionssrvc) Capabilities(ctx context.Context, p *executions.Capabil
 	}
 	result.ScriptSupported = true
 	result.ScriptRequestVersion = 2
-	result.InterpreterPolicy = qga.LinuxScriptPolicy
+	result.InterpreterPolicy = qga.ScriptPolicy(target)
 	result.MaxScriptBytes = qga.MaxScriptBytes
 	result.Reason = ""
 	return result, nil

@@ -185,7 +185,7 @@ func validateStartCommand(p *executions.StartPayload) error {
 		if p.Executable != nil || p.Args != nil {
 			return errors.New("script is mutually exclusive with executable and args")
 		}
-		script := &qga.Script{Body: p.Script.Body, InterpreterPolicy: qga.LinuxScriptPolicy}
+		script := &qga.Script{Body: p.Script.Body, InterpreterPolicy: qga.ScriptPolicyForBody(p.Script.Body)}
 		if p.Script.Name != nil {
 			if *p.Script.Name == "" {
 				return errors.New("script name cannot be empty")
@@ -384,7 +384,7 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	operation := storage.OperationCommand
 	if p.Script != nil {
 		operation = storage.OperationScript
-		cmd.Script = &qga.Script{Body: p.Script.Body, InterpreterPolicy: qga.LinuxScriptPolicy}
+		cmd.Script = &qga.Script{Body: p.Script.Body, InterpreterPolicy: qga.ScriptPolicyForBody(p.Script.Body)}
 		if p.Script.Name != nil {
 			cmd.Script.Name = *p.Script.Name
 		}
@@ -392,8 +392,8 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 			cmd.Cwd = p.Script.Cwd
 		}
 		preflight, ok := s.qga.(scriptPreflighter)
-		if !ok || !target.Linux {
-			return nil, managementError("invalid", "Linux script execution is not supported by this transport or guest")
+		if !ok || cmd.Script.InterpreterPolicy != qga.ScriptPolicy(target) {
+			return nil, managementError("invalid", "script interpreter policy is not supported by this transport or guest")
 		}
 		if err := preflight.PreflightScript(ctx, target, cmd); err != nil {
 			if errors.Is(err, qga.ErrUnsupportedScripts) || errors.Is(err, qga.ErrRequestTooLarge) || errors.Is(err, qga.ErrDenied) {

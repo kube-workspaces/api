@@ -66,19 +66,16 @@ func TestExecutionCapabilitiesProbeCreatesNoExecution(t *testing.T) {
 			if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &caps) != nil {
 				t.Fatalf("capabilities failed: %d %s", w.Code, w.Body.String())
 			}
-			if caps.ScriptSupported != (linux && supported) || caps.Namespace != "team" || caps.WorkspaceName != "vm" || caps.WorkspaceUID != target.WorkspaceUID || caps.OsIdentity != target.OSIdentity() {
+			if caps.ScriptSupported != supported || caps.Namespace != "team" || caps.WorkspaceName != "vm" || caps.WorkspaceUID != target.WorkspaceUID || caps.OsIdentity != target.OSIdentity() {
 				t.Fatalf("bad capability: %+v", caps)
 			}
-			if caps.ScriptSupported && (caps.ScriptRequestVersion != 2 || caps.InterpreterPolicy != qga.LinuxScriptPolicy || caps.MaxScriptBytes != 65536 || caps.Reason != "") {
+			if caps.ScriptSupported && (caps.ScriptRequestVersion != 2 || caps.InterpreterPolicy != qga.ScriptPolicy(target) || caps.MaxScriptBytes != 65536 || caps.Reason != "") {
 				t.Fatalf("incomplete script support: %+v", caps)
 			}
 			if !caps.ScriptSupported && (caps.ScriptRequestVersion != 0 || caps.InterpreterPolicy != "" || caps.MaxScriptBytes != 0 || caps.Reason == "") {
 				t.Fatalf("unsupported capability claims script support: %+v", caps)
 			}
-			checks := 0
-			if linux {
-				checks = 1
-			}
+			checks := 1
 			if stub.supportChecks != checks || len(stub.commands) != 0 {
 				t.Fatal("discovery dispatched an execution")
 			}

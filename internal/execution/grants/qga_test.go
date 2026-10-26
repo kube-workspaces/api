@@ -42,7 +42,7 @@ func TestQGABindingValidation(t *testing.T) {
 		t.Fatalf("valid binding rejected: %v", err)
 	}
 	cases := map[string]func(*BindingQGA){
-		"script operation":        func(b *BindingQGA) { b.Operation = "script" },
+		"unknown operation":       func(b *BindingQGA) { b.Operation = "unknown" },
 		"shell operation":         func(b *BindingQGA) { b.Operation = "shell" },
 		"foreign transport":       func(b *BindingQGA) { b.Transport = "mtls/v1" },
 		"ordinary os identity":    func(b *BindingQGA) { b.OSIdentity = "workspace" },

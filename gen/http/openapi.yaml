@@ -288,7 +288,7 @@ paths:
             tags:
                 - executions
             summary: start executions
-            description: Execute a bounded root (Linux) or SYSTEM (Windows) command, or a Linux root script on a v2-capable guest, and return its recorded outcome synchronously
+            description: Execute a bounded root (Linux) or SYSTEM (Windows) command or OS-policy-bound script on a compatible guest and return its recorded outcome synchronously
             operationId: executions#start
             parameters:
                 - name: StartRequestBody
@@ -3568,7 +3568,7 @@ definitions:
                 pattern: ^[A-Za-z0-9._-]+$
                 minLength: 1
                 maxLength: 128
-        description: Bounded Linux root script, staged by a guest supporting request v2; fixed absolute sh/bash/python3 shebang required
+        description: 'Bounded root/SYSTEM script staged by a request-v2 guest: Linux fixed absolute sh/bash/python3 shebang, or Windows #!powershell marker'
         example:
             body: z
             cwd: dup

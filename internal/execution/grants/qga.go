@@ -68,9 +68,9 @@ func (b BindingQGA) validate() error {
 			return ErrInvalid
 		}
 	}
-	// Inline scripts use request v2 and the Linux root interpreter policy.
+	// Inline scripts use request v2 and an OS-bound root/SYSTEM interpreter policy.
 	// Shells and ordinary identities remain outside this bounded transport.
-	if b.Operation != "command" && !(b.Operation == "script" && b.OSIdentity == "root") {
+	if b.Operation != "command" && b.Operation != "script" {
 		return ErrInvalid
 	}
 	if b.Transport != TransportQGAPodExec {

@@ -7,7 +7,7 @@ import (
 // Execution management types
 
 var ExecutionScriptPayload = Type("ExecutionScriptPayload", func() {
-	Description("Bounded Linux root script, staged by a guest supporting request v2; fixed absolute sh/bash/python3 shebang required")
+	Description("Bounded root/SYSTEM script staged by a request-v2 guest: Linux fixed absolute sh/bash/python3 shebang, or Windows #!powershell marker")
 	Attribute("body", String, "Script content (at most 64 KiB UTF-8; encoded envelope has a separate limit)", func() {
 		MinLength(1)
 		MaxLength(65536)
@@ -211,7 +211,7 @@ var _ = Service("executions", func() {
 		})
 	})
 	Method("start", func() {
-		Description("Execute a bounded root (Linux) or SYSTEM (Windows) command, or a Linux root script on a v2-capable guest, and return its recorded outcome synchronously")
+		Description("Execute a bounded root (Linux) or SYSTEM (Windows) command or OS-policy-bound script on a compatible guest and return its recorded outcome synchronously")
 		Payload(func() {
 			Attribute("namespace", String, "Workspace namespace", func() {
 				Pattern("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")

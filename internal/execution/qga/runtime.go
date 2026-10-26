@@ -74,18 +74,45 @@ type Script struct {
 }
 
 const LinuxScriptPolicy = "linux-shebang-v1"
+const WindowsScriptPolicy = "windows-powershell-v1"
 const MaxScriptBytes = 64 * 1024
+
+func ScriptPolicy(target Target) string {
+	if target.Linux {
+		return LinuxScriptPolicy
+	}
+	return WindowsScriptPolicy
+}
+
+// The HTTP client supplies script content, never an executable/interpreter path.
+// Resolve its marker to a fixed versioned policy, then match it to the guest OS.
+func ScriptPolicyForBody(body string) string {
+	first, _, _ := strings.Cut(body, "\n")
+	if strings.TrimSuffix(first, "\r") == "#!powershell" {
+		return WindowsScriptPolicy
+	}
+	return LinuxScriptPolicy
+}
 
 // ValidateScript mirrors the independent guest's v2 body and interpreter rules.
 func ValidateScript(script *Script) error {
-	if script == nil || !utf8.ValidString(script.Body) || script.Body == "" || len(script.Body) > MaxScriptBytes || strings.ContainsRune(script.Body, 0) || script.InterpreterPolicy != LinuxScriptPolicy {
+	if script == nil || !utf8.ValidString(script.Body) || script.Body == "" || len(script.Body) > MaxScriptBytes || strings.ContainsRune(script.Body, 0) {
 		return fmt.Errorf("%w: script body or interpreter policy is unsupported", ErrDenied)
 	}
 	shebang, _, _ := strings.Cut(script.Body, "\n")
-	switch shebang {
-	case "#!/bin/sh", "#!/bin/bash", "#!/usr/bin/bash", "#!/usr/bin/python3":
+	switch script.InterpreterPolicy {
+	case LinuxScriptPolicy:
+		switch shebang {
+		case "#!/bin/sh", "#!/bin/bash", "#!/usr/bin/bash", "#!/usr/bin/python3":
+		default:
+			return fmt.Errorf("%w: unsupported Linux script shebang", ErrDenied)
+		}
+	case WindowsScriptPolicy:
+		if strings.TrimSuffix(shebang, "\r") != "#!powershell" {
+			return fmt.Errorf("%w: unsupported Windows PowerShell script marker", ErrDenied)
+		}
 	default:
-		return fmt.Errorf("%w: unsupported Linux script shebang", ErrDenied)
+		return fmt.Errorf("%w: unsupported script interpreter policy", ErrDenied)
 	}
 	if len(script.Name) > 128 || script.Name == "." || script.Name == ".." {
 		return fmt.Errorf("%w: invalid script basename hint", ErrDenied)
@@ -105,7 +132,7 @@ func (r *Runtime) PreflightScript(ctx context.Context, target Target, command Co
 	if err := validateCommand(command); err != nil {
 		return err
 	}
-	if !target.Linux || command.Script == nil {
+	if command.Script == nil || command.Script.InterpreterPolicy != ScriptPolicy(target) {
 		return ErrUnsupportedScripts
 	}
 	request := r.request(target, command, strings.Repeat("A", 43))
@@ -231,7 +258,7 @@ func (r *Runtime) Execute(ctx context.Context, target Target, command Command) (
 	if err != nil {
 		return nil, fmt.Errorf("%w: cannot frame the request", ErrTransport)
 	}
-	if command.Script != nil && !target.Linux {
+	if command.Script != nil && command.Script.InterpreterPolicy != ScriptPolicy(target) {
 		return nil, ErrUnsupportedScripts
 	}
 	binding := grants.BindingQGA{

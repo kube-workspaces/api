@@ -192,64 +192,71 @@ func TestExecuteRejectsConflictingScriptFramingBeforeResolvingOrStaging(t *testi
 }
 
 func TestScriptPreflightAndSignedV2Dispatch(t *testing.T) {
-	fake := newFakeExec(successRunnerResult())
-	fake.capabilities = []byte(`{"version":1,"script_request_version":2,"interpreter_policy":"linux-shebang-v1"}`)
-	runtime, resolver, signer := testRuntime(t, fake)
-	resolver.target.Linux = true
-	cwd := "/tmp"
-	command := Command{ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", DeadlineSeconds: 20, Cwd: &cwd,
-		Script: &Script{Body: "#!/bin/sh\nprintf 'hello\\n'\n", Name: "run.sh", InterpreterPolicy: LinuxScriptPolicy}}
-	if err := runtime.PreflightScript(context.Background(), resolver.target, command); err != nil {
-		t.Fatal(err)
-	}
-	if len(fake.files) != 0 {
-		t.Fatal("preflight staged guest content")
-	}
-	result, err := runtime.Execute(context.Background(), resolver.target, command)
-	if err != nil || result.Outcome != "completed" {
-		t.Fatalf("script failed: %+v %v", result, err)
-	}
-	var envelope struct {
-		Grant   string          `json:"grant"`
-		Request json.RawMessage `json:"request"`
-	}
-	if err := json.Unmarshal(fake.capturedFile("/var/lib/workspace-agent/qga-request-exec_1.json"), &envelope); err != nil {
-		t.Fatal(err)
-	}
-	var request qgaRequest
-	if err := json.Unmarshal(envelope.Request, &request); err != nil {
-		t.Fatal(err)
-	}
-	if request.Version != 2 || request.Operation != "script" || request.Script == nil || *request.Script != *command.Script || request.Executable != "" || len(request.Args) != 0 || request.OSIdentity != "root" {
-		t.Fatalf("script framing drift: %+v", request)
-	}
-	binding := grants.BindingQGA{ActorUID: request.ActorUID, Namespace: request.Namespace, WorkspaceName: request.WorkspaceName,
-		WorkspaceUID: request.WorkspaceUID, ProvisioningGeneration: request.ProvisioningGeneration, ExecutionID: request.ExecutionID,
-		RecordingID: request.RecordingID, Operation: request.Operation, OSIdentity: request.OSIdentity, Elevated: true, PolicyVersion: request.PolicyVersion,
-		RevocationEpoch: request.RevocationEpoch, Challenge: request.Challenge, Transport: grants.TransportQGAPodExec,
-		TransportTargetSHA256: request.TransportTargetSHA256, RequestSHA256: grants.Digest(envelope.Request)}
-	public := signer.PublicKey()
-	verifier, _ := grants.NewVerifier(map[string]ed25519.PublicKey{grants.KeyID(public): public}, 4)
-	if _, err := verifier.ConsumeQGA(envelope.Grant, binding, runtime.now()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := verifier.ConsumeQGA(envelope.Grant, binding, runtime.now()); !errors.Is(err, grants.ErrReplay) {
-		t.Fatal("script replay accepted")
-	}
-	for _, mutate := range []func(*qgaRequest){
-		func(r *qgaRequest) { r.Script.Body += "id\n" }, func(r *qgaRequest) { r.Script.Name = "other.sh" },
-		func(r *qgaRequest) { r.Cwd = nil }, func(r *qgaRequest) { r.Script.InterpreterPolicy = "other" },
-	} {
-		var changed qgaRequest
-		_ = json.Unmarshal(envelope.Request, &changed)
-		mutate(&changed)
-		raw, _ := json.Marshal(changed)
-		changedBinding := binding
-		changedBinding.RequestSHA256 = grants.Digest(raw)
-		v, _ := grants.NewVerifier(map[string]ed25519.PublicKey{grants.KeyID(public): public}, 4)
-		if _, err := v.ConsumeQGA(envelope.Grant, changedBinding, runtime.now()); !errors.Is(err, grants.ErrBinding) {
-			t.Fatalf("tampered script accepted: %v", err)
-		}
+	for _, linux := range []bool{true, false} {
+		t.Run(ScriptPolicy(Target{Linux: linux}), func(t *testing.T) {
+			fake := newFakeExec(successRunnerResult())
+			fake.capabilities, _ = json.Marshal(map[string]any{"version": 1, "script_request_version": 2, "interpreter_policy": ScriptPolicy(Target{Linux: linux})})
+			runtime, resolver, signer := testRuntime(t, fake)
+			resolver.target.Linux = linux
+			cwd, body, name, path := "/tmp", "#!/bin/sh\nprintf 'hello\\n'\n", "run.sh", "/var/lib/workspace-agent/qga-request-exec_1.json"
+			if !linux {
+				cwd, body, name, path = `C:\Temp`, "#!powershell\nWrite-Output 'héllo'\n", "run.ps1", dataDirPath+`\qga-request-exec_1.json`
+			}
+			command := Command{ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", DeadlineSeconds: 20, Cwd: &cwd,
+				Script: &Script{Body: body, Name: name, InterpreterPolicy: ScriptPolicy(resolver.target)}}
+			if err := runtime.PreflightScript(context.Background(), resolver.target, command); err != nil {
+				t.Fatal(err)
+			}
+			if len(fake.files) != 0 {
+				t.Fatal("preflight staged guest content")
+			}
+			result, err := runtime.Execute(context.Background(), resolver.target, command)
+			if err != nil || result.Outcome != "completed" {
+				t.Fatalf("script failed: %+v %v", result, err)
+			}
+			var envelope struct {
+				Grant   string          `json:"grant"`
+				Request json.RawMessage `json:"request"`
+			}
+			if err := json.Unmarshal(fake.capturedFile(path), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			var request qgaRequest
+			if err := json.Unmarshal(envelope.Request, &request); err != nil {
+				t.Fatal(err)
+			}
+			if request.Version != 2 || request.Operation != "script" || request.Script == nil || *request.Script != *command.Script || request.Executable != "" || len(request.Args) != 0 || request.OSIdentity != resolver.target.OSIdentity() {
+				t.Fatalf("script framing drift: %+v", request)
+			}
+			binding := grants.BindingQGA{ActorUID: request.ActorUID, Namespace: request.Namespace, WorkspaceName: request.WorkspaceName,
+				WorkspaceUID: request.WorkspaceUID, ProvisioningGeneration: request.ProvisioningGeneration, ExecutionID: request.ExecutionID,
+				RecordingID: request.RecordingID, Operation: request.Operation, OSIdentity: request.OSIdentity, Elevated: true, PolicyVersion: request.PolicyVersion,
+				RevocationEpoch: request.RevocationEpoch, Challenge: request.Challenge, Transport: grants.TransportQGAPodExec,
+				TransportTargetSHA256: request.TransportTargetSHA256, RequestSHA256: grants.Digest(envelope.Request)}
+			public := signer.PublicKey()
+			verifier, _ := grants.NewVerifier(map[string]ed25519.PublicKey{grants.KeyID(public): public}, 4)
+			if _, err := verifier.ConsumeQGA(envelope.Grant, binding, runtime.now()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := verifier.ConsumeQGA(envelope.Grant, binding, runtime.now()); !errors.Is(err, grants.ErrReplay) {
+				t.Fatal("script replay accepted")
+			}
+			for _, mutate := range []func(*qgaRequest){
+				func(r *qgaRequest) { r.Script.Body += "id\n" }, func(r *qgaRequest) { r.Script.Name = "other.sh" },
+				func(r *qgaRequest) { r.Cwd = nil }, func(r *qgaRequest) { r.Script.InterpreterPolicy = "other" },
+			} {
+				var changed qgaRequest
+				_ = json.Unmarshal(envelope.Request, &changed)
+				mutate(&changed)
+				raw, _ := json.Marshal(changed)
+				changedBinding := binding
+				changedBinding.RequestSHA256 = grants.Digest(raw)
+				v, _ := grants.NewVerifier(map[string]ed25519.PublicKey{grants.KeyID(public): public}, 4)
+				if _, err := v.ConsumeQGA(envelope.Grant, changedBinding, runtime.now()); !errors.Is(err, grants.ErrBinding) {
+					t.Fatalf("tampered script accepted: %v", err)
+				}
+			}
+		})
 	}
 }
 
@@ -264,6 +271,28 @@ func TestScriptPreflightRejectsEscapedEnvelopeBeforeGuestProbe(t *testing.T) {
 	}
 	if len(fake.calls) != 0 {
 		t.Fatal("oversized script reached guest")
+	}
+}
+
+func TestScriptInterpreterCannotCrossGuestOS(t *testing.T) {
+	for _, linux := range []bool{true, false} {
+		fake := newFakeExec(successRunnerResult())
+		runtime, resolver, _ := testRuntime(t, fake)
+		resolver.target.Linux = linux
+		body, policy := "#!powershell\nexit 0\n", WindowsScriptPolicy
+		if !linux {
+			body, policy = "#!/bin/sh\nexit 0\n", LinuxScriptPolicy
+		}
+		cmd := Command{ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", DeadlineSeconds: 20, Script: &Script{Body: body, InterpreterPolicy: policy}}
+		if err := runtime.PreflightScript(context.Background(), resolver.target, cmd); !errors.Is(err, ErrUnsupportedScripts) {
+			t.Fatal(err)
+		}
+		if _, err := runtime.Execute(context.Background(), resolver.target, cmd); !errors.Is(err, ErrUnsupportedScripts) {
+			t.Fatal(err)
+		}
+		if len(fake.calls) != 0 {
+			t.Fatal("cross-OS script reached guest")
+		}
 	}
 }
 
@@ -287,11 +316,31 @@ func TestScriptPreflightDeniesMissingOrIncompatibleGuestCapabilities(t *testing.
 //go:embed testdata/linux-script-v2.json
 var scriptInteropFixture []byte
 
+//go:embed testdata/windows-script-v2.json
+var windowsScriptInteropFixture []byte
+
 func TestScriptInteropFixture(t *testing.T) {
+	if !bytes.Equal(bytes.TrimSpace(scriptInteropFixture), scriptFixture(t, true)) {
+		t.Fatal("Go-issued Linux script fixture drift")
+	}
+}
+
+func TestWindowsScriptInteropFixture(t *testing.T) {
+	if !bytes.Equal(bytes.TrimSpace(windowsScriptInteropFixture), scriptFixture(t, false)) {
+		t.Fatal("Go-issued Windows script fixture drift")
+	}
+}
+
+func scriptFixture(t *testing.T, linux bool) []byte {
+	t.Helper()
 	runtime, resolver, signer := testRuntime(t, newFakeExec(nil))
-	resolver.target.Linux = true
+	resolver.target.Linux = linux
+	body, name := "#!/bin/sh\nprintf 'hello\\n'\n", "run.sh"
+	if !linux {
+		body, name = "#!powershell\nWrite-Output 'héllo'\n", "run.ps1"
+	}
 	request := runtime.request(resolver.target, Command{ActorUID: "user-1", ExecutionID: "exec_1", RecordingID: "rec_1", DeadlineSeconds: 20,
-		Script: &Script{Body: "#!/bin/sh\nprintf 'hello\\n'\n", Name: "run.sh", InterpreterPolicy: LinuxScriptPolicy}}, strings.Repeat("A", 43))
+		Script: &Script{Body: body, Name: name, InterpreterPolicy: ScriptPolicy(resolver.target)}}, strings.Repeat("A", 43))
 	raw, _ := json.Marshal(request)
 	binding := grants.BindingQGA{ActorUID: request.ActorUID, Namespace: request.Namespace, WorkspaceName: request.WorkspaceName,
 		WorkspaceUID: request.WorkspaceUID, ProvisioningGeneration: request.ProvisioningGeneration, ExecutionID: request.ExecutionID,
@@ -303,9 +352,7 @@ func TestScriptInteropFixture(t *testing.T) {
 	input := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(claims)
 	token := input + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(ed25519.NewKeyFromSeed(make([]byte, 32)), []byte(input)))
 	fixture, _ := json.Marshal(map[string]any{"request": json.RawMessage(raw), "token": token, "public_key": base64.RawURLEncoding.EncodeToString(signer.PublicKey()), "now": 1800000000})
-	if !bytes.Equal(bytes.TrimSpace(scriptInteropFixture), fixture) {
-		t.Fatal("Go-issued Linux script fixture drift")
-	}
+	return fixture
 }
 
 func TestExecuteFencesRevocationSinceAdmissionBeforeGuestStaging(t *testing.T) {
