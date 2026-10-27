@@ -31,7 +31,7 @@ type postgresFaultGate struct {
 	wg       sync.WaitGroup
 }
 
-func newPostgresFaultGate(t *testing.T, address string) *postgresFaultGate {
+func newPostgresFaultGate(t *testing.T, address string, forward ...func(net.Conn, net.Conn)) *postgresFaultGate {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -74,7 +74,11 @@ func newPostgresFaultGate(t *testing.T, address string) *postgresFaultGate {
 					_ = server.Close()
 					close(copied)
 				}()
-				_, _ = io.Copy(client, server)
+				if len(forward) == 0 {
+					_, _ = io.Copy(client, server)
+				} else {
+					forward[0](client, server)
+				}
 				_ = client.Close()
 				<-copied
 			}()

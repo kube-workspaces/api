@@ -517,3 +517,28 @@ The campaign requires a PostgreSQL URL and does not stop the database service.
 CI runs both campaigns plus the standalone storage-engine checks against
 digest-pinned disposable PostgreSQL and RustFS services. Ordinary local tests
 still skip these checks unless the service variables are set.
+
+Two additional recovery campaigns use the same disposable-service variables:
+
+```sh
+go test -race -count=1 -v -run '^TestExecution(CommitResponseLoss|ProcessLoss)Integration$' .
+```
+
+- **COMMIT response loss:** a test-only PostgreSQL wire proxy observes the backend's
+  real `COMMIT` CommandComplete, then drops the acknowledgement before the client
+  sees it. Both original completion and recovered completion must return uncertainty,
+  while an independent connection proves committed metadata/audit. Repeated recovery
+  must not duplicate the audit or guest dispatch. This protocol-inspection test
+  requires an explicitly disposable plaintext PostgreSQL URL (`sslmode=disable`);
+  it does not change deployment TLS configuration.
+- **Process loss:** the test starts a private helper test process using the real
+  authenticated HTTP/recording path and disposable PostgreSQL/S3. A test seam pauses
+  immediately after sealing the recording but before metadata completion. The parent
+  hard-kills only that child, then reconstructs the coordinator in another address
+  space and checks recovered state/audit plus an unchanged one-dispatch ledger.
+  The shared recording-key file stays in the private temporary test directory.
+
+Guest execution, accounts and policy remain fixtures. These are local database-wire
+and coordinator-process proofs, not installed-guest, production-binary or live
+deployment restart/partition acceptance. CI runs all four campaigns; the subprocess
+helper skips ordinary test invocation and is enabled only by its parent test.
