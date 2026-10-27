@@ -19,6 +19,27 @@ type TerminalIntent struct {
 	Outcome   ExecutionOutcome `json:"outcome"`
 }
 
+// VerifiedTerminalIntent can only be constructed by a recording reader after
+// full manifest/chunk verification and terminal decryption/validation. Its
+// contents are private so a caller cannot substitute an outcome after checking.
+type VerifiedTerminalIntent struct{ intent TerminalIntent }
+
+func (v *VerifiedTerminalIntent) Snapshot() TerminalIntent {
+	if v == nil {
+		return TerminalIntent{}
+	}
+	i := v.intent
+	if i.Outcome.ExitCode != nil {
+		code := *i.Outcome.ExitCode
+		i.Outcome.ExitCode = &code
+	}
+	return i
+}
+
+func (v *VerifiedTerminalIntent) MatchesAdmission(rec ExecutionRecord) bool {
+	return v != nil && v.intent.MatchesAdmission(rec)
+}
+
 // MatchesAdmission compares the complete original admission, not just IDs.
 func (i TerminalIntent) MatchesAdmission(rec ExecutionRecord) bool {
 	return sameRecord(i.Admission, rec)

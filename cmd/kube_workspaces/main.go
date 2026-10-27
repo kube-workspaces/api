@@ -217,6 +217,8 @@ func main() {
 			}
 		}
 		execSvc := execution.NewService(execStore)
+		stopTerminalRecovery := execSvc.StartTerminalRecovery(ctx)
+		defer stopTerminalRecovery()
 		startupCtx, startupCancel := context.WithTimeout(ctx, 30*time.Second)
 		managementIssuer, err = management.Open(startupCtx, managementConfig, executionStorage, execStore, dynClient, authProvider)
 		startupCancel()

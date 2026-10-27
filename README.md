@@ -418,8 +418,7 @@ only through the separately enabled QGA pilot; it is not an mTLS fallback.
 Session finalization commits terminal metadata and its actor-bound `finished`
 audit atomically (also `recording.lost` on recording failure). PostgreSQL audit
 failure rolls back the terminal state rather than leaving unaudited success;
-ephemeral mode performs the same operation under one lock. This does not yet
-reconcile a recording finalized before a failed database commit.
+ephemeral mode performs the same operation under one lock.
 
 Finalized sessions now preserve an encrypted **terminal intent** alongside the
 protected recording: the original admission (execution/recording IDs, actor,
@@ -430,11 +429,24 @@ Intent is bounded to 16 KiB before encryption and charged to ephemeral recording
 capacity. Input/output chunk counts and public replay responses are unchanged.
 
 Reading terminal intent verifies the entire recording first, then decrypts and
-validates it. It is **evidence for future recovery, not committed metadata or an
-ownership grant**. No reconciler, guest redispatch or automatic state rewrite is
-enabled. A database outage can still leave metadata `running`; the intent preserves
-the exact outcome without guessing from output text. Previously finalized legacy
-v1 recordings remain readable but have no recoverable intent.
+validates it. It is **not committed metadata or an active-work ownership grant**.
+Persistent modes run a bounded metadata-only reconciliation sweep at startup and
+every 30 seconds (32 candidates per pass, 10-second pass budget, keyset pagination).
+Only a fully finalized, verified intent for the unchanged admission can repair a
+nonterminal synchronous command/script. The immutable verified snapshot and
+row-lock/CAS completion fence serialize the original completer and other replicas;
+no lease expiry, guest redispatch or output-text inference is involved.
+
+Recovery atomically commits the intended outcome, the original actor's `finished`
+audit (and `recording.lost` if applicable), and a `completion.recovered` system audit.
+Already-committed matching outcomes are no-ops, including after an uncertain commit
+response. If recovery wins before the original completer, its matching fully
+audited completion is accepted without another audit or a spurious conflict.
+Conflicting terminal outcomes are never overwritten. Unknown stays
+unknown. Failed recovery/audit leaves metadata unchanged for a later pass. Missing,
+legacy, incomplete or corrupt recordings do not authorize repair; active owners
+without finalized terminal intent are left alone. This is not general async-job,
+shell or upgrade owner/lease recovery. Ephemeral mode starts no recovery worker.
 
 **Storage-format compatibility:** this API reads both v1 and v2. Older API binaries
 reject v2 recordings, so persistent-storage rollout/rollback must account for all
@@ -492,10 +504,14 @@ admission, hides its identity fields from plaintext object metadata, and cannot 
 used after recording corruption. The PostgreSQL tests temporarily install narrowly
 execution-scoped
 fault-injection triggers; the disposable test database user needs permission to
-create those triggers/functions. **Known limitation:** if PostgreSQL remains
+create those triggers/functions. If PostgreSQL remains
 unavailable at finalization, start returns 503 and the protected S3 result survives,
-but metadata can remain `running` after database recovery. Owner-loss/terminal-state
-reconciliation is not implemented; never automatically rerun such an execution.
+and a newly constructed coordinator repairs metadata from its verified intent after
+database/audit recovery, without another guest call. Tests also cover competing
+completers, admission substitution, recovery-audit rollback, and repeated recovery
+without duplicate audit. **Remaining limitation:** without valid finalized v2
+evidence, metadata can still remain `running`; active/incomplete-owner recovery
+requires a separate lifecycle contract. Never automatically rerun such an execution.
 The campaign requires a PostgreSQL URL and does not stop the database service.
 
 CI runs both campaigns plus the standalone storage-engine checks against

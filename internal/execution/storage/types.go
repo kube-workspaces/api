@@ -169,8 +169,16 @@ type MetadataStore interface {
 	// Complete atomically applies a terminal outcome and its canonical finished
 	// audit (plus recording.lost when applicable), bound to the admitted actor.
 	// It rejects nonterminal/missing-end-time outcomes and terminal rewrites.
+	// A matching audited recovery that won the original completion race is a no-op.
 	// An error can mean an uncertain commit; callers must never rerun a guest.
 	Complete(ctx context.Context, id string, outcome ExecutionOutcome) error
+	// RecoverTerminal atomically fences competing completers using a fully
+	// verified finalized recording and unchanged admission row. It never starts
+	// guest work, rewrites a terminal outcome or appends duplicate recovery audit.
+	RecoverTerminal(ctx context.Context, intent *VerifiedTerminalIntent) (bool, error)
+	// RecoveryCandidates uses bounded execution-ID keyset pagination; it includes
+	// only nonterminal synchronous commands/scripts, never shells/upgrades.
+	RecoveryCandidates(ctx context.Context, after string, limit int) ([]ExecutionRecord, error)
 	// Get returns the record and its last known outcome.
 	Get(ctx context.Context, id string) (ExecutionRecord, ExecutionOutcome, error)
 	// Audit appends an ordered audit event.
@@ -229,7 +237,7 @@ type Reader interface {
 	Verify(ctx context.Context) error
 	// TerminalIntent verifies the full recording before decrypting terminal
 	// evidence. Legacy v1 recordings return ErrNoTerminalIntent, never a guess.
-	TerminalIntent(ctx context.Context) (*TerminalIntent, error)
+	TerminalIntent(ctx context.Context) (*VerifiedTerminalIntent, error)
 	Close() error
 }
 

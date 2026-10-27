@@ -177,24 +177,34 @@ func (m *postgresMetadata) Complete(ctx context.Context, id string, outcome Exec
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var state State
-	var actor string
 	// Serialize competing completions and legacy state transitions. Audit is
 	// never appended for a loser, including a rewrite of an unknown outcome.
-	err = tx.QueryRow(ctx, `SELECT state, actor_id FROM execution_executions WHERE execution_id=$1 FOR UPDATE`, id).Scan(&state, &actor)
+	rec, current, err := scanExecution(tx.QueryRow(ctx, `SELECT `+executionColumns+` FROM execution_executions WHERE execution_id=$1 FOR UPDATE`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if !validTransition(state, outcome.State) {
+	if !validTransition(current.State, outcome.State) {
+		if sameOutcome(current, outcome) {
+			var recovered bool
+			err := tx.QueryRow(ctx, `SELECT
+				EXISTS (SELECT 1 FROM execution_audit WHERE execution_id=$1 AND kind='finished' AND actor_id=$2 AND detail->>'state'=$3)
+				AND EXISTS (SELECT 1 FROM execution_audit WHERE execution_id=$1 AND kind='completion.recovered' AND actor_id='system:execution-recovery' AND detail->>'state'=$3)`, id, rec.ActorID, string(outcome.State)).Scan(&recovered)
+			if err != nil {
+				return err
+			}
+			if recovered {
+				return nil
+			}
+		}
 		return ErrConflict
 	}
-	if err := updateExecution(ctx, tx, id, state, outcome); err != nil {
+	if err := updateExecution(ctx, tx, id, current.State, outcome); err != nil {
 		return err
 	}
-	for _, event := range completionEvents(id, actor, outcome) {
+	for _, event := range completionEvents(id, rec.ActorID, outcome) {
 		if err := insertExecutionAudit(ctx, tx, event); err != nil {
 			return err
 		}

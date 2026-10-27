@@ -139,6 +139,11 @@ func (m *ephemeralMetadata) Complete(ctx context.Context, id string, outcome Exe
 		return ErrNotFound
 	}
 	if !validTransition(m.outcomes[id].State, outcome.State) {
+		// Recovery may win after this writer finalized its recording but before
+		// its metadata commit. An audited matching recovery is not a rewrite.
+		if sameOutcome(m.outcomes[id], outcome) && hasRecoveredCompletion(m.audit[id], rec.ActorID, outcome.State) {
+			return nil
+		}
 		return ErrConflict
 	}
 	m.outcomes[id] = outcome
@@ -407,14 +412,18 @@ type ephemeralReader struct {
 
 func (r *ephemeralReader) Manifest() Manifest { return cloneManifest(r.manifest) }
 
-func (r *ephemeralReader) TerminalIntent(ctx context.Context) (*TerminalIntent, error) {
+func (r *ephemeralReader) TerminalIntent(ctx context.Context) (*VerifiedTerminalIntent, error) {
 	if err := r.Verify(ctx); err != nil {
 		return nil, err
 	}
 	if r.manifest.Version == 1 {
 		return nil, ErrNoTerminalIntent
 	}
-	return openTerminalIntent(r.store.manifestKey, r.manifest.KeyID, r.manifest.RecordingID, r.manifest.Terminal)
+	i, err := openTerminalIntent(r.store.manifestKey, r.manifest.KeyID, r.manifest.RecordingID, r.manifest.Terminal)
+	if err != nil {
+		return nil, err
+	}
+	return &VerifiedTerminalIntent{intent: *i}, nil
 }
 
 func (r *ephemeralReader) ReadChunk(_ context.Context, index uint64) ([]byte, error) {

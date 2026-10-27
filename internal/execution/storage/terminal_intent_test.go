@@ -208,7 +208,7 @@ func TestEphemeralTerminalIntentAndLegacyPlayback(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || !reflect.DeepEqual(got, &intent) {
+			if err != nil || !reflect.DeepEqual(got.Snapshot(), intent) {
 				t.Fatalf("terminal intent not retained: %+v %v", got, err)
 			}
 			copy := r.Manifest()

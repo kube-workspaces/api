@@ -70,7 +70,7 @@ func TestPostgresIntegration(t *testing.T) {
 	}
 	t.Run("atomic-completion", func(t *testing.T) {
 		backing := m.(*postgresMetadata)
-		testMetadataCompletion(t, m, func(id string) []AuditEvent {
+		readAudit := func(id string) []AuditEvent {
 			t.Helper()
 			rows, err := backing.pool.Query(ctx, `SELECT execution_id, ts, kind, actor_id, detail FROM execution_audit WHERE execution_id=$1 ORDER BY seq`, id)
 			if err != nil {
@@ -89,7 +89,9 @@ func TestPostgresIntegration(t *testing.T) {
 				t.Fatal(err)
 			}
 			return events
-		})
+		}
+		testMetadataCompletion(t, m, readAudit)
+		t.Run("terminal-recovery", func(t *testing.T) { testTerminalRecovery(t, m, next, readAudit) })
 	})
 	t.Run("completion-audit-rollback", func(t *testing.T) {
 		backing := m.(*postgresMetadata)
@@ -113,7 +115,10 @@ func TestPostgresIntegration(t *testing.T) {
 				t.Error(err)
 			}
 		}()
-		if err := m.Reserve(ctx, sampleRecord(id)); err != nil {
+		intent := sampleTerminalIntent("rec-" + id)
+		intent.Admission.ExecutionID = id
+		proof := verifiedIntent(t, intent)
+		if err := m.Reserve(ctx, intent.Admission); err != nil {
 			t.Fatal(err)
 		}
 		if err := m.Transition(ctx, id, ExecutionOutcome{State: StateRunning}); err != nil {
@@ -133,15 +138,35 @@ func TestPostgresIntegration(t *testing.T) {
 				t.Fatalf("audit failure left partial events: %d %v", count, err)
 			}
 		}
+		if _, err := m.RecoverTerminal(ctx, proof); err == nil {
+			t.Fatal("recovery ignored finished audit fault")
+		}
+		if _, err := conn.Exec(ctx, `DROP TRIGGER `+trigger+` ON execution_audit`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.Exec(ctx, fmt.Sprintf(`CREATE TRIGGER %s BEFORE INSERT ON execution_audit FOR EACH ROW WHEN (NEW.execution_id = '%s' AND NEW.kind = 'completion.recovered') EXECUTE FUNCTION pg_temp.reject_completion_audit()`, trigger, id)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.RecoverTerminal(ctx, proof); err == nil {
+			t.Fatal("recovery ignored its own audit fault")
+		}
+		_, stillRunning, err := m.Get(ctx, id)
+		var partial int
+		if err != nil || stillRunning.State != StateRunning {
+			t.Fatal("recovery audit fault left a terminal row")
+		}
+		if err := backing.pool.QueryRow(ctx, `SELECT count(*) FROM execution_audit WHERE execution_id=$1`, id).Scan(&partial); err != nil || partial != 0 {
+			t.Fatalf("recovery audit fault left partial events: %d %v", partial, err)
+		}
 		if _, err := conn.Exec(ctx, `CREATE OR REPLACE FUNCTION pg_temp.reject_completion_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$`); err != nil {
 			t.Fatal(err)
 		}
-		if err := m.Complete(ctx, id, ExecutionOutcome{State: StateSucceeded, EndTime: time.Now()}); err != nil {
-			t.Fatal(err)
+		if recovered, err := m.RecoverTerminal(ctx, proof); err != nil || !recovered {
+			t.Fatalf("recovery after audit restoration: %v %v", recovered, err)
 		}
 		_, outcome, err := m.Get(ctx, id)
 		var count int
-		if err != nil || outcome.State != StateSucceeded {
+		if err != nil || !sameOutcome(outcome, intent.Outcome) {
 			t.Fatalf("completion after audit recovery: %+v %v", outcome, err)
 		}
 		if err := backing.pool.QueryRow(ctx, `SELECT count(*) FROM execution_audit WHERE execution_id=$1 AND kind='finished'`, id).Scan(&count); err != nil || count != 1 {

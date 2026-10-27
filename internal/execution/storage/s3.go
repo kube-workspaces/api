@@ -282,14 +282,18 @@ type s3Reader struct {
 
 func (r *s3Reader) Manifest() Manifest { return cloneManifest(r.manifest) }
 
-func (r *s3Reader) TerminalIntent(ctx context.Context) (*TerminalIntent, error) {
+func (r *s3Reader) TerminalIntent(ctx context.Context) (*VerifiedTerminalIntent, error) {
 	if err := r.Verify(ctx); err != nil {
 		return nil, err
 	}
 	if r.manifest.Version == 1 {
 		return nil, ErrNoTerminalIntent
 	}
-	return openTerminalIntent(r.store.manifestKey, r.manifest.KeyID, r.manifest.RecordingID, r.manifest.Terminal)
+	i, err := openTerminalIntent(r.store.manifestKey, r.manifest.KeyID, r.manifest.RecordingID, r.manifest.Terminal)
+	if err != nil {
+		return nil, err
+	}
+	return &VerifiedTerminalIntent{intent: *i}, nil
 }
 
 func (r *s3Reader) ReadChunk(ctx context.Context, index uint64) ([]byte, error) {

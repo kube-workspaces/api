@@ -72,11 +72,12 @@ func (s *stubQGA) Execute(ctx context.Context, target qga.Target, command qga.Co
 }
 
 type startStack struct {
-	stub   *stubQGA
-	store  storage.Store
-	post   func(body string, credential string) *httptest.ResponseRecorder
-	get    func(path string, authenticated bool) *httptest.ResponseRecorder
-	getCtx func(context.Context, string, bool) *httptest.ResponseRecorder
+	execution *execution.Service
+	stub      *stubQGA
+	store     storage.Store
+	post      func(body string, credential string) *httptest.ResponseRecorder
+	get       func(path string, authenticated bool) *httptest.ResponseRecorder
+	getCtx    func(context.Context, string, bool) *httptest.ResponseRecorder
 	// postCtx runs one start request on a caller-owned context so a test can
 	// disconnect mid-flight.
 	postCtx func(ctx context.Context, body string) *httptest.ResponseRecorder
@@ -146,7 +147,8 @@ func newStoredStartStack(t *testing.T, namespace, workspace string, permissions 
 		svcOptions = append(svcOptions, WithQGA(stub))
 	}
 	svcOptions = append(svcOptions, options...)
-	svc := NewExecutions(execution.NewService(store), platform.NewConfigProvider(client), svcOptions...)
+	execService := execution.NewService(store)
+	svc := NewExecutions(execService, platform.NewConfigProvider(client), svcOptions...)
 	mux := goahttp.NewMuxer()
 	server := svr.New(gen.NewEndpoints(svc), mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, nil, nil)
 	svr.Mount(mux, server)
@@ -173,7 +175,7 @@ func newStoredStartStack(t *testing.T, namespace, workspace string, permissions 
 		return w
 	}
 	return &startStack{
-		stub: stub, store: store,
+		execution: execService, stub: stub, store: store,
 		post:    func(body, _ string) *httptest.ResponseRecorder { return startOn(context.Background(), body) },
 		postCtx: startOn, getCtx: getOn,
 		get: func(path string, authenticated bool) *httptest.ResponseRecorder {

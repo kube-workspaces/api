@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/kube-workspaces/api/internal/auth"
+	"github.com/kube-workspaces/api/internal/execution"
 	"github.com/kube-workspaces/api/internal/execution/qga"
 	"github.com/kube-workspaces/api/internal/execution/storage"
 )
@@ -127,16 +128,18 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 			if _, err := rand.Read(key); err != nil {
 				t.Fatal(err)
 			}
-			s, err := storage.Open(ctx, storage.Options{Mode: "external", DatabaseURL: throughGate.String(), RecordingKey: key, KeyID: storage.DeriveKeyID(key), S3: storage.S3Options{
+			opts := storage.Options{Mode: "external", DatabaseURL: throughGate.String(), RecordingKey: key, KeyID: storage.DeriveKeyID(key), S3: storage.S3Options{
 				Endpoint: endpoint, Region: "us-east-1", Bucket: "execution-http-integration", CreateBucket: true, ForcePathStyle: true,
 				AccessKey: os.Getenv("KW_EXECUTION_TEST_S3_ACCESS_KEY"), SecretKey: os.Getenv("KW_EXECUTION_TEST_S3_SECRET_KEY"),
-			}})
+			}}
+			s, err := storage.Open(ctx, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = s.Close() })
 			code := 0
 			stub := &stubQGA{target: eligibleTarget(), result: &qga.GuestResult{Outcome: "completed", ExitCode: &code, Stdout: []byte("recorded outcome")}}
+			var restoreAudit func()
 			stack := newStoredStartStack(t, "team", "vm", []string{string(auth.PermissionExec), string(auth.PermissionElevated), string(auth.PermissionReadRecordings)}, enabledElevatedPolicy(), stub, s)
 			if phase == "before-admission" {
 				gate.setBlocked(true)
@@ -156,6 +159,15 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 						trigger := pgx.Identifier{"reject_" + cmd.ExecutionID}.Sanitize()
 						if _, err := conn.Exec(ctx, fmt.Sprintf(`CREATE TRIGGER %s BEFORE INSERT ON execution_audit FOR EACH ROW WHEN (NEW.execution_id = '%s' AND NEW.kind = 'finished') EXECUTE FUNCTION pg_temp.reject_terminal_audit()`, trigger, cmd.ExecutionID)); err != nil {
 							t.Fatal(err)
+						}
+						restoreAudit = func() {
+							// The guest run context is canceled when Start returns;
+							// restoring the disposable fault is independent setup.
+							restoreCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+							defer cancel()
+							if _, err := conn.Exec(restoreCtx, `CREATE OR REPLACE FUNCTION pg_temp.reject_terminal_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$`); err != nil {
+								t.Fatal(err)
+							}
 						}
 						t.Cleanup(func() {
 							if _, err := conn.Exec(context.Background(), `DROP TRIGGER `+trigger+` ON execution_audit`); err != nil {
@@ -206,7 +218,7 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 			}
 			defer reader.Close()
 			intent, err := reader.TerminalIntent(ctx)
-			if err != nil || !intent.MatchesAdmission(rec) || intent.Outcome.State != storage.StateSucceeded || intent.Outcome.ExitCode == nil || *intent.Outcome.ExitCode != 0 {
+			if err != nil || !intent.MatchesAdmission(rec) || intent.Snapshot().Outcome.State != storage.StateSucceeded || intent.Snapshot().Outcome.ExitCode == nil || *intent.Snapshot().Outcome.ExitCode != 0 {
 				t.Fatalf("database loss did not retain admission-bound terminal intent: %+v %v", intent, err)
 			}
 			if phase == "during-result" || phase == "terminal-audit-failure" {
@@ -230,6 +242,51 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 			}
 			if len(stub.commands) != 1 || result.StdoutB64 != base64.StdEncoding.EncodeToString(stub.result.Stdout) {
 				t.Fatal("recovery reran or lost the result")
+			}
+			if phase == "terminal-audit-failure" {
+				if recovered, err := stack.execution.ReconcileTerminal(ctx, cmd.ExecutionID); err == nil || recovered {
+					t.Fatal("recovery succeeded without mandatory audit")
+				}
+				restoreAudit()
+			}
+			// Close the serving pool and reconstruct storage/coordinator, as a
+			// fresh replica/restart would. Recovery has no guest executor at all.
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := storage.Open(ctx, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = reopened.Close() })
+			recovery := execution.NewService(reopened)
+			recovered, err := recovery.ReconcileTerminal(ctx, cmd.ExecutionID)
+			wantRecovery := phase != "recovered-before-result"
+			if err != nil || recovered != wantRecovery {
+				t.Fatalf("restart reconciliation: recovered=%v want=%v err=%v", recovered, wantRecovery, err)
+			}
+			if again, err := recovery.ReconcileTerminal(ctx, cmd.ExecutionID); err != nil || again {
+				t.Fatalf("repeated recovery was not idempotent: %v %v", again, err)
+			}
+			_, final, err := reopened.Metadata().Get(ctx, cmd.ExecutionID)
+			if err != nil || final.State != storage.StateSucceeded || len(stub.commands) != 1 {
+				t.Fatalf("recovery lost outcome or redispatched: %+v %v", final, err)
+			}
+			auditConn, err := pgx.Connect(ctx, dsn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer auditConn.Close(ctx)
+			var finished, recoveredEvents int
+			if err := auditConn.QueryRow(ctx, `SELECT count(*) FILTER (WHERE kind='finished'), count(*) FILTER (WHERE kind='completion.recovered') FROM execution_audit WHERE execution_id=$1`, cmd.ExecutionID).Scan(&finished, &recoveredEvents); err != nil {
+				t.Fatal(err)
+			}
+			wantEvents := 0
+			if wantRecovery {
+				wantEvents = 1
+			}
+			if finished != 1 || recoveredEvents != wantEvents {
+				t.Fatalf("duplicated/missing completion audit: finished=%d recovered=%d", finished, recoveredEvents)
 			}
 		})
 	}

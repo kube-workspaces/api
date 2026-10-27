@@ -73,7 +73,7 @@ func TestRecordingFailureCannotFinalizeAsSuccess(t *testing.T) {
 	}
 	defer reader.Close()
 	intent, err := reader.TerminalIntent(ctx)
-	if err != nil || intent.Outcome.State != storage.StateRecordingLost || !intent.Outcome.RecordingLost {
+	if err != nil || intent.Snapshot().Outcome.State != storage.StateRecordingLost || !intent.Snapshot().Outcome.RecordingLost {
 		t.Fatalf("recording failure left a successful recovery intent: %+v %v", intent, err)
 	}
 }

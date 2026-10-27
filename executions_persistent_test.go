@@ -170,7 +170,7 @@ func TestExecutionPersistentIntegration(t *testing.T) {
 			}
 			defer reader.Close()
 			intent, err := reader.TerminalIntent(ctx)
-			if err != nil || !intent.MatchesAdmission(rec) || intent.Outcome.State != storage.StateSucceeded || reader.Manifest().Version != 2 {
+			if err != nil || !intent.MatchesAdmission(rec) || intent.Snapshot().Outcome.State != storage.StateSucceeded || reader.Manifest().Version != 2 {
 				t.Fatalf("terminal intent did not survive storage/service reopen: %+v %v", intent, err)
 			}
 			manifestObject, err := raw.GetObject(ctx, opts.S3.Bucket, "executions/"+result.RecordingID+"/manifest.json", minio.GetObjectOptions{})
