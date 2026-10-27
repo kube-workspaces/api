@@ -237,7 +237,7 @@ func (r *s3Recorder) PutChunk(ctx context.Context, index uint64, plaintext []byt
 	return nil
 }
 
-func (r *s3Recorder) Finalize(ctx context.Context, _ FinalizeMeta) error {
+func (r *s3Recorder) Finalize(ctx context.Context, meta FinalizeMeta) error {
 	if r.finalized {
 		return ErrFinalized
 	}
@@ -250,6 +250,9 @@ func (r *s3Recorder) Finalize(ctx context.Context, _ FinalizeMeta) error {
 		Chain:          chainHex(r.chain),
 		CreatedAt:      r.createdAt,
 		FinalizedAt:    time.Now(),
+	}
+	if err := protectTerminalIntent(&manifest, r.store.manifestKey, meta); err != nil {
+		return err
 	}
 	manifest.Authentication = manifestAuthentication(r.store.manifestKey, manifest)
 	raw, err := json.Marshal(manifest)
@@ -277,7 +280,17 @@ type s3Reader struct {
 	manifest Manifest
 }
 
-func (r *s3Reader) Manifest() Manifest { return r.manifest }
+func (r *s3Reader) Manifest() Manifest { return cloneManifest(r.manifest) }
+
+func (r *s3Reader) TerminalIntent(ctx context.Context) (*TerminalIntent, error) {
+	if err := r.Verify(ctx); err != nil {
+		return nil, err
+	}
+	if r.manifest.Version == 1 {
+		return nil, ErrNoTerminalIntent
+	}
+	return openTerminalIntent(r.store.manifestKey, r.manifest.KeyID, r.manifest.RecordingID, r.manifest.Terminal)
+}
 
 func (r *s3Reader) ReadChunk(ctx context.Context, index uint64) ([]byte, error) {
 	if index >= r.manifest.Chunks {

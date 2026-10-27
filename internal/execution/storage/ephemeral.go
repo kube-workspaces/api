@@ -350,7 +350,10 @@ func (r *ephemeralRecorder) PutChunk(ctx context.Context, index uint64, plaintex
 	return nil
 }
 
-func (r *ephemeralRecorder) Finalize(_ context.Context, _ FinalizeMeta) error {
+func (r *ephemeralRecorder) Finalize(ctx context.Context, meta FinalizeMeta) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if r.finalized {
 		return ErrFinalized
 	}
@@ -364,12 +367,21 @@ func (r *ephemeralRecorder) Finalize(_ context.Context, _ FinalizeMeta) error {
 		CreatedAt:      r.createdAt,
 		FinalizedAt:    time.Now(),
 	}
+	if err := protectTerminalIntent(&manifest, r.store.manifestKey, meta); err != nil {
+		return err
+	}
 	manifest.Authentication = manifestAuthentication(r.store.manifestKey, manifest)
 	raw, err := json.Marshal(manifest)
 	if err != nil {
 		return err
 	}
+	// Terminal evidence is part of the same bounded ephemeral recording budget,
+	// not an unaccounted per-execution spool outside the configured cap.
+	if err := r.store.b.reserve(int64(len(raw))); err != nil {
+		return err
+	}
 	if err := os.WriteFile(filepath.Join(r.dir, "manifest.json"), raw, 0o600); err != nil {
+		r.store.b.release(int64(len(raw)))
 		return err
 	}
 	r.store.mu.Lock()
@@ -393,7 +405,17 @@ type ephemeralReader struct {
 	manifest Manifest
 }
 
-func (r *ephemeralReader) Manifest() Manifest { return r.manifest }
+func (r *ephemeralReader) Manifest() Manifest { return cloneManifest(r.manifest) }
+
+func (r *ephemeralReader) TerminalIntent(ctx context.Context) (*TerminalIntent, error) {
+	if err := r.Verify(ctx); err != nil {
+		return nil, err
+	}
+	if r.manifest.Version == 1 {
+		return nil, ErrNoTerminalIntent
+	}
+	return openTerminalIntent(r.store.manifestKey, r.manifest.KeyID, r.manifest.RecordingID, r.manifest.Terminal)
+}
 
 func (r *ephemeralReader) ReadChunk(_ context.Context, index uint64) ([]byte, error) {
 	if index >= r.manifest.Chunks {

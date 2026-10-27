@@ -157,8 +157,10 @@ func (s *Service) Admit(ctx context.Context, req AdmissionRequest) (*Session, er
 		RecordingID:         req.RecordingID,
 		Mode:                store.Mode(),
 		Durability:          store.Durability(),
-		AdmissionTime:       s.now().UTC(),
-		Admitted:            true,
+		// PostgreSQL stores microseconds; use the same canonical precision in
+		// the off-database terminal intent so its admission compares exactly.
+		AdmissionTime: s.now().UTC().Truncate(time.Microsecond),
+		Admitted:      true,
 	}
 	if err := store.Metadata().Reserve(ctx, rec); err != nil {
 		return nil, fmt.Errorf("%w: cannot record admission: %v", ErrAdmissionDenied, err)
@@ -280,7 +282,12 @@ func (s *Session) Finish(ctx context.Context, outcome storage.ExecutionOutcome) 
 	if outcome.EndTime.IsZero() {
 		outcome.EndTime = s.now().UTC()
 	}
-	finalizeErr := s.writer.Finalize(ctx, storage.FinalizeMeta{ActorID: s.record.ActorID, EndTime: outcome.EndTime})
+	if s.recordingErr != nil {
+		outcome.State = storage.StateRecordingLost
+		outcome.RecordingLost = true
+	}
+	intent := &storage.TerminalIntent{Version: 1, Admission: s.record, Outcome: outcome}
+	finalizeErr := s.writer.Finalize(ctx, storage.FinalizeMeta{ActorID: s.record.ActorID, EndTime: outcome.EndTime, Terminal: intent})
 	recordingErr := errors.Join(s.recordingErr, finalizeErr)
 	if recordingErr != nil {
 		outcome.State = storage.StateRecordingLost

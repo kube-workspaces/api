@@ -421,6 +421,26 @@ failure rolls back the terminal state rather than leaving unaudited success;
 ephemeral mode performs the same operation under one lock. This does not yet
 reconcile a recording finalized before a failed database commit.
 
+Finalized sessions now preserve an encrypted **terminal intent** alongside the
+protected recording: the original admission (execution/recording IDs, actor,
+workspace UID/scope, identity, grant version and storage mode) plus intended outcome and
+timing. A version-2 authenticated manifest binds this ciphertext to the recording
+chain; AES-256-GCM uses a domain-separated derived key and recording/key-ID AAD.
+Intent is bounded to 16 KiB before encryption and charged to ephemeral recording
+capacity. Input/output chunk counts and public replay responses are unchanged.
+
+Reading terminal intent verifies the entire recording first, then decrypts and
+validates it. It is **evidence for future recovery, not committed metadata or an
+ownership grant**. No reconciler, guest redispatch or automatic state rewrite is
+enabled. A database outage can still leave metadata `running`; the intent preserves
+the exact outcome without guessing from output text. Previously finalized legacy
+v1 recordings remain readable but have no recoverable intent.
+
+**Storage-format compatibility:** this API reads both v1 and v2. Older API binaries
+reject v2 recordings, so persistent-storage rollout/rollback must account for all
+replicas' reader versions; never drop authentication or silently downgrade to make
+an older reader accept new recordings. Existing v1 recordings are not rewritten.
+
 The optional management issuer now supports protected mounted CA credentials,
 shared-ledger initialization and a metadata-only protected-bootstrap import
 worker. Its configuration, trust rotation and readiness contract are documented
@@ -466,7 +486,11 @@ use the same disposable-service variables with
 `go test -race -count=1 -v -run '^TestExecutionPostgresOutageIntegration$' .`.
 This checks pre-admission denial, failure to commit the terminal state,
 recovery before result finalization, and terminal-audit failure rolling back the
-metadata commit. The PostgreSQL tests temporarily install narrowly execution-scoped
+metadata commit. The persistent/connection-loss campaigns also verify that terminal
+intent survives storage reopen and database/audit failure, matches the persisted
+admission, hides its identity fields from plaintext object metadata, and cannot be
+used after recording corruption. The PostgreSQL tests temporarily install narrowly
+execution-scoped
 fault-injection triggers; the disposable test database user needs permission to
 create those triggers/functions. **Known limitation:** if PostgreSQL remains
 unavailable at finalization, start returns 503 and the protected S3 result survives,

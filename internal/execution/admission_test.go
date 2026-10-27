@@ -67,6 +67,15 @@ func TestRecordingFailureCannotFinalizeAsSuccess(t *testing.T) {
 	if err != nil || outcome.State != storage.StateRecordingLost || !outcome.RecordingLost {
 		t.Fatalf("outcome: %+v, %v", outcome, err)
 	}
+	reader, err := store.Recording().Open(ctx, "rec-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	intent, err := reader.TerminalIntent(ctx)
+	if err != nil || intent.Outcome.State != storage.StateRecordingLost || !intent.Outcome.RecordingLost {
+		t.Fatalf("recording failure left a successful recovery intent: %+v %v", intent, err)
+	}
 }
 
 // allowAll is a permissive ReplayAuthorizer used only in tests.

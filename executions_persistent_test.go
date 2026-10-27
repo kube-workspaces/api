@@ -160,6 +160,28 @@ func TestExecutionPersistentIntegration(t *testing.T) {
 			}
 			reopened := open()
 			replay := stackFor(reopened, nil, permissions)
+			rec, _, err := reopened.Metadata().Get(ctx, result.ExecutionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := reopened.Recording().Open(ctx, result.RecordingID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+			intent, err := reader.TerminalIntent(ctx)
+			if err != nil || !intent.MatchesAdmission(rec) || intent.Outcome.State != storage.StateSucceeded || reader.Manifest().Version != 2 {
+				t.Fatalf("terminal intent did not survive storage/service reopen: %+v %v", intent, err)
+			}
+			manifestObject, err := raw.GetObject(ctx, opts.S3.Bucket, "executions/"+result.RecordingID+"/manifest.json", minio.GetObjectOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			rawManifest, err := io.ReadAll(manifestObject)
+			_ = manifestObject.Close()
+			if err != nil || bytes.Contains(rawManifest, []byte(rec.ActorID)) || bytes.Contains(rawManifest, []byte(rec.WorkspaceUID)) {
+				t.Fatal("terminal admission leaked into plaintext object metadata")
+			}
 			checkAudit(result.ExecutionID, "finished")
 			path := "/v1/executions/" + result.ExecutionID
 			if w := replay.get(path, true); w.Code != 200 || !strings.Contains(w.Body.String(), `"state":"succeeded"`) {
@@ -217,6 +239,9 @@ func TestExecutionPersistentIntegration(t *testing.T) {
 			object := fmt.Sprintf("executions/%s/chunks/%016d.chunk", result.RecordingID, 1)
 			if _, err := raw.PutObject(ctx, opts.S3.Bucket, object, strings.NewReader("corrupted"), 9, minio.PutObjectOptions{}); err != nil {
 				t.Fatal(err)
+			}
+			if _, err := reader.TerminalIntent(ctx); err == nil {
+				t.Fatal("terminal intent survived recording corruption as trusted evidence")
 			}
 			for _, suffix := range []string{"/recording", "/recording/chunks/0"} {
 				if w := replay.get(path+suffix, true); w.Code == 200 || bytes.Contains(w.Body.Bytes(), []byte(secret)) {

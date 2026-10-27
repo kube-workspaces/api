@@ -196,9 +196,18 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 				return
 			}
 			cmd := stub.commands[0]
-			_, outcome, err := s.Metadata().Get(ctx, cmd.ExecutionID)
+			rec, outcome, err := s.Metadata().Get(ctx, cmd.ExecutionID)
 			if err != nil {
 				t.Fatal(err)
+			}
+			reader, err := s.Recording().Open(ctx, cmd.RecordingID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+			intent, err := reader.TerminalIntent(ctx)
+			if err != nil || !intent.MatchesAdmission(rec) || intent.Outcome.State != storage.StateSucceeded || intent.Outcome.ExitCode == nil || *intent.Outcome.ExitCode != 0 {
+				t.Fatalf("database loss did not retain admission-bound terminal intent: %+v %v", intent, err)
 			}
 			if phase == "during-result" || phase == "terminal-audit-failure" {
 				// With PostgreSQL unavailable at finalization, the API must not

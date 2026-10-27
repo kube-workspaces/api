@@ -141,17 +141,18 @@ type Filter struct {
 
 // Common store failures.
 var (
-	ErrDisabled      = errors.New("execution storage is disabled")
-	ErrNotReady      = errors.New("execution storage is not ready")
-	ErrNotFound      = errors.New("execution record not found")
-	ErrConflict      = errors.New("execution record conflicts with existing record")
-	ErrTampered      = errors.New("recording chunk failed integrity verification")
-	ErrTruncated     = errors.New("recording is missing chunks")
-	ErrSeqGap        = errors.New("recording chunk sequence is not contiguous")
-	ErrFinalized     = errors.New("recording is already finalized")
-	ErrOverCapacity  = errors.New("ephemeral storage capacity exceeded")
-	ErrNotFinalized  = errors.New("recording is not finalized")
-	ErrChunkTooLarge = errors.New("recording chunk exceeds maximum size")
+	ErrDisabled         = errors.New("execution storage is disabled")
+	ErrNotReady         = errors.New("execution storage is not ready")
+	ErrNotFound         = errors.New("execution record not found")
+	ErrConflict         = errors.New("execution record conflicts with existing record")
+	ErrTampered         = errors.New("recording chunk failed integrity verification")
+	ErrTruncated        = errors.New("recording is missing chunks")
+	ErrSeqGap           = errors.New("recording chunk sequence is not contiguous")
+	ErrFinalized        = errors.New("recording is already finalized")
+	ErrOverCapacity     = errors.New("ephemeral storage capacity exceeded")
+	ErrNotFinalized     = errors.New("recording is not finalized")
+	ErrChunkTooLarge    = errors.New("recording chunk exceeds maximum size")
+	ErrNoTerminalIntent = errors.New("recording has no terminal recovery intent")
 )
 
 // MetadataStore persists searchable execution metadata and the audit trail.
@@ -193,11 +194,12 @@ type Recorder interface {
 	Abort(ctx context.Context) error
 }
 
-// FinalizeMeta carries optional human-facing end state written into the
-// manifest. It is not a substitute for the authoritative metadata record.
+// FinalizeMeta supplies optional protected terminal evidence. It does not replace
+// a committed metadata outcome or authorize guest redispatch/reconciliation.
 type FinalizeMeta struct {
-	ActorID string
-	EndTime time.Time
+	ActorID  string
+	EndTime  time.Time
+	Terminal *TerminalIntent
 }
 
 // Manifest is the authoritative integrity record for a finalized recording.
@@ -211,6 +213,8 @@ type Manifest struct {
 	Chain          string    `json:"chain"`
 	CreatedAt      time.Time `json:"createdAt"`
 	FinalizedAt    time.Time `json:"finalizedAt"`
+	// Version 2 only: encrypted, admission-bound terminal recovery evidence.
+	Terminal []byte `json:"terminal,omitempty"`
 }
 
 // Reader opens a finalized recording for replay. Callers must verify before
@@ -223,6 +227,9 @@ type Reader interface {
 	// Verify recomputes the hash chain over every chunk and confirms it matches
 	// the manifest, detecting tampering and truncation.
 	Verify(ctx context.Context) error
+	// TerminalIntent verifies the full recording before decrypting terminal
+	// evidence. Legacy v1 recordings return ErrNoTerminalIntent, never a guess.
+	TerminalIntent(ctx context.Context) (*TerminalIntent, error)
 	Close() error
 }
 
