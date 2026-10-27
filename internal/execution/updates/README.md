@@ -1,5 +1,31 @@
 # Agent update contracts — offline verification foundation
 
+## Signed exact-action phase permits
+
+`PhasePermit`, `SignPhase` and `VerifyPhase` share the agent's
+`kw_management::updates::phase` contract. Ed25519 covers
+`kw-agent-upgrade-phase/v1` + NUL + canonical JSON, bounded to 4 KiB. The
+`agent-upgrade.phase.v1` audience is distinct from command and artifact trust.
+Required fields bind plan SHA-256, exact action/sequence/boot, owner fence,
+guest-minted 256-bit challenge and authenticated management peer certificate
+SHA-256. Maximum lifetime is 15 seconds, with no future skew and exclusive expiry.
+Unknown/duplicate/missing fields and noncanonical encoding deny.
+
+Expected bindings must be independently obtained, not copied from the permit.
+The plan digest includes actor/workspace/VM/epoch, attempt/recording, manifests,
+inventory and reboot consent. The stateless verifier is not replay storage:
+transport must durably consume guest challenges across restarts, authenticate
+the peer with mTLS, and recheck current identity, lifecycle, policy, worker fence,
+cancellation/deadline and exact durable intent recording before each effect.
+
+Signing here only validates structure. No production phase issuer, worker,
+management listener or enabled upgrade path is supplied. Rust adds a one-use
+`SignedPhaseAuthority` adapter but intentionally supplies no permissive current
+authority source. The byte-identical phase fixtures and deterministic signature
+assertion in both languages use a synthetic seed, never production trust.
+
+## Manifest verification foundation
+
 `updates.Verify` and workspace-agent's `kw_management::updates::verify` verify
 the same publisher-signed manifest contract. These libraries implement no
 download, installation, grant issuance, listener, availability endpoint or live
