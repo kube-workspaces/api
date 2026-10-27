@@ -158,6 +158,34 @@ without exposing its body. Deadline, 16 KiB combined output, process-tree cleanu
 recording-loss and transport-unknown behavior match bounded commands. Requests
 are never automatically rerun.
 
+#### Installed script proof (explicit opt-in)
+
+With a disposable agent-equipped VM, matching installed runner, enabled QGA /
+elevation policy and a kubeconfig allowed to reach its owned launcher:
+
+```sh
+KW_EXECUTION_SCRIPT_LIVE_NAMESPACE=execution-proof \
+KW_EXECUTION_SCRIPT_LIVE_WORKSPACE=linux-vm \
+go test -v -run '^TestScriptExecutionLive$' .
+```
+
+The same command works for a Windows proof VM by selecting its workspace name.
+These variables are separate from the command-only live harness; ordinary tests
+skip this proof. It stages a fresh management verification key, so use a
+disposable VM, not a production workspace. Authentication/account fixtures and
+encrypted ephemeral recording are local; live target/policy resolution, QGA,
+guest signatures, script staging and process execution are real. It does not
+establish deployed browser authentication or persistent PostgreSQL/S3 recording.
+
+The harness checks scoped discovery without admission, root/SYSTEM identity,
+cwd and distinct streams/nonzero exit, explicit UTF-8 output, root-exit/deadline/
+output-limit descendant termination, and complete protected input/result binding.
+Each PID check is a new recorded read-only script; no script is automatically
+retried. The whole campaign is pinned to the initially resolved guest/launcher/
+revocation epoch. Target changes or a failed/unknown/lost-recording result stop it.
+Windows Unicode source uses the policy's BOM; its UTF-8 output case explicitly
+sets the process output encoding, rather than assuming a default host code page.
+
 ### Execution storage configuration
 
 The startup configuration loader recognizes `KW_EXECUTION_STORAGE_MODE` values

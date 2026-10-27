@@ -72,10 +72,11 @@ func (s *stubQGA) Execute(ctx context.Context, target qga.Target, command qga.Co
 }
 
 type startStack struct {
-	stub  *stubQGA
-	store storage.Store
-	post  func(body string, credential string) *httptest.ResponseRecorder
-	get   func(path string, authenticated bool) *httptest.ResponseRecorder
+	stub   *stubQGA
+	store  storage.Store
+	post   func(body string, credential string) *httptest.ResponseRecorder
+	get    func(path string, authenticated bool) *httptest.ResponseRecorder
+	getCtx func(context.Context, string, bool) *httptest.ResponseRecorder
 	// postCtx runs one start request on a caller-owned context so a test can
 	// disconnect mid-flight.
 	postCtx func(ctx context.Context, body string) *httptest.ResponseRecorder
@@ -154,19 +155,21 @@ func newScopedStartStack(t *testing.T, namespace, workspace string, permissions 
 		handler.ServeHTTP(w, r)
 		return w
 	}
+	getOn := func(ctx context.Context, path string, authenticated bool) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, path, nil).WithContext(ctx)
+		if authenticated {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
 	return &startStack{
-		stub:    stub,
-		store:   store,
+		stub: stub, store: store,
 		post:    func(body, _ string) *httptest.ResponseRecorder { return startOn(context.Background(), body) },
-		postCtx: startOn,
+		postCtx: startOn, getCtx: getOn,
 		get: func(path string, authenticated bool) *httptest.ResponseRecorder {
-			r := httptest.NewRequest(http.MethodGet, path, nil)
-			if authenticated {
-				r.Header.Set("Authorization", "Bearer "+token)
-			}
-			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, r)
-			return w
+			return getOn(context.Background(), path, authenticated)
 		},
 	}
 }
