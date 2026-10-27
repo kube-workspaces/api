@@ -455,3 +455,17 @@ policy and guest transport are fixtures: this is not installed-guest, deployed
 restart, PostgreSQL outage or distributed-owner acceptance. No guest is contacted
 and no execution is automatically retried. Both persistent selectors share these
 storage engines; this campaign selects `external`, not a Helm deployment.
+
+For actual PostgreSQL TCP connection loss (existing sessions and new connections),
+use the same disposable-service variables with
+`go test -race -count=1 -v -run '^TestExecutionPostgresOutageIntegration$' .`.
+This checks pre-admission denial, failure to commit the terminal state, and
+recovery before result finalization. **Known limitation:** if PostgreSQL remains
+unavailable at finalization, start returns 503 and the protected S3 result survives,
+but metadata can remain `running` after database recovery. Owner-loss/terminal-state
+reconciliation is not implemented; never automatically rerun such an execution.
+The campaign requires a PostgreSQL URL and does not stop the database service.
+
+CI runs both campaigns plus the standalone storage-engine checks against
+digest-pinned disposable PostgreSQL and RustFS services. Ordinary local tests
+still skip these checks unless the service variables are set.
