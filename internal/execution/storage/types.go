@@ -165,6 +165,11 @@ type MetadataStore interface {
 	// Transition applies a monotonic state change. A transition to a terminal
 	// state is final; later transitions return ErrConflict.
 	Transition(ctx context.Context, id string, outcome ExecutionOutcome) error
+	// Complete atomically applies a terminal outcome and its canonical finished
+	// audit (plus recording.lost when applicable), bound to the admitted actor.
+	// It rejects nonterminal/missing-end-time outcomes and terminal rewrites.
+	// An error can mean an uncertain commit; callers must never rerun a guest.
+	Complete(ctx context.Context, id string, outcome ExecutionOutcome) error
 	// Get returns the record and its last known outcome.
 	Get(ctx context.Context, id string) (ExecutionRecord, ExecutionOutcome, error)
 	// Audit appends an ordered audit event.

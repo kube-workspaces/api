@@ -415,6 +415,11 @@ Every admission reserves both execution and recording IDs atomically before
 opening its sink. Recording-write failures latch, cannot be finalized as success,
 and preserve available evidence on abort. Bounded command/script start is available
 only through the separately enabled QGA pilot; it is not an mTLS fallback.
+Session finalization commits terminal metadata and its actor-bound `finished`
+audit atomically (also `recording.lost` on recording failure). PostgreSQL audit
+failure rolls back the terminal state rather than leaving unaudited success;
+ephemeral mode performs the same operation under one lock. This does not yet
+reconcile a recording finalized before a failed database commit.
 
 The optional management issuer now supports protected mounted CA credentials,
 shared-ledger initialization and a metadata-only protected-bootstrap import
@@ -459,8 +464,11 @@ storage engines; this campaign selects `external`, not a Helm deployment.
 For actual PostgreSQL TCP connection loss (existing sessions and new connections),
 use the same disposable-service variables with
 `go test -race -count=1 -v -run '^TestExecutionPostgresOutageIntegration$' .`.
-This checks pre-admission denial, failure to commit the terminal state, and
-recovery before result finalization. **Known limitation:** if PostgreSQL remains
+This checks pre-admission denial, failure to commit the terminal state,
+recovery before result finalization, and terminal-audit failure rolling back the
+metadata commit. The PostgreSQL tests temporarily install narrowly execution-scoped
+fault-injection triggers; the disposable test database user needs permission to
+create those triggers/functions. **Known limitation:** if PostgreSQL remains
 unavailable at finalization, start returns 503 and the protected S3 result survives,
 but metadata can remain `running` after database recovery. Owner-loss/terminal-state
 reconciliation is not implemented; never automatically rerun such an execution.

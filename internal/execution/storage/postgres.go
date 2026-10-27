@@ -136,6 +136,14 @@ func (m *postgresMetadata) Transition(ctx context.Context, id string, outcome Ex
 	if !validTransition(state, outcome.State) {
 		return ErrConflict
 	}
+	return updateExecution(ctx, m.pool, id, state, outcome)
+}
+
+type executionExecer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func updateExecution(ctx context.Context, db executionExecer, id string, state State, outcome ExecutionOutcome) error {
 	q := `UPDATE execution_executions
 		SET state=$2, start_time=$3, end_time=$4, exit_code=$5, termination=$6, recording_lost=$7
 		WHERE execution_id=$1 AND state=$8`
@@ -150,7 +158,7 @@ func (m *postgresMetadata) Transition(ctx context.Context, id string, outcome Ex
 	if !outcome.EndTime.IsZero() {
 		end = sql.NullTime{Time: outcome.EndTime, Valid: true}
 	}
-	tag, err := m.pool.Exec(ctx, q, id, string(outcome.State), start, end, exit, outcome.Termination, outcome.RecordingLost, string(state))
+	tag, err := db.Exec(ctx, q, id, string(outcome.State), start, end, exit, outcome.Termination, outcome.RecordingLost, string(state))
 	if err != nil {
 		return err
 	}
@@ -158,6 +166,40 @@ func (m *postgresMetadata) Transition(ctx context.Context, id string, outcome Ex
 		return ErrConflict
 	}
 	return nil
+}
+
+func (m *postgresMetadata) Complete(ctx context.Context, id string, outcome ExecutionOutcome) error {
+	if !validCompletion(outcome) {
+		return ErrConflict
+	}
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var state State
+	var actor string
+	// Serialize competing completions and legacy state transitions. Audit is
+	// never appended for a loser, including a rewrite of an unknown outcome.
+	err = tx.QueryRow(ctx, `SELECT state, actor_id FROM execution_executions WHERE execution_id=$1 FOR UPDATE`, id).Scan(&state, &actor)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !validTransition(state, outcome.State) {
+		return ErrConflict
+	}
+	if err := updateExecution(ctx, tx, id, state, outcome); err != nil {
+		return err
+	}
+	for _, event := range completionEvents(id, actor, outcome) {
+		if err := insertExecutionAudit(ctx, tx, event); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func (m *postgresMetadata) currentState(ctx context.Context, id string) (State, error) {
@@ -216,12 +258,16 @@ func scanExecution(row rowScanner) (ExecutionRecord, ExecutionOutcome, error) {
 }
 
 func (m *postgresMetadata) Audit(ctx context.Context, ev AuditEvent) error {
+	return insertExecutionAudit(ctx, m.pool, ev)
+}
+
+func insertExecutionAudit(ctx context.Context, db executionExecer, ev AuditEvent) error {
 	detail, err := json.Marshal(ev.Detail)
 	if err != nil {
 		return err
 	}
 	const q = `INSERT INTO execution_audit (execution_id, ts, kind, actor_id, detail) VALUES ($1,$2,$3,$4,$5)`
-	_, err = m.pool.Exec(ctx, q, ev.ExecutionID, ev.Time, ev.Kind, ev.ActorID, detail)
+	_, err = db.Exec(ctx, q, ev.ExecutionID, ev.Time, ev.Kind, ev.ActorID, detail)
 	return err
 }
 

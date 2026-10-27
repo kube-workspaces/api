@@ -258,8 +258,9 @@ func (s *Session) Audit(ctx context.Context, kind string, detail map[string]stri
 }
 
 // Finish finalizes the recording and writes the terminal outcome. If finalizing
-// the recording fails the outcome is marked recording_lost; the execution is
-// still finalized so the state never silently stays running.
+// the recording fails the outcome is marked recording_lost. Terminal metadata
+// and mandatory terminal audit commit atomically. Metadata failure can leave a
+// nonterminal row despite a finalized recording; recovery must not rerun it.
 func (s *Session) Finish(ctx context.Context, outcome storage.ExecutionOutcome) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -284,24 +285,8 @@ func (s *Session) Finish(ctx context.Context, outcome storage.ExecutionOutcome) 
 	if recordingErr != nil {
 		outcome.State = storage.StateRecordingLost
 		outcome.RecordingLost = true
-		_ = s.meta.Audit(ctx, storage.AuditEvent{
-			ExecutionID: s.record.ExecutionID,
-			Time:        s.now().UTC(),
-			Kind:        "recording.lost",
-			ActorID:     s.record.ActorID,
-			Detail:      map[string]string{"reason": "recording storage failure"},
-		})
 	}
-	if err := s.meta.Transition(ctx, s.record.ExecutionID, outcome); err != nil {
-		return err
-	}
-	return errors.Join(recordingErr, s.meta.Audit(ctx, storage.AuditEvent{
-		ExecutionID: s.record.ExecutionID,
-		Time:        s.now().UTC(),
-		Kind:        "finished",
-		ActorID:     s.record.ActorID,
-		Detail:      map[string]string{"state": string(outcome.State)},
-	}))
+	return errors.Join(recordingErr, s.meta.Complete(ctx, s.record.ExecutionID, outcome))
 }
 
 // Abort preserves partial evidence and marks the execution failed. The caller

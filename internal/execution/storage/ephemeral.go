@@ -125,15 +125,43 @@ func (m *ephemeralMetadata) Get(_ context.Context, id string) (ExecutionRecord, 
 	return rec, m.outcomes[id], nil
 }
 
+func (m *ephemeralMetadata) Complete(ctx context.Context, id string, outcome ExecutionOutcome) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !validCompletion(outcome) {
+		return ErrConflict
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec, ok := m.records[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if !validTransition(m.outcomes[id].State, outcome.State) {
+		return ErrConflict
+	}
+	m.outcomes[id] = outcome
+	for _, event := range completionEvents(id, rec.ActorID, outcome) {
+		m.appendAudit(event)
+	}
+	return nil
+}
+
 func (m *ephemeralMetadata) Audit(_ context.Context, ev AuditEvent) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.appendAudit(ev)
+	return nil
+}
+
+// appendAudit requires m.mu.
+func (m *ephemeralMetadata) appendAudit(ev AuditEvent) {
 	events := append(m.audit[ev.ExecutionID], ev)
 	if len(events) > defaultMaxAuditEvents {
 		events = events[len(events)-defaultMaxAuditEvents:]
 	}
 	m.audit[ev.ExecutionID] = events
-	return nil
 }
 
 func (m *ephemeralMetadata) List(_ context.Context, f Filter) ([]ExecutionRecord, error) {

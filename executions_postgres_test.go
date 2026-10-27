@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/kube-workspaces/api/internal/auth"
 	"github.com/kube-workspaces/api/internal/execution/qga"
 	"github.com/kube-workspaces/api/internal/execution/storage"
@@ -111,7 +113,7 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 	if u.Port() == "" {
 		address = net.JoinHostPort(u.Hostname(), "5432")
 	}
-	for _, phase := range []string{"before-admission", "during-result", "recovered-before-result"} {
+	for _, phase := range []string{"before-admission", "during-result", "recovered-before-result", "terminal-audit-failure"} {
 		t.Run(phase, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
@@ -139,7 +141,29 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 			if phase == "before-admission" {
 				gate.setBlocked(true)
 			} else {
-				stub.execute = func(ctx context.Context, _ qga.Target, _ qga.Command) (*qga.GuestResult, error) {
+				stub.execute = func(ctx context.Context, _ qga.Target, cmd qga.Command) (*qga.GuestResult, error) {
+					if phase == "terminal-audit-failure" {
+						// Reject only this execution's finished audit after its
+						// terminal UPDATE, to prove the entire commit rolls back.
+						conn, err := pgx.Connect(ctx, dsn)
+						if err != nil {
+							t.Fatal(err)
+						}
+						t.Cleanup(func() { _ = conn.Close(context.Background()) })
+						if _, err := conn.Exec(ctx, `CREATE FUNCTION pg_temp.reject_terminal_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'disposable terminal audit fault'; END $$`); err != nil {
+							t.Fatal(err)
+						}
+						trigger := pgx.Identifier{"reject_" + cmd.ExecutionID}.Sanitize()
+						if _, err := conn.Exec(ctx, fmt.Sprintf(`CREATE TRIGGER %s BEFORE INSERT ON execution_audit FOR EACH ROW WHEN (NEW.execution_id = '%s' AND NEW.kind = 'finished') EXECUTE FUNCTION pg_temp.reject_terminal_audit()`, trigger, cmd.ExecutionID)); err != nil {
+							t.Fatal(err)
+						}
+						t.Cleanup(func() {
+							if _, err := conn.Exec(context.Background(), `DROP TRIGGER `+trigger+` ON execution_audit`); err != nil {
+								t.Error(err)
+							}
+						})
+						return stub.result, nil
+					}
 					gate.setBlocked(true)
 					if err := s.Metadata().Ready(ctx); err == nil {
 						t.Fatal("fault did not cut the live database connection")
@@ -176,13 +200,13 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if phase == "during-result" {
+			if phase == "during-result" || phase == "terminal-audit-failure" {
 				// With PostgreSQL unavailable at finalization, the API must not
 				// invent success. Owner-loss reconciliation is separate work:
 				// the last durable state can remain running, despite a complete
 				// protected result in S3. Never resubmit this execution.
 				if outcome.State == storage.StateSucceeded {
-					t.Fatal("database failure fabricated committed success")
+					t.Fatal("database/audit failure fabricated committed success")
 				}
 			} else if outcome.State != storage.StateSucceeded {
 				t.Fatalf("recovered result not persisted: %+v", outcome)
