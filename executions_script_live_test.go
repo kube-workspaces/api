@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -128,6 +131,7 @@ func TestScriptExecutionLive(t *testing.T) {
 			if !tc.child && (!matches || errOut != tc.errOut) {
 				t.Fatalf("unexpected streams: %q %q", out, errOut)
 			}
+			runInstalledScriptCleanup(t, ctx, stack, target)
 			if tc.child {
 				match := regexp.MustCompile(`(?m)^child=([0-9]+)\r?$`).FindStringSubmatch(out)
 				if len(match) != 2 {
@@ -148,11 +152,71 @@ func TestScriptExecutionLive(t *testing.T) {
 				if check.State != "succeeded" || check.ExitCode == nil || *check.ExitCode != 0 || checkedOut != "gone" {
 					t.Fatal("script descendant remains alive")
 				}
+				runInstalledScriptCleanup(t, ctx, stack, target)
 			}
 		}) {
 			t.Fatal("stopping installed proof after failure; no request was retried")
 		}
 	}
+}
+
+// Use command framing: a script cannot inspect its own post-exit cleanup. This
+// probe reads only the fixed runner staging directory on a disposable guest.
+func runInstalledScriptCleanup(t *testing.T, ctx context.Context, stack *startStack, target qga.Target) {
+	t.Helper()
+	executable, args := scriptCleanupCommand(target)
+	payload, err := json.Marshal(map[string]any{"namespace": target.Namespace, "workspace_name": target.WorkspaceName, "executable": executable, "args": args, "deadline_seconds": 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := stack.postCtx(ctx, string(payload))
+	var result installedScriptResult
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &result) != nil {
+		t.Fatalf("cleanup probe response HTTP %d; do not retry: %s", response.Code, response.Body.String())
+	}
+	out, stderr := decodedScriptStreams(t, result)
+	if result.State != "succeeded" || result.ExitCode == nil || *result.ExitCode != 0 || out != "clean" || stderr != "" {
+		t.Fatalf("staged script cleanup was not proven; do not retry: %+v", result)
+	}
+	rec, outcome, err := stack.store.Metadata().Get(ctx, result.ExecutionID)
+	if err != nil || rec.Operation != storage.OperationCommand || rec.OSIdentity != target.OSIdentity() || rec.WorkspaceUID != target.WorkspaceUID || rec.RecordingID != result.RecordingID || outcome.State != storage.StateSucceeded {
+		t.Fatalf("cleanup probe admission/result mismatch: %+v %+v %v", rec, outcome, err)
+	}
+	reader, err := stack.store.Recording().Open(ctx, result.RecordingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if err := reader.Verify(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if reader.Manifest().Chunks != 2 {
+		t.Fatal("cleanup probe recording is incomplete")
+	}
+	input, err := reader.ReadChunk(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var start recordingStart
+	if json.Unmarshal(input, &start) != nil || start.Script != nil || start.Executable != executable || !slices.Equal(start.Args, args) || start.ProvisioningGeneration != target.VMUID || start.RevocationEpoch != target.RevocationEpoch {
+		t.Fatal("cleanup probe protected invocation mismatch")
+	}
+	output, err := reader.ReadChunk(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var final recordingResult
+	if json.Unmarshal(output, &final) != nil || final.Outcome != "completed" || final.StdoutB64 != result.Stdout || final.StderrB64 != result.Stderr || final.Truncated || !scriptExitCodeEqual(final.ExitCode, result.ExitCode) {
+		t.Fatal("cleanup probe protected result mismatch")
+	}
+	t.Logf("recorded %s staged-file cleanup: execution=%s recording=%s", target.OSIdentity(), result.ExecutionID, result.RecordingID)
+}
+
+func scriptCleanupCommand(target qga.Target) (string, []string) {
+	if target.Linux {
+		return "/bin/sh", []string{"-c", `root=/var/lib/workspace-agent/management/scripts; [ -d "$root" ] && [ ! -L "$root" ] && [ -f "$root/lock" ] && [ ! -L "$root/lock" ] || exit 9; for entry in "$root"/* "$root"/.[!.]* "$root"/..?*; do [ -e "$entry" ] || [ -L "$entry" ] || continue; [ "$entry" = "$root/lock" ] || exit 9; done; printf clean`}
+	}
+	return `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, []string{"-NoLogo", "-NoProfile", "-NonInteractive", "-Command", `$ErrorActionPreference='Stop'; $root='C:\ProgramData\workspace-agent\management\scripts'; $dir=Get-Item -Force -LiteralPath $root; if (!$dir.PSIsContainer -or ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint)) { exit 9 }; $entries=@(Get-ChildItem -Force -LiteralPath $root); if ($entries.Count -ne 1 -or $entries[0].Name -ne 'lock' -or $entries[0].PSIsContainer -or ($entries[0].Attributes -band [IO.FileAttributes]::ReparsePoint)) { exit 9 }; [Console]::Out.Write('clean')`}
 }
 
 type installedScriptResult struct {
@@ -254,8 +318,63 @@ func TestInstalledScriptRecordingProofContract(t *testing.T) {
 			if result.State != "failed" || result.ExitCode == nil || *result.ExitCode != 7 || out != "héllo ✓" || stderr != "err" || len(stub.commands) != 1 {
 				t.Fatalf("proof did not preserve the guest result: %+v", result)
 			}
+			stub.result = &qga.GuestResult{Outcome: "completed", ExitCode: intPtr(0), Stdout: []byte("clean")}
+			runInstalledScriptCleanup(t, context.Background(), stack, target)
+			if len(stub.commands) != 2 || stub.commands[1].Script != nil {
+				t.Fatal("cleanup inspection must be a separate recorded command")
+			}
 		})
 	}
+}
+
+func TestLinuxScriptCleanupProbeDetectsLeftovers(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("requires /bin/sh")
+	}
+	root := filepath.Join(t.TempDir(), "scripts")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(root, "lock")
+	if err := os.WriteFile(lock, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	executable, args := scriptCleanupCommand(qga.Target{Linux: true})
+	args[1] = strings.ReplaceAll(args[1], "/var/lib/workspace-agent/management/scripts", "'"+strings.ReplaceAll(root, "'", "'\"'\"'")+"'")
+	check := func(clean bool) {
+		t.Helper()
+		out, err := exec.Command(executable, args...).CombinedOutput()
+		if clean && (err != nil || string(out) != "clean") {
+			t.Fatalf("clean staging directory rejected: %q %v", out, err)
+		}
+		if !clean && err == nil {
+			t.Fatal("cleanup probe accepted leftover or missing lock")
+		}
+	}
+	check(true)
+	for _, name := range []string{"script.ps1", ".hidden", "..hidden"} {
+		leftover := filepath.Join(root, name)
+		if err := os.WriteFile(leftover, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		check(false)
+		if err := os.Remove(leftover); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(root, "dangling")
+	if err := os.Symlink(filepath.Join(root, "absent"), link); err != nil {
+		t.Fatal(err)
+	}
+	check(false)
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	check(true)
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	check(false)
 }
 
 func scriptExitCodeEqual(a, b *int) bool {

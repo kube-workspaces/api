@@ -181,7 +181,11 @@ The harness checks scoped discovery without admission, root/SYSTEM identity,
 cwd and distinct streams/nonzero exit, explicit UTF-8 output, root-exit/deadline/
 output-limit descendant termination, and complete protected input/result binding.
 Each PID check is a new recorded read-only script; no script is automatically
-retried. The whole campaign is pinned to the initially resolved guest/launcher/
+retried. After every script (including PID checks), a separately recorded command
+inspects the fixed management `scripts` directory and requires only its lock file
+to remain. This command uses no script staging and neither repairs nor deletes
+leftovers. Run the campaign without competing executions on that disposable VM.
+The whole campaign is pinned to the initially resolved guest/launcher/
 revocation epoch. Target changes or a failed/unknown/lost-recording result stop it.
 Windows Unicode source uses the policy's BOM; its UTF-8 output case explicitly
 sets the process output encoding, rather than assuming a default host code page.
