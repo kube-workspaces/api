@@ -87,8 +87,13 @@ func newStartStack(t *testing.T, permissions []string, policy map[string]interfa
 }
 
 func newScopedStartStack(t *testing.T, namespace, workspace string, permissions []string, policy map[string]interface{}, stub *stubQGA, options ...ExecutionsOption) *startStack {
+	return newStoredStartStack(t, namespace, workspace, permissions, policy, stub, nil, options...)
+}
+
+// A supplied store lets opt-in integration tests exercise the same HTTP and
+// authorization stack against disposable persistent services.
+func newStoredStartStack(t *testing.T, namespace, workspace string, permissions []string, policy map[string]interface{}, stub *stubQGA, store storage.Store, options ...ExecutionsOption) *startStack {
 	t.Helper()
-	ctx := context.Background()
 	key := "start-test-signing-key-32-bytes"
 	permissionValues := make([]interface{}, len(permissions))
 	for i, permission := range permissions {
@@ -128,11 +133,14 @@ func newScopedStartStack(t *testing.T, namespace, workspace string, permissions 
 	passwordSecret, provenance := methodCredentialFixture(user)
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{users: "UserList"}, user, cfg, secret, platformConfig, passwordSecret)
 	provider := auth.NewConfigProvider(client)
-	store, err := storage.Open(ctx, storage.Options{Mode: "ephemeral", EphemeralDir: t.TempDir(), EphemeralMaxBytes: 1 << 20})
-	if err != nil {
-		t.Fatal(err)
+	if store == nil {
+		var err error
+		store, err = storage.Open(context.Background(), storage.Options{Mode: "ephemeral", EphemeralDir: t.TempDir(), EphemeralMaxBytes: 1 << 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { store.Close() })
 	}
-	t.Cleanup(func() { store.Close() })
 	var svcOptions []ExecutionsOption
 	if stub != nil {
 		svcOptions = append(svcOptions, WithQGA(stub))

@@ -413,8 +413,8 @@ Configured persistent storage initialization failures stop API startup; disabled
 storage leaves the ordinary API running and management admission unavailable.
 Every admission reserves both execution and recording IDs atomically before
 opening its sink. Recording-write failures latch, cannot be finalized as success,
-and preserve available evidence on abort. There is no guest process-start route
-until authenticated guest transport and runners are implemented.
+and preserve available evidence on abort. Bounded command/script start is available
+only through the separately enabled QGA pilot; it is not an mTLS fallback.
 
 The optional management issuer now supports protected mounted CA credentials,
 shared-ledger initialization and a metadata-only protected-bootstrap import
@@ -435,3 +435,23 @@ KW_EXECUTION_TEST_S3_SECRET_KEY='test-secret' \
 
 Use isolated disposable services: these tests apply migrations and write test
 execution records and recording objects. They never discover cluster credentials.
+
+The HTTP execution/recording integration campaign uses both services together:
+
+```sh
+KW_EXECUTION_TEST_DATABASE_URL='postgres://test:test@127.0.0.1:15432/test?sslmode=disable' \
+KW_EXECUTION_TEST_S3_ENDPOINT='http://127.0.0.1:19000' \
+KW_EXECUTION_TEST_S3_ACCESS_KEY='test-access' \
+KW_EXECUTION_TEST_S3_SECRET_KEY='test-secret' \
+  go test -race -count=1 -v -run '^TestExecutionPersistentIntegration$' .
+```
+
+It exercises real PostgreSQL/S3 admission, encrypted input before dispatch,
+command and Linux/Windows script recordings, storage/service reopen, independently
+authorized replay, corruption detection, and fail-closed S3 read/write failures
+before and after dispatch. It intentionally corrupts its own objects in the
+`execution-http-integration` bucket; use **disposable storage only**. Account,
+policy and guest transport are fixtures: this is not installed-guest, deployed
+restart, PostgreSQL outage or distributed-owner acceptance. No guest is contacted
+and no execution is automatically retried. Both persistent selectors share these
+storage engines; this campaign selects `external`, not a Helm deployment.
