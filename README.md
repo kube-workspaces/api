@@ -548,6 +548,14 @@ GeneralName types. A valid CA signature alone does not authorize an identity.
 These checks do not deliver guest machine-key storage, a Rust TLS verifier,
 enrollment delivery or a management listener; those integrations remain required.
 
+The guest also inspects the management DER leaf profile with shared Go-issued
+public certificate fixtures (no private keys). This checks role-separated
+SANs/purposes, exact key usage and bounded validity windows; it is not Go↔Rust TLS
+interoperability or signature/chain verification. Fixture regeneration is an
+explicit opt-in test operation documented in
+`internal/execution/pki/certificate_interop_test.go`; it creates only synthetic
+public certificate data and must be copied byte-for-byte to the agent fixtures.
+
 Disposable PostgreSQL/S3 integration checks are opt-in:
 
 ```sh
