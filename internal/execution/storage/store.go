@@ -13,14 +13,18 @@ import (
 // deployment config without importing the configuration package, keeping this
 // package reusable and free of import cycles.
 type Options struct {
-	Mode              string // "ephemeral" | "external" | "bundled"
-	EphemeralDir      string
-	EphemeralMaxBytes int64
-	DatabaseURL       string
-	S3                S3Options
-	RecordingKey      []byte
-	KeyID             string
+	Mode                  string // "ephemeral" | "external" | "bundled"
+	EphemeralDir          string
+	EphemeralMaxBytes     int64
+	DatabaseURL           string
+	S3                    S3Options
+	RecordingKey          []byte
+	PreviousRecordingKeys [][]byte
+	KeyID                 string
 }
+
+// String keeps active/read-only keys and storage credentials out of logs.
+func (o Options) String() string { return fmt.Sprintf("execution storage options mode=%s", o.Mode) }
 
 // S3Options is the object-store configuration for recording chunks.
 type S3Options struct {
@@ -49,6 +53,9 @@ func DeriveKeyID(key []byte) string {
 func Open(ctx context.Context, opts Options) (Store, error) {
 	switch opts.Mode {
 	case "ephemeral":
+		if len(opts.PreviousRecordingKeys) != 0 {
+			return nil, fmt.Errorf("ephemeral recording does not accept persistent read-only keys")
+		}
 		key, keyID, err := ephemeralKey(opts.RecordingKey, opts.KeyID)
 		if err != nil {
 			return nil, err
@@ -66,7 +73,7 @@ func Open(ctx context.Context, opts Options) (Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		rec, err := NewS3Recording(opts.S3, opts.RecordingKey, opts.KeyID)
+		rec, err := NewS3Recording(opts.S3, opts.RecordingKey, opts.KeyID, opts.PreviousRecordingKeys...)
 		if err != nil {
 			meta.Close()
 			return nil, err

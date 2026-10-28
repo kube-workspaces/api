@@ -21,7 +21,8 @@ func (c StorageConfig) StorageOptions() storage.Options {
 			ForcePathStyle: c.S3.ForcePathStyle,
 			CreateBucket:   c.S3.CreateBucket,
 		},
-		RecordingKey: c.RecordingKey(),
-		KeyID:        c.KeyID,
+		RecordingKey:          c.RecordingKey(),
+		PreviousRecordingKeys: c.PreviousRecordingKeys(),
+		KeyID:                 c.KeyID,
 	}
 }

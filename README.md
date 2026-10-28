@@ -208,7 +208,10 @@ modes use PostgreSQL metadata/state plus S3-compatible recording storage and a
 stable recording key. Persistent configuration errors never select ephemeral.
 
 Persistent modes require `KW_EXECUTION_RECORDING_KEY_FILE`, containing base64 text
-for a random 32-byte key. External mode uses a Secret-backed
+for a random 32-byte key, or the versioned active/read-only keyring described in
+[recording key rotation](internal/execution/storage/KEY_ROTATION.md). New recordings
+always use the active key; retained keys support protected replay and terminal
+recovery without rewriting old evidence. External mode uses a Secret-backed
 `KW_EXECUTION_DATABASE_URL` with `sslmode=verify-full`; bundled mode constructs a
 URL from separate `KW_EXECUTION_PG_HOST`, `_PORT`, `_DATABASE`, `_USER`, `_PASSWORD`
 values without string-interpolating credentials. S3 endpoint/bucket/region and
@@ -222,6 +225,9 @@ recordings and 8760h for metadata, independently configurable with
 `KW_EXECUTION_RETENTION_RECORDINGS` and `KW_EXECUTION_RETENTION_METADATA` (metadata
 must cover recording retention). Credentials and recording keys are redacted from
 ordinary configuration formatting/errors.
+These retention values are currently configuration contracts; automatic retention
+deletion is not implemented. Do not retire a key on the assumption that its old
+recordings or pending recovery evidence have already expired or been deleted.
 
 Store initialization, migrations, encrypted recording admission and replay are
 wired into startup and execution. Unready storage denies admission; persistent

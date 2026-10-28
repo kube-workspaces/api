@@ -118,7 +118,7 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 	if u.Port() == "" {
 		address = net.JoinHostPort(u.Hostname(), "5432")
 	}
-	for _, phase := range []string{"before-admission", "during-result", "recovered-before-result", "terminal-audit-failure"} {
+	for _, phase := range []string{"before-admission", "during-result", "during-result-key-rotation", "recovered-before-result", "terminal-audit-failure"} {
 		t.Run(phase, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
@@ -225,7 +225,7 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 			if err != nil || !intent.MatchesAdmission(rec) || intent.Snapshot().Outcome.State != storage.StateSucceeded || intent.Snapshot().Outcome.ExitCode == nil || *intent.Snapshot().Outcome.ExitCode != 0 {
 				t.Fatalf("database loss did not retain admission-bound terminal intent: %+v %v", intent, err)
 			}
-			if phase == "during-result" || phase == "terminal-audit-failure" {
+			if phase == "during-result" || phase == "during-result-key-rotation" || phase == "terminal-audit-failure" {
 				// With PostgreSQL unavailable at finalization, the API must not
 				// invent success. Owner-loss reconciliation is separate work:
 				// the last durable state can remain running, despite a complete
@@ -257,6 +257,30 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 			// fresh replica/restart would. Recovery has no guest executor at all.
 			if err := s.Close(); err != nil {
 				t.Fatal(err)
+			}
+			if phase == "during-result-key-rotation" {
+				// A restarted replica has a new writer key. First prove omitting
+				// the old key cannot turn unreadable evidence into success.
+				newKey := make([]byte, 32)
+				if _, err := rand.Read(newKey); err != nil {
+					t.Fatal(err)
+				}
+				opts.RecordingKey, opts.KeyID = newKey, storage.DeriveKeyID(newKey)
+				missingOldKey, err := storage.Open(ctx, opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if changed, err := execution.NewService(missingOldKey).ReconcileTerminal(ctx, cmd.ExecutionID); err == nil || changed {
+					t.Fatal("recovery fabricated success without the retained recording key")
+				}
+				_, stillRunning, err := missingOldKey.Metadata().Get(ctx, cmd.ExecutionID)
+				if err != nil || stillRunning.State != storage.StateRunning {
+					t.Fatal("unverifiable key rotation rewrote stranded metadata")
+				}
+				if err := missingOldKey.Close(); err != nil {
+					t.Fatal(err)
+				}
+				opts.PreviousRecordingKeys = [][]byte{key}
 			}
 			reopened, err := storage.Open(ctx, opts)
 			if err != nil {
@@ -291,6 +315,27 @@ func TestExecutionPostgresOutageIntegration(t *testing.T) {
 			}
 			if finished != 1 || recoveredEvents != wantEvents {
 				t.Fatalf("duplicated/missing completion audit: finished=%d recovered=%d", finished, recoveredEvents)
+			}
+			if phase == "during-result-key-rotation" {
+				// Protected HTTP replay uses the retained old key; new admissions
+				// on the same reopened service use only the new active key.
+				newStub := &stubQGA{target: eligibleTarget(), result: stub.result}
+				rotated := newStoredStartStack(t, "team", "vm", []string{string(auth.PermissionExec), string(auth.PermissionElevated), string(auth.PermissionReadRecordings)}, enabledElevatedPolicy(), newStub, reopened)
+				if w := rotated.getCtx(ctx, "/v1/executions/"+cmd.ExecutionID+"/recording/chunks/1", true); w.Code != 200 {
+					t.Fatalf("old recording HTTP replay failed after rotation: %d %s", w.Code, w.Body.String())
+				}
+				w := rotated.postCtx(ctx, `{"namespace":"team","workspace_name":"vm","executable":"whoami","args":[]}`)
+				if w.Code != 200 || len(newStub.commands) != 1 {
+					t.Fatalf("new active-key admission failed: %d %s", w.Code, w.Body.String())
+				}
+				newReader, err := reopened.Recording().Open(ctx, newStub.commands[0].RecordingID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer newReader.Close()
+				if newReader.Manifest().KeyID != opts.KeyID || newReader.Verify(ctx) != nil {
+					t.Fatal("rotated HTTP recording did not use the new active key")
+				}
 			}
 		})
 	}

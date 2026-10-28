@@ -28,13 +28,16 @@ type s3Recording struct {
 	bucket      string
 	gcm         cipher.AEAD
 	keyID       string
+	readKeys    map[string]recordingReadKey
 }
 
 // NewS3Recording opens an S3-backed RecordingStore. It verifies the key and
 // (unless createBucket is set) that the bucket exists, and returns ErrNotReady
 // when the store cannot be used.
-func NewS3Recording(cfg S3Options, key []byte, keyID string) (RecordingStore, error) {
-	gcm, err := newGCM(key)
+// Optional previous keys are read-only and use their derived key IDs. Every
+// writer remains pinned to key/keyID, including writers already open at rotation.
+func NewS3Recording(cfg S3Options, key []byte, keyID string, previous ...[]byte) (RecordingStore, error) {
+	keys, err := recordingKeyring(key, keyID, previous)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +83,8 @@ func NewS3Recording(cfg S3Options, key []byte, keyID string) (RecordingStore, er
 			return nil, fmt.Errorf("%w: %v", ErrNotReady, err)
 		}
 	}
-	return &s3Recording{manifestKey: append([]byte(nil), key...), client: client, bucket: cfg.Bucket, gcm: gcm, keyID: keyID}, nil
+	active := keys[keyID]
+	return &s3Recording{manifestKey: active.key, client: client, bucket: cfg.Bucket, gcm: active.gcm, keyID: keyID, readKeys: keys}, nil
 }
 
 func s3Transport(cfg S3Options) (http.RoundTripper, error) {
@@ -140,10 +144,16 @@ func (s *s3Recording) Open(ctx context.Context, recordingID string) (Reader, err
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return nil, err
 	}
-	if err := verifyManifest(s.manifestKey, s.keyID, recordingID, manifest); err != nil {
+	// The untrusted ID only selects from the locally configured read keyring.
+	// Never fetch keys from storage or try other keys after failed verification.
+	key, ok := s.readKeys[manifest.KeyID]
+	if !ok {
+		return nil, ErrTampered
+	}
+	if err := verifyManifest(key.key, manifest.KeyID, recordingID, manifest); err != nil {
 		return nil, err
 	}
-	return &s3Reader{store: s, manifest: manifest}, nil
+	return &s3Reader{store: s, manifest: manifest, key: key}, nil
 }
 
 func (s *s3Recording) get(object string) ([]byte, error) {
@@ -278,6 +288,7 @@ func (r *s3Recorder) Abort(context.Context) error {
 type s3Reader struct {
 	store    *s3Recording
 	manifest Manifest
+	key      recordingReadKey
 }
 
 func (r *s3Reader) Manifest() Manifest { return cloneManifest(r.manifest) }
@@ -289,7 +300,7 @@ func (r *s3Reader) TerminalIntent(ctx context.Context) (*VerifiedTerminalIntent,
 	if r.manifest.Version == 1 {
 		return nil, ErrNoTerminalIntent
 	}
-	i, err := openTerminalIntent(r.store.manifestKey, r.manifest.KeyID, r.manifest.RecordingID, r.manifest.Terminal)
+	i, err := openTerminalIntent(r.key.key, r.manifest.KeyID, r.manifest.RecordingID, r.manifest.Terminal)
 	if err != nil {
 		return nil, err
 	}
@@ -307,11 +318,11 @@ func (r *s3Reader) ReadChunk(ctx context.Context, index uint64) ([]byte, error) 
 		}
 		return nil, err
 	}
-	return openChunk(r.store.gcm, r.manifest.RecordingID, r.manifest.KeyID, index, payload)
+	return openChunk(r.key.gcm, r.manifest.RecordingID, r.manifest.KeyID, index, payload)
 }
 
 func (r *s3Reader) Verify(ctx context.Context) error {
-	if err := verifyManifest(r.store.manifestKey, r.store.keyID, r.manifest.RecordingID, r.manifest); err != nil {
+	if err := verifyManifest(r.key.key, r.manifest.KeyID, r.manifest.RecordingID, r.manifest); err != nil {
 		return err
 	}
 	chain := chainStart(r.manifest.KeyID, r.manifest.RecordingID)
@@ -326,7 +337,7 @@ func (r *s3Reader) Verify(ctx context.Context) error {
 			}
 			return err
 		}
-		if _, err := openChunk(r.store.gcm, r.manifest.RecordingID, r.manifest.KeyID, i, payload); err != nil {
+		if _, err := openChunk(r.key.gcm, r.manifest.RecordingID, r.manifest.KeyID, i, payload); err != nil {
 			return err
 		}
 		chain = chainNext(chain, i, payload)

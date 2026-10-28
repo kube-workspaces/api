@@ -5,7 +5,6 @@ package execution
 import (
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -30,15 +29,16 @@ const (
 // StorageConfig contains resolved deployment configuration, not runtime storage
 // health. A valid configuration alone must never enable execution admission.
 type StorageConfig struct {
-	Mode               StorageMode
-	RecordingRetention time.Duration
-	MetadataRetention  time.Duration
-	EphemeralDir       string
-	EphemeralMaxBytes  int64
-	DatabaseURL        string `json:"-"`
-	S3                 S3Config
-	KeyID              string
-	recordingKey       []byte
+	Mode                  StorageMode
+	RecordingRetention    time.Duration
+	MetadataRetention     time.Duration
+	EphemeralDir          string
+	EphemeralMaxBytes     int64
+	DatabaseURL           string `json:"-"`
+	S3                    S3Config
+	KeyID                 string
+	recordingKey          []byte
+	previousRecordingKeys [][]byte
 }
 
 type S3Config struct {
@@ -125,9 +125,9 @@ func readStorageConfig(env func(string) string, readFile func(string) ([]byte, e
 	if err != nil {
 		return StorageConfig{}, fmt.Errorf("recording key file unavailable")
 	}
-	c.recordingKey, err = base64.StdEncoding.DecodeString(strings.TrimSpace(string(encodedKey)))
-	if err != nil || len(c.recordingKey) != 32 {
-		return StorageConfig{}, fmt.Errorf("recording key must contain a base64-encoded 32-byte key")
+	c.recordingKey, c.previousRecordingKeys, err = parseRecordingKeys(encodedKey)
+	if err != nil {
+		return StorageConfig{}, err
 	}
 	fingerprint := sha256.Sum256(c.recordingKey)
 	c.KeyID = hex.EncodeToString(fingerprint[:16])
