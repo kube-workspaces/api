@@ -117,6 +117,16 @@ remain unchanged. This is admission fencing, not cancellation of already dispatc
 work. It does not replace guest grant verification or establish generic TCP
 forwarding exclusions, enrollment/mTLS or interactive shell delivery.
 
+The runtime also re-resolves and compares the full target before **every** QGA
+RPC: capability polling, each staged chunk, dispatch, result polling and cleanup.
+Target changes or unavailable checks stop further guest calls; an unfinished
+execution remains unknown and is never rerun. Cleanup is best effort and must not
+follow a changed target, so staged bytes can remain on the old guest if its
+identity/policy cannot be revalidated. A valid terminal result is not undone by
+cleanup failure. These checks narrow the replacement window but are **not atomic
+pod-UID pinning**: Kubernetes SPDY pod exec still addresses the pod by name, leaving
+a check-to-exec race for the remaining transport review.
+
 Runner results must be one complete v1 JSON object with exactly the required
 fields/types, no duplicate members or trailing data, and at most 16 KiB combined
 decoded stdout/stderr. Rust's nullable exit/denial fields remain supported for

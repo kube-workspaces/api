@@ -221,7 +221,20 @@ func newRuntime(signer *grants.Signer, resolver TargetResolver, bridge *Bridge, 
 	if err != nil {
 		return nil, fmt.Errorf("%w: cannot frame the guest keys file", ErrConfiguration)
 	}
-	return &Runtime{signer: signer, keysJSON: keys, resolver: resolver, bridge: bridge, now: now}, nil
+	// Copy rather than mutate the caller's bridge: runtimes must not replace
+	// one another's resolver when sharing an injected transport.
+	guarded := *bridge
+	guarded.validateTarget = func(ctx context.Context, target Target) error {
+		current, err := resolver.Resolve(ctx, target.Namespace, target.WorkspaceName)
+		if err != nil {
+			return err
+		}
+		if current != target {
+			return ErrDenied
+		}
+		return nil
+	}
+	return &Runtime{signer: signer, keysJSON: keys, resolver: resolver, bridge: &guarded, now: now}, nil
 }
 
 // Resolve delegates to the fail-closed launcher resolver.

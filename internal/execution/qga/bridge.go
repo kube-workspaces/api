@@ -125,6 +125,9 @@ func podExecCommand(domain string) []string {
 // Bridge drives one launcher's QEMU guest agent through pod exec.
 type Bridge struct {
 	exec ExecFunc
+	// Runtime installs an uncached resolver check for every RPC, including
+	// cleanup. It is not an atomic UID precondition on Kubernetes pod exec.
+	validateTarget func(context.Context, Target) error
 }
 
 // NewBridge validates the injected exec transport.
@@ -174,6 +177,13 @@ func (b *Bridge) qga(ctx context.Context, target Target, execute string, argumen
 	command, err := json.Marshal(map[string]any{"execute": execute, "arguments": arguments})
 	if err != nil {
 		return fmt.Errorf("%w: cannot render %s request", ErrTransport, execute)
+	}
+	if b.validateTarget != nil {
+		if err := b.validateTarget(ctx, target); err != nil {
+			// Do not expose resolver diagnostics or treat a mid-flight identity
+			// change as proof that a previously dispatched process never ran.
+			return fmt.Errorf("%w: QGA target could not be revalidated", ErrTransport)
+		}
 	}
 	stdout, _, err := b.exec(ctx, target.Namespace, target.PodName, "compute", podExecCommand(target.Domain), command)
 	if err != nil {
