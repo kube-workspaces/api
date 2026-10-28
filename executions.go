@@ -319,7 +319,9 @@ func mapGuestResult(result *qga.GuestResult, execErr error) (storage.ExecutionOu
 		} else {
 			denial = "denied:" + denial
 		}
-		return storage.ExecutionOutcome{State: storage.StateFailed, ExitCode: result.ExitCode, Termination: denial}, "failed", denial
+		// Guest denial text is protected result content, not searchable
+		// metadata. It can contain paths, command input or other guest secrets.
+		return storage.ExecutionOutcome{State: storage.StateFailed, ExitCode: result.ExitCode, Termination: "denied"}, "failed", denial
 	case "output-limit":
 		return storage.ExecutionOutcome{State: storage.StateFailed, ExitCode: result.ExitCode, Termination: "output-limit"}, "failed", result.Denial
 	case "runner-error", "spawn-failed":
@@ -747,6 +749,11 @@ func recordToResult(rec storage.ExecutionRecord, outcome storage.ExecutionOutcom
 	}
 	if outcome.Termination != "" {
 		t := outcome.Termination
+		// Older rows may contain guest denial text. Redact it on metadata
+		// reads too, without rewriting historical records or recording proofs.
+		if strings.HasPrefix(t, "denied:") {
+			t = "denied"
+		}
 		out.Termination = &t
 	}
 	lost := outcome.RecordingLost

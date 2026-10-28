@@ -254,6 +254,66 @@ func TestExecutionPersistentIntegration(t *testing.T) {
 			}
 		})
 	}
+	t.Run("denial-content-stays-protected-after-reopen", func(t *testing.T) {
+		s := open()
+		stub := &stubQGA{target: eligibleTarget(), result: &qga.GuestResult{Outcome: "denied", Denial: privateGuestDenial}}
+		stack := stackFor(s, stub, permissions)
+		w := stack.post(`{"namespace":"team","workspace_name":"vm","executable":"whoami","args":[]}`, "")
+		var response struct {
+			ExecutionID string `json:"execution_id"`
+			RecordingID string `json:"recording_id"`
+			State       string `json:"state"`
+		}
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &response) != nil || response.State != "failed" || len(stub.commands) != 1 {
+			t.Fatalf("denial not recorded: %d %s", w.Code, w.Body.String())
+		}
+		checkAudit(response.ExecutionID, "finished")
+		var metadata, audit string
+		if err := db.QueryRow(ctx, `SELECT row_to_json(e)::text FROM execution_executions e WHERE execution_id=$1`, response.ExecutionID).Scan(&metadata); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRow(ctx, `SELECT COALESCE(json_agg(a)::text,'[]') FROM execution_audit a WHERE execution_id=$1`, response.ExecutionID).Scan(&audit); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(metadata, privateGuestDenial) || strings.Contains(audit, privateGuestDenial) {
+			t.Fatal("guest denial persisted in plaintext database metadata/audit")
+		}
+		obj, err := raw.GetObject(ctx, opts.S3.Bucket, fmt.Sprintf("executions/%s/chunks/%016d.chunk", response.RecordingID, 1), minio.GetObjectOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ciphertext, err := io.ReadAll(obj)
+		_ = obj.Close()
+		if err != nil || len(ciphertext) == 0 || bytes.Contains(ciphertext, []byte(privateGuestDenial)) {
+			t.Fatal("denial result was not encrypted")
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		reopened := open()
+		manager := stackFor(reopened, nil, []string{string(auth.PermissionManage)})
+		assertGuestDenialMetadataPrivate(t, manager, response.ExecutionID)
+		if w := manager.get("/v1/executions/"+response.ExecutionID+"/recording/chunks/1", true); w.Code != http.StatusForbidden {
+			t.Fatal("metadata-only manager obtained protected denial after reopen")
+		}
+		reader, err := reopened.Recording().Open(ctx, response.RecordingID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reader.Close()
+		chunk, err := reader.ReadChunk(ctx, 1)
+		var recorded recordingResult
+		if err != nil || json.Unmarshal(chunk, &recorded) != nil || recorded.Denial != privateGuestDenial {
+			t.Fatal("protected denial was lost after reopen")
+		}
+		proof, err := reader.TerminalIntent(ctx)
+		if err != nil || proof.Snapshot().Outcome.Termination != "denied" {
+			t.Fatal("terminal recovery intent retained sensitive denial metadata")
+		}
+		if repaired, err := execution.NewService(reopened).ReconcileTerminal(ctx, response.ExecutionID); err != nil || repaired || len(stub.commands) != 1 {
+			t.Fatal("denial reconciliation rewrote or redispatched execution")
+		}
+	})
 	t.Run("invalid-completion-remains-unknown", func(t *testing.T) {
 		s := open()
 		stub := &stubQGA{target: eligibleTarget(), result: &qga.GuestResult{Outcome: "completed"}}

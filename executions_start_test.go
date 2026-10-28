@@ -475,7 +475,7 @@ func TestStartMapsGuestOutcomes(t *testing.T) {
 		},
 		"denied-by-runner": {
 			result:      &qga.GuestResult{Outcome: "denied", Denial: "workspace UID does not match"},
-			wantOutcome: "failed", wantState: "failed", wantDenial: "denied:workspace UID does not match",
+			wantOutcome: "failed", wantState: "failed", wantDenial: "denied:workspace UID does not match", wantTermination: "denied",
 		},
 		"output-limit": {
 			result:      &qga.GuestResult{Outcome: "output-limit", Truncated: true},

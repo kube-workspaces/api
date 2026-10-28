@@ -154,6 +154,15 @@ reply is unknown, not proof that nothing ran. Only an unambiguous, well-formed
 guest refusal to spawn is classified as not started; ordinary diagnostics omit
 guest-controlled error class/description and raw pod-exec error details.
 
+Guest denial descriptions are result content, not searchable metadata. New
+guest-denied executions use the fixed metadata termination `denied`; detailed
+text remains in the encrypted result recording and the submitter's existing
+synchronous result response. Metadata list/get also redact legacy `denied:<text>`
+values, without rewriting historical rows or recording proofs. Existing database
+content is not retroactively removed; any historical data remediation needs a
+separately coordinated operation. Recording-read permission remains independent
+of execution-management permission.
+
 ### Bounded Linux and Windows scripts
 
 `POST /v1/executions/start` supports root/SYSTEM scripts on a matching guest runner:
