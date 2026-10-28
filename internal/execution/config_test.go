@@ -55,7 +55,7 @@ func TestExecutionStorageModes(t *testing.T) {
 			if string(cfg.Mode) != mode || cfg.Persistent() != (mode == "external" || mode == "bundled") {
 				t.Fatalf("unexpected mode: %s", cfg)
 			}
-			if cfg.RecordingRetentionEnabled {
+			if cfg.RecordingRetentionEnabled || cfg.MetadataRetentionEnabled {
 				t.Fatal("proposed/default durations enabled destructive retention")
 			}
 			if cfg.Persistent() && (len(cfg.recordingKey) != 32 || cfg.KeyID == "" || !cfg.S3.ForcePathStyle) {
@@ -82,6 +82,33 @@ func TestExecutionStorageModes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMetadataRetentionRequiresSeparateExplicitOptIn(t *testing.T) {
+	for _, tt := range []struct {
+		enabled, recordings, duration string
+		valid                         bool
+	}{
+		{"true", "false", "48h", false},
+		{"true", "true", "", false},
+		{"maybe", "true", "48h", false},
+		{"true", "true", "12h", false},
+		{"true", "true", "48h", true},
+		{"false", "true", "48h", true},
+	} {
+		env := persistentEnvironment("external")
+		env["KW_EXECUTION_RETENTION_ENABLED"] = tt.recordings
+		env["KW_EXECUTION_RETENTION_RECORDINGS"] = "24h"
+		env["KW_EXECUTION_METADATA_RETENTION_ENABLED"] = tt.enabled
+		env["KW_EXECUTION_RETENTION_METADATA"] = tt.duration
+		cfg, err := readStorageConfig(func(key string) string { return env[key] }, testKeyFile)
+		if (err == nil) != tt.valid {
+			t.Fatalf("unexpected metadata retention validation: %v", err)
+		}
+		if err == nil && cfg.MetadataRetentionEnabled != (tt.enabled == "true") {
+			t.Fatal("metadata opt-in was not preserved")
+		}
 	}
 }
 

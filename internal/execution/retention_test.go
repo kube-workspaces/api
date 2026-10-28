@@ -19,12 +19,18 @@ func TestRecordingRetentionRejectsUnsupportedStoresAndBounds(t *testing.T) {
 		if stop, err := service.StartRecordingRetention(ctx, time.Hour); err == nil || stop != nil {
 			t.Fatal("retention started on a disabled/ephemeral store")
 		}
+		if stop, err := service.StartMetadataRetention(ctx, time.Hour); err == nil || stop != nil {
+			t.Fatal("metadata retention started on a disabled/ephemeral store")
+		}
 		for _, tt := range []struct {
 			duration time.Duration
 			limit    int
 		}{{0, 1}, {-1, 1}, {time.Hour, 0}, {time.Hour, 101}, {time.Hour, 1}} {
 			if _, _, err := service.ExpireRecordingsBatch(ctx, "", tt.duration, tt.limit); err == nil {
 				t.Fatal("unsupported/unbounded retention sweep succeeded")
+			}
+			if _, _, err := service.ExpireMetadataBatch(ctx, "", tt.duration, tt.limit); err == nil {
+				t.Fatal("unsupported/unbounded metadata retention sweep succeeded")
 			}
 		}
 	}

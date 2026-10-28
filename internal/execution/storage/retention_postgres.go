@@ -12,7 +12,8 @@ const retentionTerminalStates = `('succeeded','failed','cancelled','timed_out','
 
 func (m *postgresMetadata) RecordingExpired(ctx context.Context, id string) (bool, error) {
 	var expired bool
-	err := m.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM execution_recording_retention WHERE execution_id=$1)`, id).Scan(&expired)
+	err := m.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM execution_recording_retention WHERE execution_id=$1)
+		OR EXISTS (SELECT 1 FROM execution_identities WHERE execution_id=$1 AND metadata_purged_at IS NOT NULL)`, id).Scan(&expired)
 	return expired, err
 }
 

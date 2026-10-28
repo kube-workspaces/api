@@ -173,6 +173,9 @@ func TestPostgresIntegration(t *testing.T) {
 			t.Fatalf("completion audit after recovery: %d %v", count, err)
 		}
 	})
+	t.Run("metadata-retention-migration", func(t *testing.T) {
+		testMetadataRetentionMigration(t, dsn)
+	})
 }
 
 func TestS3Integration(t *testing.T) {

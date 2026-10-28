@@ -226,6 +226,13 @@ func main() {
 			}
 			defer stopRetention()
 		}
+		if executionStorage.MetadataRetentionEnabled {
+			stopMetadataRetention, err := execSvc.StartMetadataRetention(ctx, executionStorage.MetadataRetention)
+			if err != nil {
+				log.Fatal(ctx, fmt.Errorf("configured metadata retention could not be initialized"))
+			}
+			defer stopMetadataRetention()
+		}
 		startupCtx, startupCancel := context.WithTimeout(ctx, 30*time.Second)
 		managementIssuer, err = management.Open(startupCtx, managementConfig, executionStorage, execStore, dynClient, authProvider)
 		startupCancel()

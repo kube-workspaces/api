@@ -32,6 +32,7 @@ type StorageConfig struct {
 	Mode                      StorageMode
 	RecordingRetention        time.Duration
 	RecordingRetentionEnabled bool
+	MetadataRetentionEnabled  bool
 	MetadataRetention         time.Duration
 	EphemeralDir              string
 	EphemeralMaxBytes         int64
@@ -92,6 +93,13 @@ func readStorageConfig(env func(string) string, readFile func(string) ([]byte, e
 	}
 	if c.RecordingRetentionEnabled && (c.Mode == StorageEphemeral || env("KW_EXECUTION_RETENTION_RECORDINGS") == "") {
 		return StorageConfig{}, fmt.Errorf("recording retention requires persistent storage and an explicit recording retention duration")
+	}
+	c.MetadataRetentionEnabled, err = envBool(env, "KW_EXECUTION_METADATA_RETENTION_ENABLED", false)
+	if err != nil {
+		return StorageConfig{}, err
+	}
+	if c.MetadataRetentionEnabled && (!c.RecordingRetentionEnabled || env("KW_EXECUTION_RETENTION_METADATA") == "") {
+		return StorageConfig{}, fmt.Errorf("metadata retention requires recording retention and an explicit metadata retention duration")
 	}
 	c.RecordingRetention, err = positiveDuration(env("KW_EXECUTION_RETENTION_RECORDINGS"), 30*24*time.Hour)
 	if err != nil {

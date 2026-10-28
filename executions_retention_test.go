@@ -267,4 +267,7 @@ func TestExecutionRetentionIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	stop()
+	t.Run("metadata-retention", func(t *testing.T) {
+		testMetadataRetention(t, ctx, opts, command.ExecutionID)
+	})
 }

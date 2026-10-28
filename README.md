@@ -229,8 +229,14 @@ Recording deletion is **off by default**. Persistent operators may explicitly se
 `KW_EXECUTION_RETENTION_ENABLED=true` together with an explicit
 `KW_EXECUTION_RETENTION_RECORDINGS` duration to enable bounded terminal command/
 script recording expiry; see [retention safety and rollout](internal/execution/storage/RETENTION.md).
-Metadata/audit deletion, shell/upgrade retention and ephemeral expiry are not
-implemented. Do not retire a key merely because a configured duration has elapsed.
+Metadata/audit deletion requires a **separate** opt-in:
+`KW_EXECUTION_METADATA_RETENTION_ENABLED=true` and an explicit
+`KW_EXECUTION_RETENTION_METADATA` duration, with recording retention enabled.
+It waits for completed recording cleanup and the full retention window of every
+audit event, then atomically purges eligible command/script history while retaining
+minimal lifetime ID reservations/deletion receipts. Shell/upgrade retention and
+ephemeral expiry remain excluded. Do not retire a key merely because a configured
+duration has elapsed.
 
 Store initialization, migrations, encrypted recording admission and replay are
 wired into startup and execution. Unready storage denies admission; persistent
