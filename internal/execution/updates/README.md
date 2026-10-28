@@ -18,8 +18,11 @@ transport must durably consume guest challenges across restarts, authenticate
 the peer with mTLS, and recheck current identity, lifecycle, policy, worker fence,
 cancellation/deadline and exact durable intent recording before each effect.
 
-Signing here only validates structure. No production phase issuer, worker,
-management listener or enabled upgrade path is supplied. Rust adds a one-use
+Signing here only validates structure. The separate
+[`upgrades.PhaseIssuer`](../upgrades/README.md) composes mandatory live authority,
+protected recording ACKs and one-shot PostgreSQL claims; it is not wired into
+the server. No enabled production issuer, worker, management listener or upgrade
+path is supplied. Rust adds a one-use
 `SignedPhaseAuthority` adapter but intentionally supplies no permissive current
 authority source. The byte-identical phase fixtures and deterministic signature
 assertion in both languages use a synthetic seed, never production trust.

@@ -39,6 +39,14 @@ func (p PhasePermit) Encode() []byte {
 	return raw
 }
 
+// Validate checks the bounded wire schema only, not authorization or freshness.
+func (p PhasePermit) Validate() error {
+	if !p.valid() {
+		return ErrPhase
+	}
+	return nil
+}
+
 func (p PhasePermit) valid() bool {
 	if p.Version != 1 || p.Audience != "agent-upgrade.phase.v1" || !validDigest(p.PlanSHA256) || !validDigest(p.PeerSHA256) || !validNonce(p.Challenge) || p.OwnerFence == 0 || p.OwnerFence > MaxJournalSequence || p.Action.Sequence == 0 || p.Action.Sequence > MaxJournalSequence || !identifier.MatchString(p.Action.BootID) || p.IssuedAt <= 0 || p.ExpiresAt <= p.IssuedAt || p.ExpiresAt-p.IssuedAt > MaxPhaseSeconds {
 		return false
