@@ -15,6 +15,39 @@ import (
 // ExecutionPermission mirrors the controller-owned User.executionGrants schema.
 type ExecutionPermission string
 
+type executionRefreshKey struct{}
+
+// RefreshExecutionPrincipal revalidates the original signed credential and reads
+// current account/grant state at the dispatch boundary. Only authentication
+// middleware can install the refresher; a caller-built UserInfo is insufficient.
+func RefreshExecutionPrincipal(ctx context.Context) (*UserInfo, error) {
+	refresh, ok := ctx.Value(executionRefreshKey{}).(func(context.Context) (*UserInfo, error))
+	if !ok {
+		return nil, fmt.Errorf("execution credential refresh unavailable")
+	}
+	user, err := refresh(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if ExecutionPrincipal(ContextWithUser(ctx, user)) == nil {
+		return nil, fmt.Errorf("execution requires a current user-bound credential")
+	}
+	return user, nil
+}
+
+func withExecutionRefresh(ctx context.Context, provider *ConfigProvider, raw string) context.Context {
+	return context.WithValue(ctx, executionRefreshKey{}, func(checkCtx context.Context) (*UserInfo, error) {
+		cfg, err := provider.GetConfig(checkCtx)
+		if err != nil {
+			return nil, err
+		}
+		if !cfg.Enabled {
+			return nil, fmt.Errorf("execution requires authentication")
+		}
+		return validateAndGetUser(checkCtx, raw, cfg, provider)
+	})
+}
+
 const (
 	PermissionExec           ExecutionPermission = "workspace.exec"
 	PermissionShell          ExecutionPermission = "workspace.shell"

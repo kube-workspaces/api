@@ -77,6 +77,7 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 					}
 					ctx = ContextWithUser(ctx, user)
 					ctx = ContextWithSession(ctx, session)
+					ctx = withExecutionRefresh(ctx, provider, tokenStr)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
@@ -99,6 +100,7 @@ func Middleware(provider *ConfigProvider) func(http.Handler) http.Handler {
 			// Add user to context
 			ctx = ContextWithUser(ctx, user)
 			ctx = ContextWithSession(ctx, session)
+			ctx = withExecutionRefresh(ctx, provider, cookie.Value)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

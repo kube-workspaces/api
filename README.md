@@ -98,6 +98,14 @@ separate opt-in policy gates, read fresh by the execution policy provider. These
 checks are applied alongside the explicitly enabled QGA backend, mandatory full
 recording in the selected storage mode and guest-side signed-grant enforcement.
 
+Synchronous commands/scripts revalidate the original signed session/device
+credential, current account, exact exec/elevation grants and platform policy again
+after protected input admission, immediately before entering the guest transport.
+Revocation, expired authority, unavailable checks or a pre-dispatch disconnect
+prevent dispatch and retain a protected terminal result when admission completed.
+This is not immediate cancellation of an already dispatched command: the bounded
+pilot still runs under its guest deadline, and no command is automatically rerun.
+
 ### Bounded Linux and Windows scripts
 
 `POST /v1/executions/start` supports root/SYSTEM scripts on a matching guest runner:

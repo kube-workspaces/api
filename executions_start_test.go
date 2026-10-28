@@ -72,6 +72,7 @@ func (s *stubQGA) Execute(ctx context.Context, target qga.Target, command qga.Co
 }
 
 type startStack struct {
+	client    *fake.FakeDynamicClient
 	execution *execution.Service
 	stub      *stubQGA
 	store     storage.Store
@@ -175,6 +176,7 @@ func newStoredStartStack(t *testing.T, namespace, workspace string, permissions 
 		return w
 	}
 	return &startStack{
+		client:    client,
 		execution: execService, stub: stub, store: store,
 		post:    func(body, _ string) *httptest.ResponseRecorder { return startOn(context.Background(), body) },
 		postCtx: startOn, getCtx: getOn,

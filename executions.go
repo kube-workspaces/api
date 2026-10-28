@@ -473,7 +473,15 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	runCtx, cancelRun := s.runContext(ctx, p.DeadlineSeconds)
 	defer cancelRun()
 	log.Printf(runCtx, "executions.start execution=%s namespace=%s workspace=%s", executionID, p.Namespace, p.WorkspaceName)
-	result, execErr := s.qga.Execute(runCtx, target, cmd)
+	// Preflight and durable recording may have taken long enough for account,
+	// grant or platform policy changes. Recheck before the transport can stage
+	// input or issue a guest grant. A refusal still gets a protected terminal
+	// result; it is never a transport-loss unknown or an unaudited early return.
+	var result *qga.GuestResult
+	execErr := s.authorizeDispatch(ctx, user.UID, p.Namespace, p.WorkspaceName)
+	if execErr == nil {
+		result, execErr = s.qga.Execute(runCtx, target, cmd)
+	}
 	// Finalization gets its own caller-independent budget: even an expired run
 	// budget must not turn a known outcome into a recording gap.
 	finishCtx, cancelFinish := finalizeContext(ctx)
@@ -509,6 +517,34 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 		return nil, managementError("unavailable", "execution state unavailable")
 	}
 	return commandResult(rec, outcome, apiOutcome, denial, result), nil
+}
+
+func (s *executionssrvc) authorizeDispatch(ctx context.Context, actor, namespace, workspace string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if ctx.Err() != nil || (s.lifecycle != nil && s.lifecycle.Err() != nil) {
+		return qga.ErrUnavailable
+	}
+	user, err := auth.RefreshExecutionPrincipal(ctx)
+	if err != nil {
+		return qga.ErrUnavailable
+	}
+	if user.UID != actor ||
+		!auth.HasExecutionPermission(user, namespace, workspace, auth.PermissionExec, time.Now()) ||
+		!auth.HasExecutionPermission(user, namespace, workspace, auth.PermissionElevated, time.Now()) {
+		return qga.ErrDenied
+	}
+	policy, err := s.plat.GetVMExecutionPolicy(ctx)
+	if err != nil {
+		return qga.ErrUnavailable
+	}
+	if !policy.Enabled || !policy.AllowElevated {
+		return qga.ErrDenied
+	}
+	if ctx.Err() != nil || (s.lifecycle != nil && s.lifecycle.Err() != nil) {
+		return qga.ErrUnavailable
+	}
+	return nil
 }
 
 // finalizeBudget bounds the terminal recording/metadata writes of one

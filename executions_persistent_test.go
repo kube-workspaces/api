@@ -23,6 +23,9 @@ import (
 	"github.com/kube-workspaces/api/internal/execution/storage"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Opt-in proof of the production HTTP admission/recording path, using real
@@ -247,6 +250,71 @@ func TestExecutionPersistentIntegration(t *testing.T) {
 				if w := replay.get(path+suffix, true); w.Code == 200 || bytes.Contains(w.Body.Bytes(), []byte(secret)) {
 					t.Fatal("tampered recording disclosed")
 				}
+			}
+		})
+	}
+	for _, kind := range []string{"command", "linux-script", "windows-script"} {
+		t.Run("revoked-before-dispatch/"+kind, func(t *testing.T) {
+			s := open()
+			boundary := &dispatchBoundaryStore{Store: s}
+			target := eligibleTarget()
+			target.Linux = kind == "linux-script"
+			stub := &stubQGA{target: target}
+			stack := stackFor(boundary, stub, permissions)
+			boundary.afterStart = func() error {
+				users := schema.GroupVersionResource{Group: "kubeworkspaces.io", Version: "v1alpha1", Resource: "users"}
+				resource := stack.client.Resource(users)
+				user, err := resource.Get(ctx, "operator", metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				if err := unstructured.SetNestedSlice(user.Object, []interface{}{}, "spec", "executionGrants"); err != nil {
+					return err
+				}
+				_, err = resource.Update(ctx, user, metav1.UpdateOptions{})
+				return err
+			}
+			body := `{"namespace":"team","workspace_name":"vm","executable":"whoami","args":[]}`
+			if kind == "linux-script" {
+				body = `{"namespace":"team","workspace_name":"vm","script":{"body":"#!/bin/sh\nprintf protected-revoked-input"}}`
+			} else if kind == "windows-script" {
+				body = `{"namespace":"team","workspace_name":"vm","script":{"body":"#!powershell\nWrite-Output protected-revoked-input"}}`
+			}
+			w := stack.post(body, "")
+			var response struct {
+				ExecutionID string `json:"execution_id"`
+				RecordingID string `json:"recording_id"`
+				State       string `json:"state"`
+			}
+			if json.Unmarshal(w.Body.Bytes(), &response) != nil || w.Code != 200 || response.State != "revoked" || len(stub.commands) != 0 {
+				t.Fatalf("revocation did not fence dispatch: %d %s", w.Code, w.Body.String())
+			}
+			checkAudit(response.ExecutionID, "admitted")
+			checkAudit(response.ExecutionID, "finished")
+			// Retaining evidence does not grant a revoked submitter playback.
+			if w := stack.get("/v1/executions/"+response.ExecutionID+"/recording", true); w.Code != http.StatusForbidden {
+				t.Fatalf("revoked reader retained playback: %d", w.Code)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened := open()
+			rec, outcome, err := reopened.Metadata().Get(ctx, response.ExecutionID)
+			if err != nil || outcome.State != storage.StateRevoked || rec.Durability != storage.DurabilityDurable {
+				t.Fatalf("durable refusal missing after reopen: %+v %v", outcome, err)
+			}
+			reader, err := reopened.Recording().Open(ctx, response.RecordingID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+			if err := reader.Verify(ctx); err != nil || reader.Manifest().Chunks != 2 {
+				t.Fatalf("protected refusal incomplete: %v", err)
+			}
+			data, err := reader.ReadChunk(ctx, 1)
+			var recorded recordingResult
+			if err != nil || json.Unmarshal(data, &recorded) != nil || recorded.Outcome != "failed" || recorded.Denial != outcome.Termination {
+				t.Fatalf("protected refusal result missing: %v", err)
 			}
 		})
 	}
