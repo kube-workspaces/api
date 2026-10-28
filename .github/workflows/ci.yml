@@ -99,7 +99,7 @@ jobs:
         run: go test -race -count=1 -timeout=5m -v ./internal/execution/storage -run '^(TestPostgresIntegration|TestS3Integration)$'
 
       - name: Upgrade worker and phase authority races
-        run: go test -race -count=5 -timeout=5m -v ./internal/execution/storage -run '^(TestPostgresUpgradeAuthorityIntegration|TestPostgresUpgradePhasesIntegration)$'
+        run: go test -race -count=5 -timeout=5m -v ./internal/execution/storage -run '^(TestPostgresUpgradeAuthorityIntegration|TestPostgresUpgradePhasesIntegration|TestPostgresUpgradeJournalsIntegration)$'
 
       - name: Durable exact-action phase issuer
         run: go test -race -count=3 -timeout=5m -v ./internal/execution/upgrades -run '^TestPostgresPhaseIssuerIntegration$'

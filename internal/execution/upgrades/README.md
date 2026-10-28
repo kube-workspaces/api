@@ -147,6 +147,41 @@ enrolled guest key or a successful mTLS handshake. Nor can these reads guarantee
 policy remained unchanged after return: guest-side current authority is mandatory
 at the effect boundary. There is no new route, listener, QGA fallback or rollout.
 
+## Trusted server journal heads (unwired storage boundary)
+
+`storage.UpgradeJournalStore` adds durable server-owned heads and append-only
+receipt-bound history. Initialization takes an independently approved plan, never
+guest checkpoint bytes, fixes the initial deadline to admission time, and refuses
+existing intents/checkpoints or resetting a head. This is not an approval source.
+
+`Prepare` derives a canonical successor from the locked head and returns a private,
+process-local witness. `CheckPrepared` checks its exact successor; `Commit` checks
+the same predecessor/lease and exact recording receipt. Action heads additionally
+require a matching unissued phase-intent row. Completion/boot observation require
+the exact preceding action to have been issued; completion must use the same boot.
+Head/history/attempt sequence change atomically. Concurrent commits have one
+winner; stale witnesses, owner changes and replays deny. `CheckCommitted` checks
+an exact current active head, not a historical or merely structurally valid guest
+checkpoint. A lost commit response supplies no execution permission.
+
+This bounded adapter supports `begin`, `complete` and issued `observe_boot` only.
+Cancellation, compensation control, unsolicited boot, expired deadlines and
+takeover/recovery fail closed; no recovery adapter or automatic replay exists.
+Initial plan approval, event contexts and native receipts must be independently
+authenticated/current. `ChunkReceipt` is a trusted recorder's attestation, not a
+cryptographic capability: callers cannot accept it from a guest or infer durable
+storage from a matching hash alone. Storage tests use synthetic receipts and do
+not prove recording transport or native guest effects.
+
+**Not wired:** no mandatory lineage authority decorator, issuer ordering changes,
+production initialization or authenticated receipt adapter is supplied. Existing
+phase-ledger APIs do not automatically consult these heads. A complete authority
+chain must enforce prepared lineage at intent admission and committed lineage
+before/after exchange, including durable commit before one-shot issuance. No
+server route enables this component. `TestPostgresUpgradeJournalsIntegration`
+exercises real PostgreSQL reopen, exact transitions, issuance preconditions and
+multi-replica commit races; the disposable-storage CI job runs it explicitly.
+
 ## Immutable approved software artifacts
 
 `VerifyPhaseArtifacts` checks the operator-pinned target **and** predecessor:
