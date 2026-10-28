@@ -225,9 +225,12 @@ recordings and 8760h for metadata, independently configurable with
 `KW_EXECUTION_RETENTION_RECORDINGS` and `KW_EXECUTION_RETENTION_METADATA` (metadata
 must cover recording retention). Credentials and recording keys are redacted from
 ordinary configuration formatting/errors.
-These retention values are currently configuration contracts; automatic retention
-deletion is not implemented. Do not retire a key on the assumption that its old
-recordings or pending recovery evidence have already expired or been deleted.
+Recording deletion is **off by default**. Persistent operators may explicitly set
+`KW_EXECUTION_RETENTION_ENABLED=true` together with an explicit
+`KW_EXECUTION_RETENTION_RECORDINGS` duration to enable bounded terminal command/
+script recording expiry; see [retention safety and rollout](internal/execution/storage/RETENTION.md).
+Metadata/audit deletion, shell/upgrade retention and ephemeral expiry are not
+implemented. Do not retire a key merely because a configured duration has elapsed.
 
 Store initialization, migrations, encrypted recording admission and replay are
 wired into startup and execution. Unready storage denies admission; persistent

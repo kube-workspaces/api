@@ -45,8 +45,9 @@ Ephemeral storage does not use persistent read-only keys.
    an instruction to rerun interrupted commands.
 5. Retire A only after confirming that no retained recording, pending terminal
    recovery, in-flight old writer, backup/restore requirement or rollback window
-   still needs it. Retention deletion/enforcement is separate and currently not
-   implemented: a configured retention duration is not proof of deletion.
+   still needs it. [Recording retention](RETENTION.md) is a separate, explicit
+   opt-in for terminal commands/scripts; other evidence and backups are excluded.
+   A configured retention duration alone is not proof of deletion.
 
 Keep the keyring within its bound; plan custody/retention before accumulating more
 rotations. Never silently discard an old key to make a deployment start.

@@ -689,6 +689,9 @@ func (s *executionssrvc) Get(ctx context.Context, p *executions.GetPayload) (*ex
 }
 
 func managementReadError(err error) error {
+	if errors.Is(err, storage.ErrRecordingExpired) {
+		return managementError("not_found", "recording expired by retention")
+	}
 	if errors.Is(err, storage.ErrNotFound) {
 		return managementError("not_found", "execution not found")
 	}

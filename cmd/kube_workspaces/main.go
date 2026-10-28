@@ -219,6 +219,13 @@ func main() {
 		execSvc := execution.NewService(execStore)
 		stopTerminalRecovery := execSvc.StartTerminalRecovery(ctx)
 		defer stopTerminalRecovery()
+		if executionStorage.RecordingRetentionEnabled {
+			stopRetention, err := execSvc.StartRecordingRetention(ctx, executionStorage.RecordingRetention)
+			if err != nil {
+				log.Fatal(ctx, fmt.Errorf("configured recording retention could not be initialized"))
+			}
+			defer stopRetention()
+		}
 		startupCtx, startupCancel := context.WithTimeout(ctx, 30*time.Second)
 		managementIssuer, err = management.Open(startupCtx, managementConfig, executionStorage, execStore, dynClient, authProvider)
 		startupCancel()

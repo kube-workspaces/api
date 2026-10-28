@@ -377,6 +377,16 @@ func (s *Service) Replay(ctx context.Context, actorID, executionID string) (stor
 		}
 		return nil, rec, fmt.Errorf("%w: %v", ErrAdmissionDenied, err)
 	}
+	expired, err := store.Metadata().RecordingExpired(ctx, executionID)
+	if err != nil {
+		return nil, rec, err
+	}
+	if expired {
+		if err := store.Metadata().Audit(ctx, storage.AuditEvent{ExecutionID: executionID, Time: s.now().UTC(), Kind: "replay.expired", ActorID: actorID, Detail: map[string]string{"recordingID": rec.RecordingID}}); err != nil {
+			return nil, rec, err
+		}
+		return nil, rec, storage.ErrRecordingExpired
+	}
 	reader, err := s.store.Recording().Open(ctx, rec.RecordingID)
 	if err != nil {
 		return nil, rec, err
@@ -388,6 +398,16 @@ func (s *Service) Replay(ctx context.Context, actorID, executionID string) (stor
 	if err := reader.Verify(ctx); err != nil {
 		reader.Close()
 		return nil, rec, err
+	}
+	if expired, err := store.Metadata().RecordingExpired(ctx, executionID); err != nil || expired {
+		reader.Close()
+		if err != nil {
+			return nil, rec, err
+		}
+		if err := store.Metadata().Audit(ctx, storage.AuditEvent{ExecutionID: executionID, Time: s.now().UTC(), Kind: "replay.expired", ActorID: actorID, Detail: map[string]string{"recordingID": rec.RecordingID}}); err != nil {
+			return nil, rec, err
+		}
+		return nil, rec, storage.ErrRecordingExpired
 	}
 	if err := s.store.Metadata().Audit(ctx, storage.AuditEvent{
 		ExecutionID: rec.ExecutionID,

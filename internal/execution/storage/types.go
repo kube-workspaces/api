@@ -181,6 +181,9 @@ type MetadataStore interface {
 	RecoveryCandidates(ctx context.Context, after string, limit int) ([]ExecutionRecord, error)
 	// Get returns the record and its last known outcome.
 	Get(ctx context.Context, id string) (ExecutionRecord, ExecutionOutcome, error)
+	// RecordingExpired is the committed replay fence, including cleanup that
+	// is still pending. A storage failure must never bypass that fence.
+	RecordingExpired(ctx context.Context, id string) (bool, error)
 	// Audit appends an ordered audit event.
 	Audit(ctx context.Context, ev AuditEvent) error
 	// List returns records matching the filter, most recent admission first.

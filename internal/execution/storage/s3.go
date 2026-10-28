@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -197,11 +198,13 @@ func (s *s3Recording) remove(object string) error {
 }
 
 func isNoSuchKey(err error) bool {
-	// minio returns an error whose message contains "NoSuchKey".
-	if err == nil {
-		return false
+	// S3's human-readable message need not contain its protocol error code.
+	var response minio.ErrorResponse
+	if errors.As(err, &response) {
+		return response.Code == "NoSuchKey"
 	}
-	return bytes.Contains([]byte(err.Error()), []byte("NoSuchKey"))
+	var pointer *minio.ErrorResponse
+	return errors.As(err, &pointer) && pointer != nil && pointer.Code == "NoSuchKey"
 }
 
 func (s *s3Recording) Ready(ctx context.Context) error {

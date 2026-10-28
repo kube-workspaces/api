@@ -55,6 +55,9 @@ func TestExecutionStorageModes(t *testing.T) {
 			if string(cfg.Mode) != mode || cfg.Persistent() != (mode == "external" || mode == "bundled") {
 				t.Fatalf("unexpected mode: %s", cfg)
 			}
+			if cfg.RecordingRetentionEnabled {
+				t.Fatal("proposed/default durations enabled destructive retention")
+			}
 			if cfg.Persistent() && (len(cfg.recordingKey) != 32 || cfg.KeyID == "" || !cfg.S3.ForcePathStyle) {
 				t.Fatal("persistent encryption/S3 configuration missing")
 			}
@@ -79,6 +82,32 @@ func TestExecutionStorageModes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRecordingRetentionRequiresExplicitPersistentOptIn(t *testing.T) {
+	for _, tt := range []struct {
+		mode, enabled, duration string
+		valid                   bool
+	}{
+		{"external", "true", "", false},
+		{"external", "maybe", "24h", false},
+		{"external", "true", "24h", true},
+		{"external", "false", "24h", true},
+		{"ephemeral", "true", "24h", false},
+	} {
+		env := persistentEnvironment(tt.mode)
+		if tt.mode == "ephemeral" {
+			env = map[string]string{"KW_EXECUTION_STORAGE_MODE": tt.mode}
+		}
+		env["KW_EXECUTION_RETENTION_ENABLED"], env["KW_EXECUTION_RETENTION_RECORDINGS"] = tt.enabled, tt.duration
+		cfg, err := readStorageConfig(func(key string) string { return env[key] }, testKeyFile)
+		if (err == nil) != tt.valid {
+			t.Fatalf("unexpected retention validation for %s/%s/%s: %v", tt.mode, tt.enabled, tt.duration, err)
+		}
+		if err == nil && cfg.RecordingRetentionEnabled != (tt.enabled == "true") {
+			t.Fatal("explicit retention policy was not preserved")
+		}
 	}
 }
 

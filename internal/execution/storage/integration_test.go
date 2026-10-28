@@ -231,4 +231,7 @@ func TestS3Integration(t *testing.T) {
 	t.Run("key-rotation", func(t *testing.T) {
 		testS3KeyRotation(t, S3Options{Endpoint: endpoint, Bucket: "execution-integration", Region: "us-east-1", AccessKey: os.Getenv("KW_EXECUTION_TEST_S3_ACCESS_KEY"), SecretKey: os.Getenv("KW_EXECUTION_TEST_S3_SECRET_KEY"), CreateBucket: true, ForcePathStyle: true})
 	})
+	t.Run("recording-retention", func(t *testing.T) {
+		testS3RecordingRetention(t, S3Options{Endpoint: endpoint, Bucket: "execution-integration", Region: "us-east-1", AccessKey: os.Getenv("KW_EXECUTION_TEST_S3_ACCESS_KEY"), SecretKey: os.Getenv("KW_EXECUTION_TEST_S3_SECRET_KEY"), CreateBucket: true, ForcePathStyle: true})
+	})
 }

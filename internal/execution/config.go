@@ -29,16 +29,17 @@ const (
 // StorageConfig contains resolved deployment configuration, not runtime storage
 // health. A valid configuration alone must never enable execution admission.
 type StorageConfig struct {
-	Mode                  StorageMode
-	RecordingRetention    time.Duration
-	MetadataRetention     time.Duration
-	EphemeralDir          string
-	EphemeralMaxBytes     int64
-	DatabaseURL           string `json:"-"`
-	S3                    S3Config
-	KeyID                 string
-	recordingKey          []byte
-	previousRecordingKeys [][]byte
+	Mode                      StorageMode
+	RecordingRetention        time.Duration
+	RecordingRetentionEnabled bool
+	MetadataRetention         time.Duration
+	EphemeralDir              string
+	EphemeralMaxBytes         int64
+	DatabaseURL               string `json:"-"`
+	S3                        S3Config
+	KeyID                     string
+	recordingKey              []byte
+	previousRecordingKeys     [][]byte
 }
 
 type S3Config struct {
@@ -85,6 +86,13 @@ func readStorageConfig(env func(string) string, readFile func(string) ([]byte, e
 		return StorageConfig{}, fmt.Errorf("invalid KW_EXECUTION_STORAGE_MODE")
 	}
 	var err error
+	c.RecordingRetentionEnabled, err = envBool(env, "KW_EXECUTION_RETENTION_ENABLED", false)
+	if err != nil {
+		return StorageConfig{}, err
+	}
+	if c.RecordingRetentionEnabled && (c.Mode == StorageEphemeral || env("KW_EXECUTION_RETENTION_RECORDINGS") == "") {
+		return StorageConfig{}, fmt.Errorf("recording retention requires persistent storage and an explicit recording retention duration")
+	}
 	c.RecordingRetention, err = positiveDuration(env("KW_EXECUTION_RETENTION_RECORDINGS"), 30*24*time.Hour)
 	if err != nil {
 		return StorageConfig{}, fmt.Errorf("invalid KW_EXECUTION_RETENTION_RECORDINGS")

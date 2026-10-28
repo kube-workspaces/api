@@ -125,6 +125,10 @@ func (m *ephemeralMetadata) Get(_ context.Context, id string) (ExecutionRecord, 
 	return rec, m.outcomes[id], nil
 }
 
+func (m *ephemeralMetadata) RecordingExpired(ctx context.Context, _ string) (bool, error) {
+	return false, ctx.Err() // Persistent recording expiry is not an ephemeral reaper.
+}
+
 func (m *ephemeralMetadata) Complete(ctx context.Context, id string, outcome ExecutionOutcome) error {
 	if err := ctx.Err(); err != nil {
 		return err
