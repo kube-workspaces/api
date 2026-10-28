@@ -1,12 +1,9 @@
 package qga
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
-	"io"
 	"time"
 )
 
@@ -40,7 +37,7 @@ func (b *Bridge) CheckScripts(ctx context.Context, target Target) error {
 		if !status.Exited {
 			continue
 		}
-		if status.ExitCode != 0 || status.Signal != 0 || status.OutTruncated || status.ErrTruncated {
+		if status.ExitCode == nil || *status.ExitCode != 0 || status.Signal != 0 || status.OutTruncated || status.ErrTruncated {
 			return ErrUnsupportedScripts
 		}
 		raw, err := base64.StdEncoding.DecodeString(status.OutData)
@@ -52,12 +49,7 @@ func (b *Bridge) CheckScripts(ctx context.Context, target Target) error {
 			ScriptRequestVersion int    `json:"script_request_version"`
 			InterpreterPolicy    string `json:"interpreter_policy"`
 		}
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.DisallowUnknownFields()
-		if decoder.Decode(&caps) != nil || caps.Version != 1 || caps.ScriptRequestVersion != 2 || caps.InterpreterPolicy != ScriptPolicy(target) {
-			return ErrUnsupportedScripts
-		}
-		if decoder.Decode(new(any)) != io.EOF {
+		if !decodeExactObject(raw, &caps, scriptCapabilityFields) || caps.Version != 1 || caps.ScriptRequestVersion != 2 || caps.InterpreterPolicy != ScriptPolicy(target) {
 			return ErrUnsupportedScripts
 		}
 		return nil

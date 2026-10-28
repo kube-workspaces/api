@@ -302,6 +302,10 @@ func mapGuestResult(result *qga.GuestResult, execErr error) (storage.ExecutionOu
 	}
 	switch result.Outcome {
 	case "completed":
+		if result.ExitCode == nil || result.Truncated || len(result.Stdout)+len(result.Stderr) > qga.MaxOutputBytes {
+			const invalid = "invalid runner completion; do not rerun"
+			return storage.ExecutionOutcome{State: storage.StateUnknown, Termination: invalid}, "unknown", invalid
+		}
 		if result.ExitCode != nil && *result.ExitCode != 0 {
 			return storage.ExecutionOutcome{State: storage.StateFailed, ExitCode: result.ExitCode}, "failed", result.Denial
 		}

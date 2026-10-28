@@ -457,6 +457,18 @@ func TestStartMapsGuestOutcomes(t *testing.T) {
 			result:      &qga.GuestResult{Outcome: "completed", ExitCode: intPtr(7)},
 			wantOutcome: "failed", wantState: "failed", wantExitCode: intPtr(7),
 		},
+		"completion-without-exit": {
+			result:      &qga.GuestResult{Outcome: "completed"},
+			wantOutcome: "unknown", wantState: "unknown", wantDenial: "invalid runner completion; do not rerun", wantTermination: "invalid runner completion; do not rerun",
+		},
+		"completion-with-truncated-output": {
+			result:      &qga.GuestResult{Outcome: "completed", ExitCode: intPtr(0), Truncated: true},
+			wantOutcome: "unknown", wantState: "unknown", wantDenial: "invalid runner completion; do not rerun", wantTermination: "invalid runner completion; do not rerun",
+		},
+		"completion-output-overflow": {
+			result:      &qga.GuestResult{Outcome: "completed", ExitCode: intPtr(0), Stdout: make([]byte, qga.MaxOutputBytes+1)},
+			wantOutcome: "unknown", wantState: "unknown", wantDenial: "invalid runner completion; do not rerun", wantTermination: "invalid runner completion; do not rerun",
+		},
 		"deadline": {
 			result:      &qga.GuestResult{Outcome: "deadline"},
 			wantOutcome: "timed_out", wantState: "timed_out",

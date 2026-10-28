@@ -19,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/kube-workspaces/api/internal/auth"
+	"github.com/kube-workspaces/api/internal/execution"
 	"github.com/kube-workspaces/api/internal/execution/qga"
 	"github.com/kube-workspaces/api/internal/execution/storage"
 	"github.com/minio/minio-go/v7"
@@ -253,6 +254,47 @@ func TestExecutionPersistentIntegration(t *testing.T) {
 			}
 		})
 	}
+	t.Run("invalid-completion-remains-unknown", func(t *testing.T) {
+		s := open()
+		stub := &stubQGA{target: eligibleTarget(), result: &qga.GuestResult{Outcome: "completed"}}
+		stack := stackFor(s, stub, permissions)
+		w := stack.post(`{"namespace":"team","workspace_name":"vm","executable":"whoami","args":[]}`, "")
+		var response struct {
+			ExecutionID string `json:"execution_id"`
+			RecordingID string `json:"recording_id"`
+			State       string `json:"state"`
+			Outcome     string `json:"outcome"`
+			ExitCode    *int   `json:"exit_code"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &response) != nil || response.State != "unknown" || response.Outcome != "unknown" || response.ExitCode != nil || len(stub.commands) != 1 {
+			t.Fatalf("incomplete completion became success: %d %s", w.Code, w.Body.String())
+		}
+		checkAudit(response.ExecutionID, "finished")
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		reopened := open()
+		_, outcome, err := reopened.Metadata().Get(ctx, response.ExecutionID)
+		if err != nil || outcome.State != storage.StateUnknown || outcome.Termination != "invalid runner completion; do not rerun" {
+			t.Fatalf("reopen changed unknown result: %+v %v", outcome, err)
+		}
+		reader, err := reopened.Recording().Open(ctx, response.RecordingID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reader.Close()
+		proof, err := reader.TerminalIntent(ctx)
+		if err != nil || proof.Snapshot().Outcome.State != storage.StateUnknown {
+			t.Fatalf("terminal evidence upgraded invalid completion: %v", err)
+		}
+		if repaired, err := execution.NewService(reopened).ReconcileTerminal(ctx, response.ExecutionID); err != nil || repaired || len(stub.commands) != 1 {
+			t.Fatal("unknown completion was recovered/rerun as success")
+		}
+		replay := stackFor(reopened, nil, permissions)
+		if w := replay.get("/v1/executions/"+response.ExecutionID+"/recording/chunks/1", true); w.Code != 200 {
+			t.Fatalf("protected incomplete-result evidence unavailable: %d", w.Code)
+		}
+	})
 	for _, kind := range []string{"command", "linux-script", "windows-script"} {
 		t.Run("revoked-before-dispatch/"+kind, func(t *testing.T) {
 			s := open()

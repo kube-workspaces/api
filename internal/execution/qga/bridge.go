@@ -269,7 +269,7 @@ type guestExecStart struct {
 // appear once the process has exited.
 type guestExecStatus struct {
 	Exited       bool   `json:"exited"`
-	ExitCode     int    `json:"exitcode"`
+	ExitCode     *int   `json:"exitcode"`
 	OutData      string `json:"out-data"`
 	ErrData      string `json:"err-data"`
 	Signal       int    `json:"signal"`
@@ -281,8 +281,8 @@ type guestExecStatus struct {
 // installed runner through the QEMU guest agent, polls for its bounded JSON
 // result and best-effort clears the staged envelope. A guest refusal to spawn
 // the runner returns ErrNotStarted: a deterministic "nothing ran" failure. Any
-// other protocol failure without a parsed result returns ErrTransport: an
-// unknown outcome.
+// other protocol failure, incomplete capture or invalid result returns
+// ErrTransport: an unknown outcome, never inferred success or a rerun.
 func (b *Bridge) Run(ctx context.Context, target Target, executionID string, envelope, keysJSON []byte, deadlineSeconds int) (*GuestResult, error) {
 	return b.runWithExtras(ctx, target, executionID, envelope, keysJSON, deadlineSeconds, nil)
 }
@@ -364,6 +364,9 @@ func (b *Bridge) runWithExtras(ctx context.Context, target Target, executionID s
 		if status.Signal != 0 {
 			return nil, fmt.Errorf("%w: runner was killed by signal %d", ErrTransport, status.Signal)
 		}
+		if status.ExitCode == nil || *status.ExitCode != 0 || status.OutTruncated || status.ErrTruncated {
+			return nil, fmt.Errorf("%w: runner capture is incomplete or unsuccessful", ErrTransport)
+		}
 		raw, err := base64.StdEncoding.DecodeString(status.OutData)
 		if err != nil {
 			return nil, fmt.Errorf("%w: runner result is not base64", ErrTransport)
@@ -381,13 +384,27 @@ func parseRunnerResult(raw []byte) (*GuestResult, error) {
 		return nil, fmt.Errorf("%w: runner result size is out of bounds", ErrTransport)
 	}
 	var parsed runnerResult
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&parsed); err != nil {
+	if !decodeExactObject(raw, &parsed, runnerResultFields) {
 		return nil, fmt.Errorf("%w: runner result is malformed", ErrTransport)
 	}
 	if parsed.Version != runnerResultVersion || parsed.Outcome == "" {
 		return nil, fmt.Errorf("%w: runner result has an unsupported shape", ErrTransport)
+	}
+	switch parsed.Outcome {
+	case "completed":
+		if parsed.ExitCode == nil || parsed.Truncated {
+			return nil, fmt.Errorf("%w: runner completion is incomplete or contradictory", ErrTransport)
+		}
+	case "output-limit":
+		if !parsed.Truncated {
+			return nil, fmt.Errorf("%w: output-limit result omits truncation", ErrTransport)
+		}
+	case "deadline", "denied", "runner-error", "spawn-failed":
+	default:
+		return nil, fmt.Errorf("%w: runner outcome is unsupported", ErrTransport)
+	}
+	if parsed.ExitCode != nil && (int64(*parsed.ExitCode) < -1<<31 || int64(*parsed.ExitCode) > 1<<31-1) {
+		return nil, fmt.Errorf("%w: runner exit code is out of bounds", ErrTransport)
 	}
 	stdout, err := base64.StdEncoding.DecodeString(parsed.StdoutB64)
 	if err != nil {
@@ -396,6 +413,9 @@ func parseRunnerResult(raw []byte) (*GuestResult, error) {
 	stderr, err := base64.StdEncoding.DecodeString(parsed.StderrB64)
 	if err != nil {
 		return nil, fmt.Errorf("%w: runner stderr is not base64", ErrTransport)
+	}
+	if len(stdout)+len(stderr) > MaxOutputBytes {
+		return nil, fmt.Errorf("%w: runner output exceeds its limit", ErrTransport)
 	}
 	return &GuestResult{
 		Outcome:    parsed.Outcome,

@@ -117,6 +117,17 @@ remain unchanged. This is admission fencing, not cancellation of already dispatc
 work. It does not replace guest grant verification or establish generic TCP
 forwarding exclusions, enrollment/mTLS or interactive shell delivery.
 
+Runner results must be one complete v1 JSON object with exactly the required
+fields/types, no duplicate members or trailing data, and at most 16 KiB combined
+decoded stdout/stderr. Rust's nullable exit/denial fields remain supported for
+appropriate outcomes, but `completed` requires an explicit signed-32-bit command
+exit code and cannot also claim truncation. The QGA capture must independently
+report a normal zero **agent** exit and no capture truncation; a nonzero submitted
+**command** exit remains an ordinary recorded failure. Incomplete/contradictory
+capture is permanently unknown, never success or an automatic rerun. The service
+also refuses to infer success from an incomplete internal completion object.
+Protocol errors do not echo guest result content into ordinary diagnostics.
+
 ### Bounded Linux and Windows scripts
 
 `POST /v1/executions/start` supports root/SYSTEM scripts on a matching guest runner:
