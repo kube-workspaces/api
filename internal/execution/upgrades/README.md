@@ -18,7 +18,9 @@ listener, permissive authority source, automatic upgrade or QGA fallback.
   after durable acknowledgment**. Missing/finalized/lost recordings deny.
 
 The live authority source and recording-writer recovery/reattachment adapters
-are not supplied here. The admission `Service` supplies a concrete recorder for
+are not supplied here. `KubernetesPhaseGate` supplies the credential/policy/
+controller-incarnation part, not a complete `PhaseAuthoritySource` (below).
+The admission `Service` supplies a concrete recorder for
 its existing live session (below), not permission to resume a writer after
 restart. Test authority mocks are not production authorization. No trust key or
 release is created by this library.
@@ -93,12 +95,71 @@ reconstructs a hash chain from guessed state. There is no distributed recorder
 recovery/lease protocol here; that remains a production prerequisite. The
 concrete adapter is not connected to a phase route, transport or enabled issuer.
 
+## Live credential and controller-incarnation gate
+
+`KubernetesPhaseGate.Check(ctx, admittedAttempt, trustedJournal, credential)`
+performs the concrete Kubernetes/account part of current authority. It returns
+only the expected management guest identity, **not permission to sign/install**.
+It deliberately does not implement `PhaseAuthoritySource`, and the server does
+not construct it for an enabled upgrade path. Inputs must come from trusted
+attempt/journal coordination, not an HTTP body or guest self-reported hash.
+
+- Requires a fresh signed credential bound to the admitted actor UID and its
+  current authentication method/revision. It calls the existing execution
+  authorizer for namespace/workspace execution and elevation, then independently
+  requires current administrator authority. A delegated SYSTEM/editor/manage
+  grant, stale token role, caller-built `UserInfo`, anonymous/auth-disabled mode
+  or durable actor UID alone cannot authorize this check.
+- Re-reads account state and honors the existing explicit `AuthConfig.adminEmails`
+  override only while it is current. Disabled/deleted/replaced accounts, revoked
+  method/password revisions and temporary-password restrictions deny. This adds
+  no MFA/recent-auth claim or alternative authentication mechanism.
+- Requires current strict default-off upgrade, VM execution and elevation policy.
+  It bypasses the ordinary auth/policy caches using fresh auth providers and the
+  existing uncached strict policy readers. Cached predecessor signing keys are
+  not reused across checks; key rotation may conservatively require fresh sign-in.
+- Uses the existing management enrollment resolver for current Workspace/VM UID,
+  controller ownership, running state, provisioning markers and acknowledged
+  revocation epoch. Stop/reset/delete/reboot/detach and pending revocation deny.
+  Scope is the currently qualified `windows11-amd64-v1` profile, not arbitrary
+  Linux/generic guests or a newly enabled profile. No QGA/VMI/launcher transport
+  is acquired by this gate.
+- Rejects mixed AuthConfig/PlatformConfig/User/Workspace UID/resource-version
+  snapshots. Credential and policy checks bracket identity resolution; resource
+  lookups share a five-second deadline. Missing/unversioned state and outages
+  return no identity rather than a last-good result.
+- Rechecks admitted plan/actor/VM/epoch/manifest/inventory/reboot bindings, active
+  journal action/sequence, stored owner/fence, cancellation and lease/journal/
+  credential deadlines, including after cluster reads. These are snapshot checks,
+  not a replacement for the ledger's locked authoritative attempt checks.
+
+The credential is call-local: the gate never stores it on an attempt, logs it,
+mints worker tokens or substitutes an actor lookup for credential verification.
+Recovery must obtain current authority, not reconstruct credentials from metadata.
+
+Still required for a complete production source: publisher/allowlist and payload
+approval, exact journal lineage from an independent trusted head, the actual
+authenticated guest boot/challenge/API-certificate exchange and live recording
+ownership/recovery. Controller identity alone does not prove possession of an
+enrolled guest key or a successful mTLS handshake. Nor can these reads guarantee
+policy remained unchanged after return: guest-side current authority is mandatory
+at the effect boundary. There is no new route, listener, QGA fallback or rollout.
+
 ## Automated tests
 
 Ordinary unit tests cover missing trust/durability/recording dependencies,
 recording and authority outages, binding/schema denial, protected receipt
 substitution, key-copy isolation, signature verification, slow callbacks/commits,
 and uncertain-commit replay denial.
+
+`TestKubernetesPhaseGate*` runs in the ordinary race-enabled suite. It exercises
+the real credential/provenance validators and Kubernetes resolvers with a fake
+dynamic client: administrator/delegation/UID checks, immediate policy/account/
+credential/epoch/lifecycle revocation, version changes during reads, lookup
+outages, missing metadata and deadlines reached during reads. A test-only issuer
+composition proves current revocation prevents claim/signature despite an already
+recorded intent. Artifacts, lineage, recording and guest exchange in that
+composition remain doubles; these are not live-cluster or enrolled-guest proofs.
 
 With **disposable** PostgreSQL only:
 
