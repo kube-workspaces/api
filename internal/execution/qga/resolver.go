@@ -192,6 +192,13 @@ func (r *Resolver) launcherPod(ctx context.Context, vmi *unstructured.Unstructur
 	if err != nil {
 		return nil, ErrUnavailable
 	}
+	// Uniqueness is meaningful only over a complete result set. Keep the
+	// deliberately small list bound, but never choose a first-page launcher
+	// when another active launcher could be hidden on a subsequent page.
+	// Do not follow an unbounded chain of pages controlled by namespace churn.
+	if list.GetContinue() != "" || (list.GetRemainingItemCount() != nil && *list.GetRemainingItemCount() != 0) {
+		return nil, ErrUnavailable
+	}
 	activePods, _, _ := unstructured.NestedStringMap(vmi.Object, "status", "activePods")
 	var found *unstructured.Unstructured
 	for i := range list.Items {

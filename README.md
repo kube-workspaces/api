@@ -117,6 +117,13 @@ remain unchanged. This is admission fencing, not cancellation of already dispatc
 work. It does not replace guest grant verification or establish generic TCP
 forwarding exclusions, enrollment/mTLS or interactive shell delivery.
 
+Launcher uniqueness must be established from a complete bounded Pod listing.
+A continuation token or nonzero remaining-item count makes the target unavailable,
+even when the first page contains one eligible launcher. The resolver deliberately
+does not follow unbounded pages during namespace churn. A complete two-item page
+with one eligible launcher remains valid; an incomplete page is never evidence of
+uniqueness.
+
 The runtime also re-resolves and compares the full target before **every** QGA
 RPC: capability polling, each staged chunk, dispatch, result polling and cleanup.
 Target changes or unavailable checks stop further guest calls; an unfinished
