@@ -17,9 +17,11 @@ listener, permissive authority source, automatic upgrade or QGA fallback.
   that returns an exact recording/chunk-index/plaintext-digest receipt **only
   after durable acknowledgment**. Missing/finalized/lost recordings deny.
 
-The live authority source and recording-writer recovery/reattachment adapters
+The complete live authority source and recording-writer recovery/reattachment adapters
 are not supplied here. `KubernetesPhaseGate` supplies the credential/policy/
 controller-incarnation part, not a complete `PhaseAuthoritySource` (below).
+`VerifiedPhaseArtifacts` and `ArtifactPhaseAuthority` supply the artifact/plan
+part with mandatory independent current approval and base authority (below).
 The admission `Service` supplies a concrete recorder for
 its existing live session (below), not permission to resume a writer after
 restart. Test authority mocks are not production authorization. No trust key or
@@ -145,6 +147,61 @@ enrolled guest key or a successful mTLS handshake. Nor can these reads guarantee
 policy remained unchanged after return: guest-side current authority is mandatory
 at the effect boundary. There is no new route, listener, QGA fallback or rollout.
 
+## Immutable approved software artifacts
+
+`VerifyPhaseArtifacts` checks the operator-pinned target **and** predecessor:
+
+- Dedicated publisher Ed25519 signatures over the existing manifest domain,
+  exact raw manifest digests, and exact immutable target IDs. Approval has at
+  most 64 ID/digest entries and 1–16 independently provisioned publisher keys;
+  wildcard/invalid entries and a missing predecessor approval deny. Envelopes
+  are bounded before copying and their bytes/signatures are retained privately.
+- The target's signed rollback list must name the exact predecessor ID/digest.
+  Product codes and MSI payload digests must differ; target version must be
+  numerically newer and its installed-version range must include the declared
+  predecessor version. Both releases must support management/desktop/updater v1.
+  Explicit rollback can still restore the old member of this original pair; it
+  does not reverse the admitted plan or admit an arbitrary downgrade.
+- Both MSI **and** updater payloads are streamed for both manifests, each bounded
+  to signed size plus one byte and SHA-256 checked. Every opened stream is closed;
+  read/open/close failures and cancellation return no verified set. Lookups use
+  only a verified manifest digest and signed basename, never caller URLs or paths.
+  The trusted staging transport must honor context for open/read/close; a byte
+  limit cannot interrupt an arbitrary blocked reader. No transport is provided.
+- Scope is software-only: either manifest declaring a driver denies. Driver
+  package signatures/metadata do not qualify a driver adapter. Reboot consent in
+  the plan additionally requires both manifests to permit `may-require`; there
+  is no implicit reboot or broader compensation permission.
+
+`VerifiedPhaseArtifacts.Plan` constructs exact plan bindings from the admitted
+attempt and these releases. `CheckPlan` compares the entire candidate, including
+actor/workspace/VM/epoch, recording, inventory and manifest digests, product codes,
+driver absence and reboot consent. Caller mutation of supplied envelopes or plans
+cannot change verified identity. A zero/nil set cannot manufacture a plan.
+
+**Fresh approval is still mandatory.** Plan/check calls reverify both retained
+signatures and allowlist bindings against the independently current policy passed
+on that call. A previously verified payload set is not cached permission. Removing
+either target, replacing a digest or retiring either publisher blocks the plan,
+even when the new target remains trusted. Rotation requires explicit overlapping
+keys; a retired predecessor key is not silently accepted for rollback.
+
+`ArtifactPhaseAuthority` is a decorator, not standalone complete authority. Its
+constructor requires the verified set, a current operator-policy reader, and a
+base supplying **all other** current identity/credential/lineage/authenticated
+exchange checks. Intent checks compose base and artifact approval; phase checks
+re-read approval before and after the base exchange, returning no phase context
+on revocation/outage. No permissive production base or policy reader is supplied,
+and the server does not construct an enabled chain.
+
+This proves the previously read bytes match publisher-authenticated, currently
+approved metadata—not that an MSI is valid to Windows Installer, installed guest
+inventory is current, payloads remain protected/staged on the guest, journal
+lineage is trusted, or mTLS/recording recovery succeeded. Guest-side pinned-file
+hash/package checks and all live authority are still mandatory. The approval
+snapshot must be independently current and not concurrently mutated while used.
+There are no downloads, release/key creation, driver qualification or live trials.
+
 ## Automated tests
 
 Ordinary unit tests cover missing trust/durability/recording dependencies,
@@ -160,6 +217,14 @@ outages, missing metadata and deadlines reached during reads. A test-only issuer
 composition proves current revocation prevents claim/signature despite an already
 recorded intent. Artifacts, lineage, recording and guest exchange in that
 composition remain doubles; these are not live-cluster or enrolled-guest proofs.
+
+`TestPhaseArtifacts*` and `TestArtifactAuthority*` execute real Ed25519 and bounded
+payload verification using synthetic byte streams, not installable packages. They
+cover every target/predecessor MSI/helper, exact plan substitution, both allowlist
+entries, publisher/domain/rotation failures, incompatible versions/protocols,
+reboot/driver denial, mutation isolation, payload flood/truncation/errors,
+cancellation/close handling, and revocation before/during a composed base exchange.
+The base exchange in decorator tests is a double, not an authenticated transport.
 
 With **disposable** PostgreSQL only:
 

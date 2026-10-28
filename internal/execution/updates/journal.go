@@ -138,6 +138,14 @@ func (p JournalPlan) SHA256() string {
 	return Digest(append([]byte("kw-agent-upgrade-plan/v1\x00"), raw...))
 }
 
+// Validate checks only structural journal-plan bounds, not trust or permission.
+func (p JournalPlan) Validate() error {
+	if !p.valid() {
+		return ErrJournal
+	}
+	return nil
+}
+
 func (p JournalPlan) valid() bool {
 	b := p.Binding
 	for _, s := range []string{b.AttemptID, b.Namespace, b.WorkspaceName, b.WorkspaceUID, b.VMUID, b.ActorUID, b.RecordingID} {

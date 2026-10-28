@@ -14,6 +14,8 @@ import (
 // elevation policy, enrolled workspace/VM/epoch/boot, verified allowlisted target
 // and predecessor, reboot consent, deadline and exact trusted journal lineage.
 // No production source, mTLS listener or default-on issuer is supplied here.
+// A composed implementation must fulfill the complete contract; individual
+// gate/decorator components are not standalone authority.
 type PhaseAuthoritySource interface {
 	CheckIntent(context.Context, storage.AgentUpgradeAttempt, *updates.Journal) error
 	// CurrentPhase repeats the live checks at issuance and obtains the challenge
