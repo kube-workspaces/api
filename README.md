@@ -106,6 +106,17 @@ prevent dispatch and retain a protected terminal result when admission completed
 This is not immediate cancellation of an already dispatched command: the bounded
 pilot still runs under its guest deadline, and no command is automatically rerun.
 
+QGA target resolution requires the complete current controller-owner chain:
+Workspace → VirtualMachine → VirtualMachineInstance → launcher Pod, including
+exact owner names/UIDs/kinds/API versions, active launcher membership and running
+state. A label or same-name VMI alone is insufficient. Runtime VMI UID changes
+are fenced across fresh snapshots and again before capability probing or guest
+staging/dispatch. Protected input recordings include the resolved VMI and launcher
+Pod UIDs; existing signed request versions and the VM/launcher transport digest
+remain unchanged. This is admission fencing, not cancellation of already dispatched
+work. It does not replace guest grant verification or establish generic TCP
+forwarding exclusions, enrollment/mTLS or interactive shell delivery.
+
 ### Bounded Linux and Windows scripts
 
 `POST /v1/executions/start` supports root/SYSTEM scripts on a matching guest runner:

@@ -246,6 +246,8 @@ func validateStartCommand(p *executions.StartPayload) error {
 // exactly what was requested, before any guest process exists.
 type recordingStart struct {
 	ProvisioningGeneration string      `json:"provisioning_generation"`
+	VMIUID                 string      `json:"vmi_uid,omitempty"`
+	LauncherPodUID         string      `json:"launcher_pod_uid,omitempty"`
 	RevocationEpoch        uint64      `json:"revocation_epoch"`
 	Type                   string      `json:"type"`
 	Time                   string      `json:"time"`
@@ -445,6 +447,8 @@ func (s *executionssrvc) Start(ctx context.Context, p *executions.StartPayload) 
 	}
 	chunk, err := json.Marshal(recordingStart{
 		ProvisioningGeneration: target.VMUID,
+		VMIUID:                 target.VMIUID,
+		LauncherPodUID:         target.PodUID,
 		RevocationEpoch:        target.RevocationEpoch,
 		Type:                   "start",
 		Time:                   time.Now().UTC().Format(time.RFC3339),

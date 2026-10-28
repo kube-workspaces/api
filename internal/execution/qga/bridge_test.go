@@ -164,7 +164,7 @@ func successRunnerResult() []byte {
 func testTarget() Target {
 	return Target{
 		Namespace: "team", WorkspaceName: "vm", WorkspaceUID: "workspace-uid",
-		VMUID: "vm-uid", PodName: testPodName, PodUID: testPodUID, Domain: "team_vm",
+		VMUID: "vm-uid", VMIUID: "vmi-uid", PodName: testPodName, PodUID: testPodUID, Domain: "team_vm",
 	}
 }
 

@@ -206,7 +206,7 @@ func TestExecutionPersistentIntegration(t *testing.T) {
 					}
 					if strings.HasSuffix(suffix, "/0") {
 						var input recordingStart
-						if json.Unmarshal(chunk.Data, &input) != nil || input.ProvisioningGeneration != target.VMUID || input.DeadlineSeconds != 10 || (kind != "command" && (input.Script == nil || input.Script.Body != payload["script"].(map[string]any)["body"])) {
+						if json.Unmarshal(chunk.Data, &input) != nil || input.ProvisioningGeneration != target.VMUID || input.VMIUID != target.VMIUID || input.LauncherPodUID != target.PodUID || input.DeadlineSeconds != 10 || (kind != "command" && (input.Script == nil || input.Script.Body != payload["script"].(map[string]any)["body"])) {
 							t.Fatal("replay lost script body or VM/deadline binding")
 						}
 					} else {

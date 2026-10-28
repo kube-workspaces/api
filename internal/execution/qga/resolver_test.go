@@ -49,14 +49,16 @@ func windowsFixtures() (*unstructured.Unstructured, *unstructured.Unstructured, 
 	}}
 	vmi := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "kubevirt.io/v1", "kind": "VirtualMachineInstance",
-		"metadata": map[string]interface{}{"name": "vm", "namespace": "team", "uid": "vmi-uid", "resourceVersion": "1"},
-		"status":   map[string]interface{}{"phase": "Running", "activePods": map[string]interface{}{testPodUID: testPodName}},
+		"metadata": map[string]interface{}{"name": "vm", "namespace": "team", "uid": "vmi-uid", "resourceVersion": "1",
+			"ownerReferences": []interface{}{map[string]interface{}{"apiVersion": "kubevirt.io/v1", "kind": "VirtualMachine", "name": "vm", "uid": "vm-uid", "controller": true}}},
+		"status": map[string]interface{}{"phase": "Running", "activePods": map[string]interface{}{testPodUID: testPodName}},
 	}}
 	pod := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "v1", "kind": "Pod",
 		"metadata": map[string]interface{}{
 			"name": testPodName, "namespace": "team", "uid": testPodUID, "resourceVersion": "1",
-			"labels": map[string]interface{}{"vm.kubevirt.io/name": "vm"},
+			"labels":          map[string]interface{}{"vm.kubevirt.io/name": "vm"},
+			"ownerReferences": []interface{}{map[string]interface{}{"apiVersion": "kubevirt.io/v1", "kind": "VirtualMachineInstance", "name": "vm", "uid": "vmi-uid", "controller": true}},
 		},
 		"status": map[string]interface{}{"phase": "Running"},
 	}}
@@ -85,7 +87,7 @@ func TestResolveReturnsFreshLauncherTarget(t *testing.T) {
 	}
 	expected := Target{
 		Namespace: "team", WorkspaceName: "vm", WorkspaceUID: "workspace-uid",
-		VMUID: "vm-uid", PodName: testPodName, PodUID: testPodUID, Domain: "team_vm",
+		VMUID: "vm-uid", VMIUID: "vmi-uid", PodName: testPodName, PodUID: testPodUID, Domain: "team_vm",
 	}
 	if target != expected {
 		t.Fatalf("unexpected target: %+v", target)

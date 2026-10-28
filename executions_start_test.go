@@ -189,7 +189,7 @@ func newStoredStartStack(t *testing.T, namespace, workspace string, permissions 
 func eligibleTarget() qga.Target {
 	return qga.Target{
 		Namespace: "team", WorkspaceName: "vm", WorkspaceUID: "workspace-uid",
-		VMUID: "vm-uid", PodName: "virt-launcher-vm", PodUID: "pod-uid", Domain: "team_vm",
+		VMUID: "vm-uid", VMIUID: "vmi-uid", PodName: "virt-launcher-vm", PodUID: "pod-uid", Domain: "team_vm",
 	}
 }
 
@@ -262,6 +262,9 @@ func TestStartScriptAdmissionAndProtectedRecording(t *testing.T) {
 	if err != nil || json.Unmarshal(chunk, &recorded) != nil || recorded.Script == nil || recorded.Script.Body != body || recorded.Script.Name != "run.sh" || recorded.Cwd == nil || *recorded.Cwd != "/tmp" {
 		t.Fatalf("script must be fully recorded: %s %v", chunk, err)
 	}
+	if recorded.VMIUID != target.VMIUID || recorded.LauncherPodUID != target.PodUID {
+		t.Fatal("Linux input recording lost runtime incarnation binding")
+	}
 }
 
 func TestStartScriptPreflightFailuresDoNotAdmitOrExecute(t *testing.T) {
@@ -333,6 +336,9 @@ func TestStartWindowsScriptRecordsSystemIdentityAndFullInput(t *testing.T) {
 	var start recordingStart
 	if err != nil || json.Unmarshal(chunk, &start) != nil || start.Script == nil || *start.Script != *cmd.Script {
 		t.Fatalf("incomplete Windows recording: %s %v", chunk, err)
+	}
+	if start.VMIUID != stub.target.VMIUID || start.LauncherPodUID != stub.target.PodUID {
+		t.Fatal("Windows input recording lost runtime incarnation binding")
 	}
 }
 

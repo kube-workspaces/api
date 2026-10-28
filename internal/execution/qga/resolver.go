@@ -49,7 +49,10 @@ type Target struct {
 	WorkspaceUID  string
 	// VMUID is the controller-owned VirtualMachine UID: the management
 	// provisioning generation (reset/recreation changes it; VMI reboot does not).
-	VMUID           string
+	VMUID string
+	// VMIUID binds fresh runtime incarnation checks without changing the v1
+	// signed transport digest (which remains namespace/VM UID/launcher UID).
+	VMIUID          string
 	PodName         string
 	PodUID          string
 	Domain          string
@@ -136,12 +139,23 @@ func validWorkspace(ws *unstructured.Unstructured, namespace, name string) bool 
 }
 
 func ownedVM(ws, vm *unstructured.Unstructured) bool {
-	for _, owner := range vm.GetOwnerReferences() {
-		if owner.Controller != nil && *owner.Controller && owner.APIVersion == "kubeworkspaces.io/v1alpha1" && owner.Kind == "Workspace" && owner.Name == ws.GetName() && owner.UID == ws.GetUID() {
-			return true
+	return controllerOwned(vm, ws, "kubeworkspaces.io/v1alpha1", "Workspace")
+}
+
+func controllerOwned(child, parent *unstructured.Unstructured, apiVersion, kind string) bool {
+	if parent.GetUID() == "" || child.GetNamespace() != parent.GetNamespace() {
+		return false
+	}
+	controllers, matching := 0, false
+	for _, owner := range child.GetOwnerReferences() {
+		if owner.Controller != nil && *owner.Controller {
+			controllers++
+			if owner.APIVersion == apiVersion && owner.Kind == kind && owner.Name == parent.GetName() && owner.UID == parent.GetUID() {
+				matching = true
+			}
 		}
 	}
-	return false
+	return controllers == 1 && matching
 }
 
 func validVM(ws, vm *unstructured.Unstructured) bool {
@@ -159,8 +173,8 @@ func validVM(ws, vm *unstructured.Unstructured) bool {
 	return generation != "" && vm.GetAnnotations()["kubeworkspaces.io/windows-generation"] == generation
 }
 
-func validVMI(vmi *unstructured.Unstructured, namespace, name string) bool {
-	if vmi.GetNamespace() != namespace || vmi.GetName() != name || vmi.GetUID() == "" || vmi.GetResourceVersion() == "" || vmi.GetDeletionTimestamp() != nil {
+func validVMI(vm, vmi *unstructured.Unstructured, namespace, name string) bool {
+	if vmi.GetNamespace() != namespace || vmi.GetName() != name || vmi.GetUID() == "" || vmi.GetResourceVersion() == "" || vmi.GetDeletionTimestamp() != nil || !controllerOwned(vmi, vm, "kubevirt.io/v1", "VirtualMachine") {
 		return false
 	}
 	phase, _, _ := unstructured.NestedString(vmi.Object, "status", "phase")
@@ -185,7 +199,7 @@ func (r *Resolver) launcherPod(ctx context.Context, vmi *unstructured.Unstructur
 		if _, active := activePods[string(pod.GetUID())]; !active {
 			continue
 		}
-		if pod.GetDeletionTimestamp() != nil || pod.GetUID() == "" || pod.GetResourceVersion() == "" {
+		if pod.GetNamespace() != namespace || pod.GetDeletionTimestamp() != nil || pod.GetUID() == "" || pod.GetResourceVersion() == "" || !controllerOwned(pod, vmi, "kubevirt.io/v1", "VirtualMachineInstance") {
 			continue
 		}
 		phase, _, _ := unstructured.NestedString(pod.Object, "status", "phase")
@@ -228,7 +242,7 @@ func (r *Resolver) snapshot(ctx context.Context, namespace, name string) (Target
 	if err != nil {
 		return Target{}, lookupError(err)
 	}
-	if !validVMI(vmi, namespace, name) {
+	if !validVMI(vm, vmi, namespace, name) {
 		return Target{}, ErrDenied
 	}
 	pod, err := r.launcherPod(ctx, vmi, namespace, name)
@@ -241,6 +255,7 @@ func (r *Resolver) snapshot(ctx context.Context, namespace, name string) (Target
 		WorkspaceName:   name,
 		WorkspaceUID:    string(ws.GetUID()),
 		VMUID:           string(vm.GetUID()),
+		VMIUID:          string(vmi.GetUID()),
 		PodName:         pod.GetName(),
 		PodUID:          string(pod.GetUID()),
 		Domain:          namespace + "_" + name,
