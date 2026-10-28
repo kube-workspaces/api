@@ -24,6 +24,22 @@ management listener or enabled upgrade path is supplied. Rust adds a one-use
 authority source. The byte-identical phase fixtures and deterministic signature
 assertion in both languages use a synthetic seed, never production trust.
 
+### Durable worker-authority prerequisite
+
+The attempt store rejects worker progress at or after lease expiry, even when
+the fence has not yet been stolen. PostgreSQL transitions lock the current row
+inside the read/modify/write transaction, serializing with cancellation and
+ownership changes. Cancellation cannot be cleared by a progress patch; journal
+checkpoints cannot decrease. Safe-boundary progress after cancellation remains
+possible: the store does not terminate an installer or admit a new guest effect.
+
+`TestPostgresUpgradeAuthorityIntegration` uses two independent store connections
+and a forced row-lock interleaving to verify cancellation survives an in-flight
+transition. Run against disposable storage with
+`KW_EXECUTION_TEST_DATABASE_URL=… go test -race ./internal/execution/storage -run '^TestPostgresUpgradeAuthorityIntegration$'`.
+This is coordination hardening, not phase issuance, durable guest challenge
+consumption, current identity/policy authorization or authenticated dispatch.
+
 ## Manifest verification foundation
 
 `updates.Verify` and workspace-agent's `kw_management::updates::verify` verify

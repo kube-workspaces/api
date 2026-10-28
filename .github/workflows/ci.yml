@@ -98,6 +98,9 @@ jobs:
       - name: Storage engines
         run: go test -race -count=1 -timeout=5m -v ./internal/execution/storage -run '^(TestPostgresIntegration|TestS3Integration)$'
 
+      - name: Upgrade worker authority and cancellation races
+        run: go test -race -count=5 -timeout=5m -v ./internal/execution/storage -run '^TestPostgresUpgradeAuthorityIntegration$'
+
       - name: HTTP recording, connection loss and recovery
         run: go test -race -count=1 -timeout=5m -v -run '^TestExecution(Persistent|PostgresOutage|CommitResponseLoss|ProcessLoss)Integration$' .
 

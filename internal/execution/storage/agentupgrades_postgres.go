@@ -199,7 +199,7 @@ const postgresActiveStateSQL = `UPDATE agent_upgrade_attempts SET
 	lease_expires_at=CASE WHEN $11::bigint IS NULL THEN NULL ELSE lease_expires_at END,
 	lease_fence=CASE WHEN $11::bigint IS NULL THEN lease_fence + 1 ELSE lease_fence END
 	WHERE attempt_id=$1 AND state=$2 AND (
-		$11::bigint IS NULL OR (lease_fence = $11::bigint AND lease_owner <> '')
+		$11::bigint IS NULL OR (lease_fence = $11::bigint AND lease_owner <> '' AND lease_expires_at > $10)
 	)`
 
 func (p *postgresUpgrades) Transition(ctx context.Context, attemptID string, from AttemptState, t AttemptTransition) error {
@@ -209,15 +209,38 @@ func (p *postgresUpgrades) Transition(ctx context.Context, attemptID string, fro
 	if !t.To.Valid() || !validAttemptTransition(from, t.To) {
 		return fmt.Errorf("%w: %s -> %s is not allowed", ErrConflict, from, t.To)
 	}
-	a, err := p.Get(ctx, attemptID)
+	// Serialize the read/modify/write with cancellation, lease changes and other
+	// transitions. A state-only CAS does not protect fields patched by operations
+	// that leave the state unchanged (in particular RequestCancel).
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	a, err := scanUpgradeAttempt(tx.QueryRow(ctx,
+		`SELECT `+attemptColumns+` FROM agent_upgrade_attempts WHERE attempt_id=$1 FOR UPDATE`, attemptID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
 	if err != nil {
 		return err
 	}
 	if a.State != from {
 		return ErrConflict
 	}
+	if t.Fence != nil {
+		if a.LeaseOwner == "" || a.LeaseFence != *t.Fence {
+			return ErrFenced
+		}
+		if !t.Now.Before(a.LeaseExpiresAt) {
+			return ErrLeaseExpired
+		}
+	}
+	if t.JournalSequence != nil && *t.JournalSequence < a.JournalSequence {
+		return fmt.Errorf("%w: journal sequence cannot regress", ErrConflict)
+	}
 	if t.CancelRequested != nil {
-		a.CancelRequested = *t.CancelRequested
+		a.CancelRequested = a.CancelRequested || *t.CancelRequested
 	}
 	if t.JournalSequence != nil {
 		a.JournalSequence = *t.JournalSequence
@@ -246,31 +269,16 @@ func (p *postgresUpgrades) Transition(ctx context.Context, attemptID string, fro
 		}
 		fence = sql.NullInt64{Int64: int64(*t.Fence), Valid: true}
 	}
-	tag, err := p.pool.Exec(ctx, postgresActiveStateSQL,
+	tag, err := tx.Exec(ctx, postgresActiveStateSQL,
 		attemptID, string(from), string(t.To), encoded, a.CancelRequested, a.JournalSequence,
 		a.ErrorCode, a.Predecessor.TargetID, a.Predecessor.ManifestSHA256, t.Now, fence)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		// Re-read to report the accurate failure: wrong state, missing
-		// attempt, expired/stolen lease or a fence mismatch.
-		current, err := p.Get(ctx, attemptID)
-		if errors.Is(err, ErrNotFound) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if current.State != from {
-			return ErrConflict
-		}
-		if t.Fence != nil {
-			return ErrFenced
-		}
 		return ErrConflict
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 const postgresClaimSQL = `UPDATE agent_upgrade_attempts SET
@@ -323,8 +331,8 @@ func (p *postgresUpgrades) RenewLease(ctx context.Context, attemptID, owner stri
 	if fence > 1<<62 {
 		return ErrFenced
 	}
-	if ttl <= 0 || now.IsZero() {
-		return fmt.Errorf("%w: lease ttl and time are required", ErrConflict)
+	if owner == "" || ttl <= 0 || now.IsZero() {
+		return fmt.Errorf("%w: lease owner, ttl and time are required", ErrConflict)
 	}
 	tag, err := p.pool.Exec(ctx, postgresRenewSQL, attemptID, owner, int64(fence), now.Add(ttl), now)
 	if err != nil {

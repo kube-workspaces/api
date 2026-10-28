@@ -213,6 +213,8 @@ func (a AgentUpgradeAttempt) Clone() AgentUpgradeAttempt {
 // progress patch. Fence nil means the API/admin path: it requires no lease
 // and fences any worker out by incrementing the fence and clearing the lease.
 // A non-nil fence is the worker path and must match the currently held lease.
+// Worker progress requires an unexpired lease at Now. Cancellation is sticky
+// (a false patch never clears it) and journal checkpoints cannot decrease.
 type AttemptTransition struct {
 	To              AttemptState
 	Now             time.Time
@@ -251,7 +253,8 @@ type AgentUpgradeStore interface {
 	ActiveAttempt(ctx context.Context, vmUID string) (AgentUpgradeAttempt, error)
 	// Transition applies a fenced or administrative state change. It fails
 	// with ErrNotFound, ErrConflict (wrong current state), ErrFenced or
-	// ErrLeaseExpired.
+	// ErrLeaseExpired. Its read/modify/write must serialize with cancellation
+	// and lease changes; checking only the prior state is insufficient.
 	Transition(ctx context.Context, attemptID string, from AttemptState, t AttemptTransition) error
 	// ClaimLease takes or steals an expired worker lease, returning the new
 	// monotonically increasing fence.
@@ -394,9 +397,15 @@ func (m *memoryUpgrades) Transition(_ context.Context, attemptID string, from At
 		if a.LeaseOwner == "" || a.LeaseFence != *t.Fence {
 			return ErrFenced
 		}
+		if !t.Now.Before(a.LeaseExpiresAt) {
+			return ErrLeaseExpired
+		}
 	}
 	if t.Now.IsZero() {
 		return fmt.Errorf("%w: transition time required", ErrConflict)
+	}
+	if t.JournalSequence != nil && *t.JournalSequence < a.JournalSequence {
+		return fmt.Errorf("%w: journal sequence cannot regress", ErrConflict)
 	}
 	a.State = t.To
 	a.UpdatedAt = t.Now
@@ -407,7 +416,7 @@ func (m *memoryUpgrades) Transition(_ context.Context, attemptID string, from At
 		a.PhaseTimes[t.To] = t.Now
 	}
 	if t.CancelRequested != nil {
-		a.CancelRequested = *t.CancelRequested
+		a.CancelRequested = a.CancelRequested || *t.CancelRequested
 	}
 	if t.JournalSequence != nil {
 		a.JournalSequence = *t.JournalSequence
@@ -454,6 +463,9 @@ func (m *memoryUpgrades) ClaimLease(_ context.Context, attemptID, owner string, 
 }
 
 func (m *memoryUpgrades) RenewLease(_ context.Context, attemptID, owner string, fence uint64, now time.Time, ttl time.Duration) error {
+	if owner == "" || ttl <= 0 || now.IsZero() {
+		return fmt.Errorf("%w: lease owner, ttl and time are required", ErrConflict)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	a, ok := m.attempts[attemptID]
