@@ -138,6 +138,15 @@ capture is permanently unknown, never success or an automatic rerun. The service
 also refuses to infer success from an incomplete internal completion object.
 Protocol errors do not echo guest result content into ordinary diagnostics.
 
+QGA replies themselves also require one bounded UTF-8 JSON envelope with exactly
+one non-null `return` or well-formed `error`. Duplicate/case-alias/unknown members,
+trailing content and invalid typed return values fail closed. The supported QGA
+status/write schemas preserve documented optional members but reject nulls and
+duplicate fields rather than coercing them to zero values. An ambiguous spawn
+reply is unknown, not proof that nothing ran. Only an unambiguous, well-formed
+guest refusal to spawn is classified as not started; ordinary diagnostics omit
+guest-controlled error class/description and raw pod-exec error details.
+
 ### Bounded Linux and Windows scripts
 
 `POST /v1/executions/start` supports root/SYSTEM scripts on a matching guest runner:

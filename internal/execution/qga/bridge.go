@@ -145,7 +145,7 @@ type qgaError struct {
 
 type qgaResponse struct {
 	Return json.RawMessage `json:"return"`
-	Error  *qgaError       `json:"error"`
+	Error  json.RawMessage `json:"error"`
 }
 
 // qgaRefusal is a well-formed QGA error reply: the guest agent answered and
@@ -153,12 +153,10 @@ type qgaResponse struct {
 // distinguish a deterministic guest refusal from a lost transport.
 type qgaRefusal struct {
 	execute string
-	class   string
-	desc    string
 }
 
 func (e *qgaRefusal) Error() string {
-	return fmt.Sprintf("%s: %s: %s", e.execute, e.class, e.desc)
+	return fmt.Sprintf("%s: guest agent refused request", e.execute)
 }
 
 // transportErr classifies one QGA reply for the callers where a guest refusal
@@ -187,19 +185,20 @@ func (b *Bridge) qga(ctx context.Context, target Target, execute string, argumen
 	}
 	stdout, _, err := b.exec(ctx, target.Namespace, target.PodName, "compute", podExecCommand(target.Domain), command)
 	if err != nil {
-		return fmt.Errorf("%w: %s pod exec failed: %v", ErrTransport, execute, err)
+		return fmt.Errorf("%w: %s pod exec failed", ErrTransport, execute)
 	}
 	var response qgaResponse
-	if err := json.Unmarshal(stdout, &response); err != nil {
+	if len(stdout) > maxQGAResponseBytes || !decodeObject(stdout, &response, qgaResponseFields, []string{}) || (len(response.Return) == 0) == (len(response.Error) == 0) {
 		return fmt.Errorf("%w: %s returned an invalid QGA response", ErrTransport, execute)
 	}
-	if response.Error != nil {
-		return &qgaRefusal{execute: execute, class: response.Error.Class, desc: response.Error.Desc}
+	if len(response.Error) != 0 {
+		var refusal qgaError
+		if !decodeExactObject(response.Error, &refusal, qgaErrorFields) || refusal.Class == "" || refusal.Desc == "" {
+			return fmt.Errorf("%w: %s returned an invalid QGA refusal", ErrTransport, execute)
+		}
+		return &qgaRefusal{execute: execute}
 	}
-	if len(response.Return) == 0 {
-		return fmt.Errorf("%w: %s returned no QGA result", ErrTransport, execute)
-	}
-	if result != nil && json.Unmarshal(response.Return, result) != nil {
+	if !decodeQGAReturn(response.Return, result) {
 		return fmt.Errorf("%w: %s returned an unreadable QGA result", ErrTransport, execute)
 	}
 	return nil
@@ -222,9 +221,7 @@ func (b *Bridge) stageFile(ctx context.Context, target Target, path string, cont
 		// QGA advances the handle's file position itself. Its write schema uses
 		// buf-b64 (not guest-exec's data spelling) and has no offset argument.
 		write := map[string]any{"handle": handle, "buf-b64": base64.StdEncoding.EncodeToString(content[offset:end])}
-		var written struct {
-			Count int64 `json:"count"`
-		}
+		var written guestFileWrite
 		if err := b.qga(ctx, target, "guest-file-write", write, &written); err != nil {
 			closeHandle()
 			return transportErr(err)

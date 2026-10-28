@@ -12,6 +12,13 @@ import (
 // It never returns decoder errors that may contain protected guest content.
 // Callers bound raw input before invoking it.
 func decodeExactObject(raw []byte, result any, fields map[string]bool) bool {
+	return decodeObject(raw, result, fields, nil)
+}
+
+// decodeObject also supports optional members. A nil required list requires all
+// fields; a non-nil list requires only those named fields. Present non-nullable
+// members must never be null, even when optional.
+func decodeObject(raw []byte, result any, fields map[string]bool, required []string) bool {
 	if !utf8.Valid(raw) {
 		return false
 	}
@@ -33,8 +40,16 @@ func decodeExactObject(raw []byte, result any, fields map[string]bool) bool {
 			return false
 		}
 	}
-	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || len(seen) != len(fields) {
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
 		return false
+	}
+	if required == nil && len(seen) != len(fields) {
+		return false
+	}
+	for _, name := range required {
+		if !seen[name] {
+			return false
+		}
 	}
 	if decoder.Decode(new(any)) != io.EOF {
 		return false

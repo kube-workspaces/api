@@ -349,8 +349,8 @@ func TestBridgeRunRunnerAbsenceIsNotAnUnknownOutcome(t *testing.T) {
 	if errors.Is(err, ErrTransport) {
 		t.Fatalf("runner absence must not be a transport loss: %v", err)
 	}
-	if !strings.Contains(err.Error(), "GenericError: scripted failure") {
-		t.Fatalf("refusal detail was dropped: %v", err)
+	if !strings.Contains(err.Error(), "guest agent refused request") || strings.Contains(err.Error(), "scripted failure") {
+		t.Fatalf("refusal classification was lost or guest detail escaped: %v", err)
 	}
 	for _, name := range executes(fake.calls) {
 		if name == "guest-exec-status" {
