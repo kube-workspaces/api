@@ -14,9 +14,11 @@ document does not approve the proposed 720h default as a permanent policy. The
 configured metadata duration must still cover the recording duration. Recording
 expiry alone does **not** delete metadata/audit; that requires the separate opt-in
 below. Ephemeral mode rejects both retention switches.
-This API-level switch is not a dedicated Helm values field yet; coordinate any
-operator-controlled deployment overlay/chart adoption separately. Existing chart
-duration settings do not enable the worker.
+Deployment field availability is versioned separately. A chart containing retention
+wiring uses `execution.storage.retention.recordingsEnabled`, `metadataEnabled` and
+`policyAcknowledged`; coordinate chart adoption separately and see the
+[deployment contract](https://github.com/kube-workspaces/deploy/blob/main/docs/vm-execution-storage.md#explicit-retention-workers).
+Duration-only profiles and Kustomize defaults do not enable either worker.
 
 ## Scope and safety
 

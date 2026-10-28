@@ -112,6 +112,28 @@ func TestMetadataRetentionRequiresSeparateExplicitOptIn(t *testing.T) {
 	}
 }
 
+// Deployment templates deliberately compare whole-hour policies. Keep the
+// documented chart boundary compatible with the runtime's Go duration parser.
+func TestRetentionChartHourBoundary(t *testing.T) {
+	for _, duration := range []string{"1h", "24h", "168h", "2562047h", "2562048h"} {
+		env := persistentEnvironment("external")
+		env["KW_EXECUTION_RETENTION_ENABLED"] = "true"
+		env["KW_EXECUTION_METADATA_RETENTION_ENABLED"] = "true"
+		env["KW_EXECUTION_RETENTION_RECORDINGS"] = duration
+		env["KW_EXECUTION_RETENTION_METADATA"] = duration
+		cfg, err := readStorageConfig(func(key string) string { return env[key] }, testKeyFile)
+		if duration == "2562048h" {
+			if err == nil {
+				t.Fatal("Go duration overflow accepted")
+			}
+			continue
+		}
+		if err != nil || !cfg.RecordingRetentionEnabled || !cfg.MetadataRetentionEnabled {
+			t.Fatalf("chart duration %s rejected by runtime: %v", duration, err)
+		}
+	}
+}
+
 func TestRecordingRetentionRequiresExplicitPersistentOptIn(t *testing.T) {
 	for _, tt := range []struct {
 		mode, enabled, duration string
