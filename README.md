@@ -539,6 +539,15 @@ worker. Its configuration, trust rotation and readiness contract are documented
 in [`internal/execution/management/README.md`](internal/execution/management/README.md).
 It remains disabled by default and exposes no public enrollment/start route.
 
+Management certificate identities use canonical, role-separated SPIFFE URIs.
+The Go PKI and guest `kw-management::identity` parser share positive/negative URI
+vectors, including component bounds and unsigned-64-bit revocation epochs.
+Certificate validation checks the original SAN encoding as well as parsed fields:
+URL normalization must not hide uppercase schemes, empty fragments or ignored
+GeneralName types. A valid CA signature alone does not authorize an identity.
+These checks do not deliver guest machine-key storage, a Rust TLS verifier,
+enrollment delivery or a management listener; those integrations remain required.
+
 Disposable PostgreSQL/S3 integration checks are opt-in:
 
 ```sh

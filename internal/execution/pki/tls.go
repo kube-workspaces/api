@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/hex"
 )
 
@@ -57,7 +58,58 @@ func CertificateIdentity(cert *x509.Certificate) (Identity, error) {
 	} else if cert.ExtKeyUsage[0] != x509.ExtKeyUsageClientAuth || len(cert.DNSNames) != 0 {
 		return Identity{}, ErrCertificate
 	}
+	if !canonicalSAN(cert, i) {
+		return Identity{}, ErrCertificate
+	}
 	return i, nil
+}
+
+// x509's parsed URL values lose lexical information. Check the original SAN
+// encoding too, so uppercase schemes, empty fragments and ignored GeneralName
+// types cannot become canonical management identities by normalization.
+func canonicalSAN(cert *x509.Certificate, identity Identity) bool {
+	uri, err := identity.URI()
+	if err != nil {
+		return false
+	}
+	found := false
+	for _, extension := range cert.Extensions {
+		if !extension.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 17}) {
+			continue
+		}
+		if found {
+			return false
+		}
+		found = true
+		var names []asn1.RawValue
+		if rest, err := asn1.Unmarshal(extension.Value, &names); err != nil || len(rest) != 0 {
+			return false
+		}
+		uris, dns := 0, 0
+		for _, name := range names {
+			if name.Class != 2 || name.IsCompound {
+				return false
+			}
+			switch name.Tag {
+			case 6:
+				uris++
+				if string(name.Bytes) != uri.String() {
+					return false
+				}
+			case 2:
+				dns++
+				if identity.Role != RoleGuest || string(name.Bytes) != ServerName {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+		if uris != 1 || (identity.Role == RoleGuest && dns != 1) || (identity.Role == RoleAPI && dns != 0) {
+			return false
+		}
+	}
+	return found
 }
 
 func localIdentity(cert tls.Certificate) (Identity, error) {

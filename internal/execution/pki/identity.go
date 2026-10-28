@@ -71,6 +71,20 @@ func (i Identity) URI() (*url.URL, error) {
 	return &url.URL{Scheme: "spiffe", Host: trustDomain, Path: path}, nil
 }
 
+// ParseIdentityURI rejects lexical aliases before URL parsing can normalize
+// them (for example an uppercase scheme or an empty trailing fragment).
+// Parsing does not establish certificate trust or current authorization.
+func ParseIdentityURI(raw string) (Identity, error) {
+	if len(raw) > len("spiffe://kubeworkspaces.io/management/v1/workspaces/")+4*257+20 {
+		return Identity{}, ErrIdentity
+	}
+	uri, err := url.Parse(raw)
+	if err != nil || uri.String() != raw {
+		return Identity{}, ErrIdentity
+	}
+	return parseIdentity(uri)
+}
+
 func parseIdentity(uri *url.URL) (Identity, error) {
 	var i Identity
 	if uri == nil || uri.Scheme != "spiffe" || uri.Host != trustDomain || uri.User != nil || uri.RawPath != "" || uri.RawQuery != "" || uri.ForceQuery || uri.Fragment != "" {
