@@ -104,6 +104,9 @@ jobs:
       - name: Durable exact-action phase issuer
         run: go test -race -count=3 -timeout=5m -v ./internal/execution/upgrades -run '^TestPostgresPhaseIssuerIntegration$'
 
+      - name: Protected phase recording and S3 acknowledgment loss
+        run: go test -race -count=3 -timeout=5m -v ./internal/execution/upgrades -run '^TestPhaseRecorderPersistentIntegration$'
+
       - name: HTTP recording, connection loss and recovery
         run: go test -race -count=1 -timeout=5m -v -run '^TestExecution(Persistent|PostgresOutage|CommitResponseLoss|ProcessLoss)Integration$' .
 

@@ -36,10 +36,15 @@ func (p *phaseSourceProbe) CurrentPhase(context.Context, storage.AgentUpgradeAtt
 }
 
 type phaseRecorderProbe struct {
-	err     error
-	badHash bool
-	calls   int
-	onAck   func()
+	err      error
+	checkErr error
+	badHash  bool
+	calls    int
+	onAck    func()
+}
+
+func (p *phaseRecorderProbe) CheckPhaseRecording(context.Context, storage.AgentUpgradeAttempt) error {
+	return p.checkErr
 }
 
 func (p *phaseRecorderProbe) RecordPhaseIntent(_ context.Context, a storage.AgentUpgradeAttempt, raw []byte) (storage.PhaseRecordingReceipt, error) {
@@ -314,7 +319,7 @@ func TestPhaseIssuerDeniesMissingTrustOrRecording(t *testing.T) {
 }
 
 func TestPhaseIssuerFailuresReturnNoSignature(t *testing.T) {
-	for _, mutation := range []string{"intent-denied", "recording-outage", "receipt-substitution", "storage-outage", "current-denied", "wrong-boot", "wrong-peer", "bad-nonce", "commit-ack-loss", "slow-commit", "slow-authority"} {
+	for _, mutation := range []string{"intent-denied", "recording-outage", "receipt-substitution", "storage-outage", "current-denied", "wrong-boot", "wrong-peer", "bad-nonce", "commit-ack-loss", "slow-commit", "slow-authority", "writer-lost", "writer-lost-during-commit"} {
 		t.Run(mutation, func(t *testing.T) {
 			s, ledger, source, recorder, i, _ := phaseIssuerFixture(t)
 			switch mutation {
@@ -353,13 +358,18 @@ func TestPhaseIssuerFailuresReturnNoSignature(t *testing.T) {
 				ledger.onClaim = func() { s.now = func() time.Time { return now.Add(16 * time.Second) } }
 			case "slow-authority":
 				source.onCurrent = func() { s.now = func() time.Time { return now.Add(time.Minute) } }
+			case "writer-lost":
+				recorder.checkErr = ErrUnavailable
+			case "writer-lost-during-commit":
+				ledger.onClaim = func() { recorder.checkErr = ErrUnavailable }
 			}
 			result, err := s.Issue(context.Background(), i.AttemptID, i.Owner, 3)
 			if err == nil || len(result.Signature) != 0 || len(result.Permit) != 0 {
 				t.Fatal("denied/uncertain authority returned signature")
 			}
-			if mutation == "commit-ack-loss" || mutation == "slow-commit" {
+			if mutation == "commit-ack-loss" || mutation == "slow-commit" || mutation == "writer-lost-during-commit" {
 				ledger.claimErr = nil
+				recorder.checkErr = nil
 				s.now = func() time.Time { return now }
 				if result, err := s.Issue(context.Background(), i.AttemptID, i.Owner, 3); err == nil || len(result.Signature) != 0 {
 					t.Fatal("uncertain committed claim allowed redispatch")

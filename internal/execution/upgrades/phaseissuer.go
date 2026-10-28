@@ -3,6 +3,7 @@ package upgrades
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"time"
 
 	"github.com/kube-workspaces/api/internal/execution/storage"
@@ -32,6 +33,9 @@ type PhaseContext struct {
 // reject missing/lost/finalized recordings and competing recording writers.
 type PhaseIntentRecorder interface {
 	RecordPhaseIntent(context.Context, storage.AgentUpgradeAttempt, []byte) (storage.PhaseRecordingReceipt, error)
+	// CheckPhaseRecording requires the exact healthy currently owned writer,
+	// not merely a prior chunk ACK or nonterminal metadata row. It writes nothing.
+	CheckPhaseRecording(context.Context, storage.AgentUpgradeAttempt) error
 }
 
 // PhaseIssuer is an offline integration boundary. All live trust and recording
@@ -74,6 +78,14 @@ func (s *PhaseIssuer) RecordIntent(ctx context.Context, attemptID, owner string,
 	if err != nil {
 		return ErrInvalid
 	}
+	// A known intent (including a previously committed but unacknowledged row)
+	// needs reconciliation, not another protected append. Concurrent first
+	// submissions still rely on the ledger's unique transaction for exclusion.
+	if _, err := s.ledger.GetIntent(ctx, attemptID, j.Snapshot().Sequence); err == nil {
+		return ErrConflict
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		return mapStoreError(err)
+	}
 	if err := s.source.CheckIntent(ctx, a, j); err != nil {
 		return err
 	}
@@ -114,6 +126,9 @@ func (s *PhaseIssuer) Issue(ctx context.Context, attemptID, owner string, sequen
 	if err != nil {
 		return SignedPhase{}, ErrInvalid
 	}
+	if err := s.recorder.CheckPhaseRecording(ctx, a); err != nil {
+		return SignedPhase{}, ErrUnavailable
+	}
 	current, err := s.source.CurrentPhase(ctx, a, j)
 	if err != nil {
 		return SignedPhase{}, err
@@ -134,6 +149,9 @@ func (s *PhaseIssuer) Issue(ctx context.Context, attemptID, owner string, sequen
 	}
 	if err := s.ledger.ClaimPhase(ctx, attemptID, owner, permit, now); err != nil {
 		return SignedPhase{}, mapPhaseError(err)
+	}
+	if err := s.recorder.CheckPhaseRecording(ctx, a); err != nil {
+		return SignedPhase{}, ErrUnavailable // claim stays spent if writer was lost
 	}
 	if s.now().Unix() >= permit.ExpiresAt {
 		return SignedPhase{}, ErrDenied // a slow commit still leaves the claim spent

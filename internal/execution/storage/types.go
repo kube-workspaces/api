@@ -202,6 +202,15 @@ type Recorder interface {
 	Abort(ctx context.Context) error
 }
 
+// ChunkReceipt binds a successfully acknowledged append to its session-owned
+// recording and index. It is not authorization, proof of finalization or a
+// durability claim: callers must independently require a healthy durable store.
+type ChunkReceipt struct {
+	RecordingID string
+	ChunkIndex  uint64
+	ChunkSHA256 string
+}
+
 // FinalizeMeta supplies optional protected terminal evidence. It does not replace
 // a committed metadata outcome or authorize guest redispatch/reconciliation.
 type FinalizeMeta struct {

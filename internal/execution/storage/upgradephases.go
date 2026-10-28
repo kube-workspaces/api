@@ -13,11 +13,7 @@ import (
 // PhaseRecordingReceipt acknowledges the exact journal bytes in the independent
 // encrypted recording. Only a recorder that durably committed the chunk may
 // produce it. A guest message, journal hash or metadata row is not such a receipt.
-type PhaseRecordingReceipt struct {
-	RecordingID string
-	ChunkIndex  uint64
-	ChunkSHA256 string
-}
+type PhaseRecordingReceipt = ChunkReceipt
 
 // UpgradePhaseIntent is an exact active journal checkpoint, verified against
 // independent plan/current authority and recorded before calling RecordIntent.

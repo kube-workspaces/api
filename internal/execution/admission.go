@@ -2,6 +2,8 @@ package execution
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -211,6 +213,18 @@ type Session struct {
 // Record returns a copy of the admission record bound to this session.
 func (s *Session) Record() storage.ExecutionRecord { return s.record }
 
+// CheckRecording reports this live writer's terminal/poisoned status without
+// writing or reopening anything. Store durability and current ownership must
+// still be checked independently by the caller.
+func (s *Session) CheckRecording() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ended {
+		return storage.ErrFinalized
+	}
+	return s.recordingErr
+}
+
 // Start marks the process as running. It is idempotent.
 func (s *Session) Start(ctx context.Context) error {
 	s.mu.Lock()
@@ -232,6 +246,37 @@ func (s *Session) Start(ctx context.Context) error {
 func (s *Session) AppendChunk(ctx context.Context, plaintext []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.appendChunkLocked(ctx, plaintext)
+}
+
+// AppendChunkReceipt returns an exact receipt only after the recorder ACK. The
+// session allocates the index under the same lock as append/finalization, and
+// hashes its own copy of the exact bytes sent to the protected recorder. Any
+// write error (including an uncertain ACK) latches, so retry cannot overwrite
+// an object that may already have committed at that index.
+func (s *Session) AppendChunkReceipt(ctx context.Context, plaintext []byte) (storage.ChunkReceipt, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ended {
+		return storage.ChunkReceipt{}, storage.ErrFinalized
+	}
+	if s.recordingErr != nil {
+		return storage.ChunkReceipt{}, s.recordingErr
+	}
+	if len(plaintext) > storage.MaxChunkBytes {
+		s.recordingErr = storage.ErrChunkTooLarge
+		return storage.ChunkReceipt{}, s.recordingErr
+	}
+	raw := append([]byte(nil), plaintext...)
+	sum := sha256.Sum256(raw)
+	receipt := storage.ChunkReceipt{RecordingID: s.record.RecordingID, ChunkIndex: s.next, ChunkSHA256: hex.EncodeToString(sum[:])}
+	if err := s.appendChunkLocked(ctx, raw); err != nil {
+		return storage.ChunkReceipt{}, err
+	}
+	return receipt, nil
+}
+
+func (s *Session) appendChunkLocked(ctx context.Context, plaintext []byte) error {
 	if s.ended {
 		return storage.ErrFinalized
 	}
