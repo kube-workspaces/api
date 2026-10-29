@@ -600,6 +600,9 @@ Reopening revalidates persisted binding/CSR/chain against independent trust and
 current time before TLS setup. Existing roots are not overwritten and corrupt
 bundles are not repaired or regenerated. This proves local snapshot persistence,
 not service activation, certificate renewal or live file-based revocation.
+Successful Rust key/bundle reopen now completes a fresh file/root/parent durability
+fence after validation, including complete writes left without the original ACK.
+A failed sync returns no reopened credential even when cached bytes parse.
 Build the agent's `key_probe` test executable first, then run on Linux:
 
 ```sh
