@@ -582,6 +582,24 @@ enrollment/current-authority delivery, bounded listener/driver, signed operation
 grants and independent recording/ownership remain integration work. No new guest
 endpoint, execution transport selection or QGA fallback is enabled by these tests.
 
+The Linux guest key/CSR foundation now persists an opaque private key and exact
+retry CSR under private filesystem ownership/locking. An additional opt-in test
+proves that Go's one-use enrollment ledger accepts the Rust CSR, exact retries
+after a Rust process reopen return the same certificate, and another key or changed
+scope is refused. The guest key stays in its private temporary root; only public
+CSR/certificate/root data cross the test subprocess boundary. This campaign uses
+a synthetic issuer and memory ledger, not deployment credentials or a live route.
+Build the agent's `key_probe` test executable first, then run on Linux:
+
+```sh
+KW_MANAGEMENT_RUST_KEY_PROBE=/absolute/path/to/key_probe-test-executable \
+  go test -race -count=3 -timeout=3m ./internal/execution/enrollment -run '^TestRustMachineKeyEnrollmentInterop$'
+```
+
+Windows custody is still unsupported/fail-closed. Protected bootstrap delivery,
+certificate installation/renewal and production listener/operation integration
+remain required; neither these tests nor a stored CSR grants execution authority.
+
 Disposable PostgreSQL/S3 integration checks are opt-in:
 
 ```sh
