@@ -549,12 +549,21 @@ These checks do not deliver guest machine-key storage, a Rust TLS verifier,
 enrollment delivery or a management listener; those integrations remain required.
 
 The guest also inspects the management DER leaf profile with shared Go-issued
-public certificate fixtures (no private keys). This checks role-separated
-SANs/purposes, exact key usage and bounded validity windows; it is not Go↔Rust TLS
-interoperability or signature/chain verification. Fixture regeneration is an
+public certificate fixtures (no private keys). Profile inspection checks role-separated
+SANs/purposes, exact key usage and bounded validity windows; it alone is not
+signature/chain verification. Fixture regeneration is an
 explicit opt-in test operation documented in
 `internal/execution/pki/certificate_interop_test.go`; it creates only synthetic
 public certificate data and must be copied byte-for-byte to the agent fixtures.
+
+The separate Rust management trust module now verifies signatures and direct/
+intermediate chains against explicit management roots, with exact identity and
+time checks. Shared vectors distinguish a valid leaf profile from a valid chain,
+including expired/restricted/unknown-critical intermediates. Root validity,
+purpose and path-length constraints are preserved. This is certificate-verifier
+compatibility, not a completed Go↔Rust TLS handshake, live key possession or fresh
+peer authorization; guest credential delivery, TLS/enrollment and listener wiring
+remain required and no new execution path is enabled.
 
 Disposable PostgreSQL/S3 integration checks are opt-in:
 
