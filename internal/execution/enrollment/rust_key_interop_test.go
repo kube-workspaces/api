@@ -77,7 +77,7 @@ func TestRustMachineKeyEnrollmentInterop(t *testing.T) {
 		CSR      []byte `json:"csr"`
 		TLSReady bool   `json:"tls_ready"`
 	}
-	invoke := func(path string, identity pki.Identity, create bool, certificates [][]byte) result {
+	invokeWithBundle := func(path string, identity pki.Identity, create bool, certificates [][]byte, bundleRoot string, persistBundle bool) result {
 		t.Helper()
 		if certificates == nil {
 			certificates = [][]byte{}
@@ -86,13 +86,19 @@ func TestRustMachineKeyEnrollmentInterop(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		var bundlePath *string
+		if bundleRoot != "" {
+			bundlePath = &bundleRoot
+		}
 		input, err := json.Marshal(struct {
-			Root         string   `json:"root"`
-			Identity     string   `json:"identity"`
-			Create       bool     `json:"create"`
-			Roots        [][]byte `json:"roots"`
-			Certificates [][]byte `json:"certificates"`
-		}{path, uri.String(), create, [][]byte{rootDER}, certificates})
+			Root          string   `json:"root"`
+			Identity      string   `json:"identity"`
+			Create        bool     `json:"create"`
+			Roots         [][]byte `json:"roots"`
+			Certificates  [][]byte `json:"certificates"`
+			BundleRoot    *string  `json:"bundle_root"`
+			PersistBundle bool     `json:"persist_bundle"`
+		}{path, uri.String(), create, [][]byte{rootDER}, certificates, bundlePath, persistBundle})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -126,6 +132,10 @@ func TestRustMachineKeyEnrollmentInterop(t *testing.T) {
 			t.Fatal("missing or duplicate public key-probe result")
 		}
 		return response
+	}
+	invoke := func(path string, identity pki.Identity, create bool, certificates [][]byte) result {
+		t.Helper()
+		return invokeWithBundle(path, identity, create, certificates, "", false)
 	}
 	path := filepath.Join(t.TempDir(), "machine-key")
 	first := invoke(path, expected, true, nil)
@@ -227,6 +237,24 @@ func TestRustMachineKeyEnrollmentInterop(t *testing.T) {
 	// Failed public certificate input does not rotate or damage the immutable key.
 	if response := invoke(path, expected, false, [][]byte{certificate}); !response.OK || !response.TLSReady || !bytes.Equal(response.CSR, first.CSR) {
 		t.Fatal("bad certificate input changed the stored key")
+	}
+	bundleRoot := filepath.Join(t.TempDir(), "certificate-bundle")
+	if response := invokeWithBundle(path, expected, false, [][]byte{certificate}, bundleRoot, true); !response.OK || !response.TLSReady || !bytes.Equal(response.CSR, first.CSR) {
+		t.Fatal("verified enrollment certificate was not durably persisted")
+	}
+	// No response certificates are provided to this new process: it loads both
+	// persisted key and bundle, with independent roots/current identity supplied.
+	if response := invokeWithBundle(path, expected, false, nil, bundleRoot, false); !response.OK || !response.TLSReady || !bytes.Equal(response.CSR, first.CSR) {
+		t.Fatal("persisted certificate/key did not survive process reopen")
+	}
+	if response := invokeWithBundle(path, expected, false, [][]byte{certificate}, bundleRoot, true); response.OK {
+		t.Fatal("certificate publication overwrote an existing bundle root")
+	}
+	if err := os.WriteFile(filepath.Join(bundleRoot, "certificate-bundle.json"), []byte("partial"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if response := invokeWithBundle(path, expected, false, nil, bundleRoot, false); response.OK || response.TLSReady || len(response.CSR) != 0 {
+		t.Fatal("corrupt persisted bundle was adopted or regenerated")
 	}
 	changed := expected
 	changed.Generation = "gen-2"

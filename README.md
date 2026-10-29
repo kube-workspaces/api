@@ -594,6 +594,12 @@ before TLS setup. Invalid-response coverage includes damaged signatures, invalid
 intermediates, expired/future certificates, wrong scope/key/DNS/EKU and an untrusted
 CA supplied in the response; response roots never become configured trust. This
 is certificate-response validation, not a network enrollment/install/renewal proof.
+The campaign also saves a verified public certificate bundle in a separate private
+Linux root and starts a new Rust process with no response certificates supplied.
+Reopening revalidates persisted binding/CSR/chain against independent trust and
+current time before TLS setup. Existing roots are not overwritten and corrupt
+bundles are not repaired or regenerated. This proves local snapshot persistence,
+not service activation, certificate renewal or live file-based revocation.
 Build the agent's `key_probe` test executable first, then run on Linux:
 
 ```sh
