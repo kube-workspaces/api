@@ -545,8 +545,8 @@ vectors, including component bounds and unsigned-64-bit revocation epochs.
 Certificate validation checks the original SAN encoding as well as parsed fields:
 URL normalization must not hide uppercase schemes, empty fragments or ignored
 GeneralName types. A valid CA signature alone does not authorize an identity.
-These checks do not deliver guest machine-key storage, a Rust TLS verifier,
-enrollment delivery or a management listener; those integrations remain required.
+These checks alone do not deliver guest machine-key storage, enrollment delivery
+or a production management listener; those integrations remain required.
 
 The guest also inspects the management DER leaf profile with shared Go-issued
 public certificate fixtures (no private keys). Profile inspection checks role-separated
@@ -560,10 +560,27 @@ The separate Rust management trust module now verifies signatures and direct/
 intermediate chains against explicit management roots, with exact identity and
 time checks. Shared vectors distinguish a valid leaf profile from a valid chain,
 including expired/restricted/unknown-critical intermediates. Root validity,
-purpose and path-length constraints are preserved. This is certificate-verifier
-compatibility, not a completed Go↔Rust TLS handshake, live key possession or fresh
-peer authorization; guest credential delivery, TLS/enrollment and listener wiring
-remain required and no new execution path is enabled.
+purpose and path-length constraints are preserved. Chain verification alone is
+not a completed TLS handshake, live key possession or fresh peer authorization.
+
+The Rust TLS server-state foundation now enforces full TLS 1.3 handshakes, exact
+management ALPN, client key possession and a mandatory fresh-authorization callback
+before exposing plaintext or a peer fingerprint. An opt-in Go-client/Rust-server
+loopback campaign exercises success and ten denial cases, including wrong private
+keys and authority loss after handshake. It generates synthetic credentials and
+sends private test material only over subprocess stdin; no live credentials or
+cluster services are used. Build the agent's `tls_probe` test executable first,
+then run from this repository:
+
+```sh
+KW_MANAGEMENT_RUST_TLS_PROBE=/absolute/path/to/tls_probe-test-executable \
+  go test -race -count=3 -timeout=3m ./internal/execution/pki -run '^TestRustManagementTLSInterop$'
+```
+
+Without the variable this cross-repo campaign skips. Production guest credentials,
+enrollment/current-authority delivery, bounded listener/driver, signed operation
+grants and independent recording/ownership remain integration work. No new guest
+endpoint, execution transport selection or QGA fallback is enabled by these tests.
 
 Disposable PostgreSQL/S3 integration checks are opt-in:
 
