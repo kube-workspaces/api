@@ -589,6 +589,11 @@ after a Rust process reopen return the same certificate, and another key or chan
 scope is refused. The guest key stays in its private temporary root; only public
 CSR/certificate/root data cross the test subprocess boundary. This campaign uses
 a synthetic issuer and memory ledger, not deployment credentials or a live route.
+The Rust probe first creates a CSR-bound verified enrollment-certificate artifact
+before TLS setup. Invalid-response coverage includes damaged signatures, invalid
+intermediates, expired/future certificates, wrong scope/key/DNS/EKU and an untrusted
+CA supplied in the response; response roots never become configured trust. This
+is certificate-response validation, not a network enrollment/install/renewal proof.
 Build the agent's `key_probe` test executable first, then run on Linux:
 
 ```sh

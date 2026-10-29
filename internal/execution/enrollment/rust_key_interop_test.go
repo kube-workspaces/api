@@ -172,6 +172,58 @@ func TestRustMachineKeyEnrollmentInterop(t *testing.T) {
 	if response := invoke(path, expected, false, [][]byte{otherCertificate}); response.OK || len(response.CSR) != 0 {
 		t.Fatal("machine key accepted a certificate for a different private key")
 	}
+	// Delivery is untrusted: the Rust verifier must validate the response before
+	// producing its typed enrollment artifact, without adopting response roots.
+	tampered := bytes.Clone(certificate)
+	tampered[len(tampered)-1] ^= 1
+	invalidResponses := map[string][][]byte{"signature": {tampered}, "malformed-intermediate": {certificate, []byte("invalid")}}
+	for _, name := range []string{"expired", "not-yet-valid", "wrong-dns", "wrong-eku"} {
+		template := *leaf
+		switch name {
+		case "expired":
+			template.NotBefore, template.NotAfter = now.Add(-20*time.Minute), now.Add(-10*time.Minute)
+		case "not-yet-valid":
+			template.NotBefore, template.NotAfter = now.Add(time.Hour), now.Add(2*time.Hour)
+		case "wrong-dns":
+			template.DNSNames = []string{"other.example.invalid"}
+		case "wrong-eku":
+			template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
+		}
+		der, err := x509.CreateCertificate(rand.Reader, &template, root, request.PublicKey, rootKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		invalidResponses[name] = [][]byte{der}
+	}
+	wrongScope := expected
+	wrongScope.RevocationEpoch++
+	wrongScopeCertificate, err := issuer.Issue(first.CSR, wrongScope, now, 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidResponses["wrong-scope"] = [][]byte{wrongScopeCertificate}
+	_, rogueKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rogueRoot, err := x509.CreateCertificate(rand.Reader, root, root, rogueKey.Public(), rogueKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rogueIssuer, err := pki.NewAuthority(rogueRoot, rogueKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rogueLeaf, err := rogueIssuer.Issue(first.CSR, expected, now, 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidResponses["response-root-not-trusted"] = [][]byte{rogueLeaf, rogueRoot}
+	for name, chain := range invalidResponses {
+		if response := invoke(path, expected, false, chain); response.OK || response.TLSReady || len(response.CSR) != 0 {
+			t.Fatalf("%s: invalid enrollment response yielded a verified artifact or TLS state", name)
+		}
+	}
 	// Failed public certificate input does not rotate or damage the immutable key.
 	if response := invoke(path, expected, false, [][]byte{certificate}); !response.OK || !response.TLSReady || !bytes.Equal(response.CSR, first.CSR) {
 		t.Fatal("bad certificate input changed the stored key")
